@@ -1,0 +1,436 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  DRAFT
+  PENDING_PAYMENT
+  NEW
+  CONFIRMED
+  PREPARING
+  PACKED
+  READY_FOR_PICKUP
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+  DELIVERY_FAILED
+  REFUND_PENDING
+  REFUNDED
+}
+
+enum PaymentStatus {
+  CREATED
+  PENDING
+  AUTHORIZED
+  PAID
+  FAILED
+  REFUND_PENDING
+  PARTIALLY_REFUNDED
+  REFUNDED
+  COD_PENDING
+  COD_COLLECTED
+}
+
+enum LeadStage {
+  NEW
+  ASSIGNED
+  ATTEMPTED_CONTACT
+  CONNECTED
+  INTERESTED
+  MEETING_SCHEDULED
+  FOOD_TASTING
+  PROPOSAL_SENT
+  NEGOTIATION
+  WON
+  LOST
+  REPEAT_CUSTOMER
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  mobile    String?  @unique
+  name      String
+  roles     UserRole[]
+  auditLogs AuditLog[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  users       UserRole[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id    String           @id @default(cuid())
+  key   String           @unique
+  roles RolePermission[]
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id])
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+}
+
+model Customer {
+  id          String       @id @default(cuid())
+  name        String
+  mobile      String       @unique
+  email       String?      @unique
+  birthday    DateTime?
+  anniversary DateTime?
+  tags        CustomerTagAssignment[]
+  addresses   CustomerAddress[]
+  notes       CustomerNote[]
+  orders      Order[]
+  loyalty     LoyaltyAccount?
+  leads       Lead[]
+  reviews     Review[]
+  tickets     SupportTicket[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([mobile])
+  @@index([email])
+}
+
+model CustomerAddress {
+  id         String   @id @default(cuid())
+  customerId String
+  label      String
+  line1      String
+  area       String
+  city       String
+  state      String
+  pinCode    String
+  landmark   String?
+  isDefault  Boolean  @default(false)
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  @@index([pinCode])
+}
+
+model CustomerTag {
+  id          String                  @id @default(cuid())
+  name        String                  @unique
+  assignments CustomerTagAssignment[]
+}
+
+model CustomerTagAssignment {
+  customerId String
+  tagId      String
+  customer   Customer    @relation(fields: [customerId], references: [id])
+  tag        CustomerTag @relation(fields: [tagId], references: [id])
+
+  @@id([customerId, tagId])
+}
+
+model CustomerNote {
+  id         String   @id @default(cuid())
+  customerId String
+  body       String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  createdAt  DateTime @default(now())
+}
+
+model Lead {
+  id         String    @id @default(cuid())
+  customerId String?
+  source     String
+  name       String
+  phone      String
+  company    String?
+  stage      LeadStage @default(NEW)
+  score      Int       @default(0)
+  ownerId    String?
+  followUpAt DateTime?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  history    LeadStageHistory[]
+
+  @@index([stage])
+  @@index([phone])
+}
+
+model LeadStageHistory {
+  id        String    @id @default(cuid())
+  leadId    String
+  fromStage LeadStage?
+  toStage   LeadStage
+  note      String?
+  lead      Lead      @relation(fields: [leadId], references: [id])
+  createdAt DateTime  @default(now())
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  slug      String    @unique
+  sortOrder Int       @default(0)
+  visible   Boolean   @default(true)
+  products  Product[]
+}
+
+model Product {
+  id          String       @id @default(cuid())
+  categoryId  String
+  name        String
+  slug        String       @unique
+  description String
+  price       Int
+  taxRate     Decimal      @default(0.05)
+  dietaryType String
+  available   Boolean      @default(true)
+  prepMinutes Int          @default(25)
+  category    Category     @relation(fields: [categoryId], references: [id])
+  images      ProductImage[]
+  variants    ProductVariantOption[]
+  addons      ProductAddon[]
+  orderItems  OrderItem[]
+
+  @@index([categoryId])
+  @@index([available])
+}
+
+model ProductImage {
+  id        String  @id @default(cuid())
+  productId String
+  url       String
+  alt       String
+  sortOrder Int     @default(0)
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model ProductVariantOption {
+  id        String  @id @default(cuid())
+  productId String
+  name      String
+  price     Int     @default(0)
+  available Boolean @default(true)
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model ProductAddon {
+  id        String  @id @default(cuid())
+  productId String
+  name      String
+  price     Int
+  available Boolean @default(true)
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model Cart {
+  id         String     @id @default(cuid())
+  customerId String?
+  sessionId  String?
+  items      CartItem[]
+  updatedAt  DateTime   @updatedAt
+
+  @@index([customerId])
+  @@index([sessionId])
+}
+
+model CartItem {
+  id        String @id @default(cuid())
+  cartId    String
+  productId String
+  quantity  Int
+  note      String?
+  cart      Cart   @relation(fields: [cartId], references: [id])
+}
+
+model Order {
+  id          String              @id @default(cuid())
+  orderNumber String              @unique
+  customerId  String
+  status      OrderStatus         @default(NEW)
+  subtotal    Int
+  discount    Int                 @default(0)
+  gst         Int
+  grandTotal  Int
+  customer    Customer            @relation(fields: [customerId], references: [id])
+  items       OrderItem[]
+  payments    Payment[]
+  timeline    OrderStatusHistory[]
+  createdAt   DateTime            @default(now())
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String
+  name      String
+  quantity  Int
+  price     Int
+  order     Order   @relation(fields: [orderId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(cuid())
+  orderId   String
+  fromStatus OrderStatus?
+  toStatus   OrderStatus
+  note      String?
+  order     Order       @relation(fields: [orderId], references: [id])
+  createdAt DateTime    @default(now())
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  orderId           String
+  provider          String
+  providerPaymentId String?       @unique
+  status            PaymentStatus
+  amount            Int
+  order             Order         @relation(fields: [orderId], references: [id])
+  createdAt         DateTime      @default(now())
+
+  @@index([status])
+}
+
+model Coupon {
+  id         String   @id @default(cuid())
+  code       String   @unique
+  type       String
+  value      Int
+  minOrder   Int
+  maxDiscount Int?
+  startsAt   DateTime
+  endsAt     DateTime
+  active     Boolean  @default(true)
+}
+
+model LoyaltyAccount {
+  id         String   @id @default(cuid())
+  customerId String   @unique
+  points     Int      @default(0)
+  tier       String   @default("Starter")
+  customer   Customer @relation(fields: [customerId], references: [id])
+}
+
+model SupportTicket {
+  id         String   @id @default(cuid())
+  customerId String
+  category   String
+  priority   String
+  status     String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@index([status])
+}
+
+model Review {
+  id         String   @id @default(cuid())
+  customerId String
+  rating     Int
+  comment    String?
+  moderated  Boolean  @default(false)
+  customer   Customer @relation(fields: [customerId], references: [id])
+  createdAt  DateTime @default(now())
+}
+
+model WhatsAppMessage {
+  id          String   @id @default(cuid())
+  messageId   String   @unique
+  phone       String
+  direction   String
+  body        String?
+  status      String?
+  receivedAt  DateTime @default(now())
+
+  @@index([phone])
+  @@index([status])
+}
+
+model AutomationRule {
+  id        String   @id @default(cuid())
+  name      String
+  trigger   String
+  enabled   Boolean  @default(false)
+  config    Json
+  runs      AutomationRun[]
+}
+
+model AutomationRun {
+  id        String         @id @default(cuid())
+  ruleId    String
+  status    String
+  error     String?
+  rule      AutomationRule @relation(fields: [ruleId], references: [id])
+  createdAt DateTime       @default(now())
+}
+
+model BusinessSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model IntegrationSetting {
+  id          String   @id @default(cuid())
+  provider    String   @unique
+  enabled     Boolean  @default(false)
+  publicConfig Json
+  secretRef    String?
+  updatedAt    DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  before    Json?
+  after     Json?
+  user      User?    @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+model WebhookEvent {
+  id        String   @id @default(cuid())
+  provider  String
+  eventId   String
+  payload   Json
+  processed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([provider, eventId])
+}
+
+model IdempotencyKey {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  scope     String
+  response  Json?
+  createdAt DateTime @default(now())
+}

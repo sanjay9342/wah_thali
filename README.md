@@ -1,36 +1,49 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Wah Thali Platform
 
-## Getting Started
+Production-shaped Next.js foundation for Wah Thali: customer ordering, cart pricing, checkout, tracking, admin CRM/operations, integration adapters, Prisma schema, and handover docs.
 
-First, run the development server:
+## Current Stack
+
+- Next.js App Router, React, TypeScript strict mode
+- Tailwind CSS v4 brand tokens
+- Zod validation, Lucide icons, Recharts-ready dashboard dependency
+- Prisma schema for PostgreSQL/Supabase
+- Vitest unit tests for business rules
+
+## Run Locally
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Checks
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run lint
+npm run typecheck
+npm run test
+npm run build
+```
 
-## Learn More
+## Implemented Routes
 
-To learn more about Next.js, take a look at the following resources:
+- `/` customer homepage
+- `/menu` searchable menu with filters and food cards
+- `/cart` editable cart with coupon, GST, delivery, packaging, and free-delivery progress
+- `/checkout` address, schedule, payment, COD flow
+- `/order/WT-10021/confirmed`
+- `/order/WT-10021/track`
+- `/admin`
+- `/admin/orders`
+- `/admin/customers`
+- `/admin/settings`
+- `/api/webhooks/meta`
+- `/api/webhooks/n8n`
+- `/api/payments/razorpay`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Next Credentials Needed
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Copy `.env.example` to `.env.local` and fill Supabase, Razorpay, Meta WhatsApp, n8n, Google Maps, and SMTP values when ready. No secrets are committed.

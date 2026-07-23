@@ -1,0 +1,16 @@
+{
+  "name": "Wah Thali",
+  "short_name": "Wah Thali",
+  "description": "Fresh Indian food ordering, CRM, WhatsApp automation, and reports.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFF8EE",
+  "theme_color": "#8D0021",
+  "icons": [
+    {
+      "src": "/next.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 import { MenuExperience } from "@/components/menu-experience";
 
-export default function Home() {
+export default function MenuPage() {
   return <MenuExperience />;
 }
