@@ -8,7 +8,7 @@ export function Header({ showContact = true }: { showContact?: boolean }) {
 
   return (
     <header className="sticky top-0 z-50 overflow-hidden border-b border-border bg-white/95 backdrop-blur">
-      <div className="grid min-h-[72px] w-full max-w-[390px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-4 py-3 sm:mx-auto sm:max-w-7xl sm:px-6 md:min-h-20 md:grid-cols-[auto_1fr_auto] md:gap-3 lg:px-8">
+      <div className="mx-auto grid min-h-[72px] w-full max-w-[430px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-4 py-3 sm:max-w-7xl sm:px-6 md:min-h-20 md:grid-cols-[auto_1fr_auto] md:gap-3 lg:px-8">
         <Link href="/account" className="flex min-w-0 items-center gap-1.5 md:hidden">
           <MapPin size={16} className="shrink-0 text-red" />
           <span className="min-w-0">
@@ -78,7 +78,7 @@ export function Header({ showContact = true }: { showContact?: boolean }) {
           <span className="h-10 w-10 justify-self-end sm:h-11 sm:w-11 lg:ml-1" aria-hidden="true" />
         )}
       </div>
-      <div className="w-full max-w-[390px] border-t border-border px-4 py-3 sm:mx-auto md:hidden">
+      <div className="mx-auto w-full max-w-[430px] border-t border-border px-4 py-3 md:hidden">
         <label className="relative block">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={18} />
           <input

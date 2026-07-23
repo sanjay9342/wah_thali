@@ -38,7 +38,7 @@ export default function AccountPage() {
   return (
     <>
       <Header />
-      <main className="w-full max-w-[390px] px-3 pb-28 pt-5 sm:mx-auto sm:max-w-5xl sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-[430px] px-4 pb-28 pt-5 sm:max-w-5xl sm:px-6 lg:px-8">
         <section className="rounded-[28px] bg-white p-5 shadow-[0_14px_34px_rgba(34,31,32,0.08)] ring-1 ring-border">
           <div className="flex items-start justify-between gap-4">
             <div className="flex min-w-0 items-center gap-4">

@@ -51,7 +51,7 @@ export default function OrdersPage() {
   return (
     <>
       <Header />
-      <main className="w-full max-w-[390px] px-3 pb-32 pt-5 sm:mx-auto sm:max-w-5xl sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-[430px] px-4 pb-32 pt-5 sm:max-w-5xl sm:px-6 lg:px-8">
         <div className="flex items-center justify-between">
           <Link href="/" className="grid h-10 w-10 place-items-center rounded-full bg-white text-charcoal shadow-sm ring-1 ring-border" aria-label="Back home">
             <ArrowLeft size={20} />

@@ -16,8 +16,8 @@ export function MobileNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 pb-3" aria-label="Primary navigation">
-      <div className="ml-3 grid h-[74px] w-[calc(100%-24px)] max-w-[360px] grid-cols-5 items-center rounded-[28px] border-[3px] border-[#f1dcc7] bg-white/96 px-3 shadow-[0_-8px_24px_rgba(34,31,32,0.10)] backdrop-blur sm:mx-auto">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-3" aria-label="Primary navigation">
+      <div className="mx-auto grid h-[74px] w-full max-w-[430px] grid-cols-5 items-center rounded-[28px] border-[3px] border-[#f1dcc7] bg-white/96 px-3 shadow-[0_-8px_24px_rgba(34,31,32,0.10)] backdrop-blur">
         {items.map(({ href, icon: Icon, label, match }) => {
           const active = match(pathname);
 
