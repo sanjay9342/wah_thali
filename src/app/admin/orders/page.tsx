@@ -2,16 +2,48 @@ import { Clock, MapPin, MessageCircle, PackageCheck, Printer, RefreshCw, Truck }
 import Link from "next/link";
 import { products } from "@/lib/data";
 import { formatRupees } from "@/lib/pricing";
+import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { canTransitionOrder } from "@/lib/state-machines";
 
-const orders = [
+export const dynamic = "force-dynamic";
+
+const fallbackOrders = [
   { id: "WT-10021", customer: "Rahul Sharma", item: products[0], status: "NEW", eta: "28 min", amount: 550, address: "Salt Lake" },
   { id: "WT-10022", customer: "Priya Sen", item: products[1], status: "CONFIRMED", eta: "18 min", amount: 198, address: "Sector V" },
   { id: "WT-10023", customer: "Kolkata Foods Pvt Ltd", item: products[5], status: "PREPARING", eta: "42 min", amount: 2999, address: "Park Street" },
   { id: "WT-10024", customer: "Amit Das", item: products[2], status: "OUT_FOR_DELIVERY", eta: "12 min", amount: 338, address: "Park Circus" },
 ];
 
-export default function AdminOrdersPage() {
+async function getOrders() {
+  if (!isDatabaseConfigured()) return fallbackOrders;
+
+  try {
+    const orders = await prisma.order.findMany({
+      include: { customer: true, items: true },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+
+    return orders.length
+      ? orders.map((order) => ({
+          id: order.orderNumber,
+          customer: order.customer.name,
+          item: products.find((product) => product.id === order.items[0]?.productId) ?? products[0],
+          status: order.status,
+          eta: "Live",
+          amount: order.grandTotal,
+          address: "Customer address",
+        }))
+      : fallbackOrders;
+  } catch (error) {
+    console.error("Admin order read failed. Falling back to demo orders.", error);
+    return fallbackOrders;
+  }
+}
+
+export default async function AdminOrdersPage() {
+  const orders = await getOrders();
+
   return (
     <main className="min-h-screen bg-white">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">

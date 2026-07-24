@@ -1,15 +1,48 @@
 import { BadgeIndianRupee, Gift, MessageCircle, Phone, Plus, Search, Star, UserRoundCheck } from "lucide-react";
 import Link from "next/link";
 import { settings } from "@/lib/data";
+import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
-const customers = [
+export const dynamic = "force-dynamic";
+
+const fallbackCustomers = [
   { id: "CUST-001", name: "Rahul Sharma", tag: "VIP", orders: 36, ltv: "Rs 18,420", health: "Active", points: 1240, lastOrder: "Today" },
   { id: "CUST-002", name: "Priya Sen", tag: "Coupon lover", orders: 11, ltv: "Rs 4,880", health: "Churn risk", points: 320, lastOrder: "22 days ago" },
   { id: "CUST-003", name: "Kolkata Foods Pvt Ltd", tag: "Corporate", orders: 8, ltv: "Rs 74,500", health: "Proposal", points: 0, lastOrder: "Yesterday" },
   { id: "CUST-004", name: "Amit Das", tag: "High spice", orders: 19, ltv: "Rs 9,920", health: "Active", points: 710, lastOrder: "3 days ago" },
 ];
 
-export default function AdminCustomersPage() {
+async function getCustomers() {
+  if (!isDatabaseConfigured()) return fallbackCustomers;
+
+  try {
+    const customers = await prisma.customer.findMany({
+      include: { loyalty: true, orders: true },
+      orderBy: { updatedAt: "desc" },
+      take: 50,
+    });
+
+    return customers.length
+      ? customers.map((customer, index) => ({
+          id: customer.id,
+          name: customer.name,
+          tag: customer.loyalty?.tier ?? "Customer",
+          orders: customer.orders.length,
+          ltv: `Rs ${customer.orders.reduce((total, order) => total + order.grandTotal, 0).toLocaleString("en-IN")}`,
+          health: customer.orders.length > 0 ? "Active" : "New",
+          points: customer.loyalty?.points ?? 0,
+          lastOrder: index === 0 ? "Latest" : "Recent",
+        }))
+      : fallbackCustomers;
+  } catch (error) {
+    console.error("Admin customer read failed. Falling back to demo customers.", error);
+    return fallbackCustomers;
+  }
+}
+
+export default async function AdminCustomersPage() {
+  const customers = await getCustomers();
+
   return (
     <main className="min-h-screen bg-white">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">

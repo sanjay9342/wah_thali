@@ -1,16 +1,19 @@
 import { CheckCircle2, Edit3, EyeOff, PackagePlus, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { categories, products } from "@/lib/data";
+import { getCategoriesFromDb, getProductsFromDb } from "@/lib/db";
 import { formatRupees } from "@/lib/pricing";
 
-const inventoryRows = products.map((product, index) => ({
-  ...product,
-  stock: [42, 18, 27, 11, 34, 8][index] ?? 16,
-  reorder: [20, 12, 14, 10, 16, 6][index] ?? 8,
-  margin: [62, 54, 58, 49, 57, 41][index] ?? 45,
-}));
+export const dynamic = "force-dynamic";
 
-export default function AdminInventoryPage() {
+export default async function AdminInventoryPage() {
+  const [categories, products] = await Promise.all([getCategoriesFromDb(), getProductsFromDb()]);
+  const inventoryRows = products.map((product, index) => ({
+    ...product,
+    stock: [42, 18, 27, 11, 34, 8][index] ?? 16,
+    reorder: [20, 12, 14, 10, 16, 6][index] ?? 8,
+    margin: [62, 54, 58, 49, 57, 41][index] ?? 45,
+  }));
+
   return (
     <main className="min-h-screen bg-white">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">

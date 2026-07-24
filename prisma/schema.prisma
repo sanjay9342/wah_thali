@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 enum OrderStatus {
@@ -198,15 +197,22 @@ model Product {
   slug        String       @unique
   description String
   price       Int
+  originalPrice Int?
   taxRate     Decimal      @default(0.05)
   dietaryType String
   available   Boolean      @default(true)
   prepMinutes Int          @default(25)
+  rating      Decimal      @default(4.5)
+  ratingCount Int          @default(0)
+  bestseller  Boolean      @default(false)
+  offer       String?
+  spiceLevel  String       @default("Medium")
   category    Category     @relation(fields: [categoryId], references: [id])
   images      ProductImage[]
   variants    ProductVariantOption[]
   addons      ProductAddon[]
   orderItems  OrderItem[]
+  inventory   InventoryItem?
 
   @@index([categoryId])
   @@index([available])
@@ -257,6 +263,19 @@ model CartItem {
   quantity  Int
   note      String?
   cart      Cart   @relation(fields: [cartId], references: [id])
+}
+
+model InventoryItem {
+  id          String   @id @default(cuid())
+  productId   String   @unique
+  stock       Int      @default(0)
+  reorderAt   Int      @default(0)
+  margin      Int      @default(0)
+  unit        String   @default("portion")
+  product     Product  @relation(fields: [productId], references: [id])
+  updatedAt   DateTime @updatedAt
+
+  @@index([stock])
 }
 
 model Order {
@@ -315,6 +334,7 @@ model Payment {
 model Coupon {
   id         String   @id @default(cuid())
   code       String   @unique
+  label      String
   type       String
   value      Int
   minOrder   Int
@@ -414,6 +434,21 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([createdAt])
+}
+
+model ActivityEvent {
+  id         String   @id @default(cuid())
+  type       String
+  actor      String?
+  entity     String
+  entityId   String?
+  summary    String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@index([type])
 }
 
 model WebhookEvent {

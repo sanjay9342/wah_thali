@@ -1,51 +1,54 @@
 import { BellRing, CreditCard, MapPinned, Save, Settings, Store, Truck } from "lucide-react";
 import Link from "next/link";
-import { categories, settings } from "@/lib/data";
+import { getBusinessSettingsFromDb, getCategoriesFromDb } from "@/lib/db";
 
-const settingGroups = [
-  {
-    title: "Business",
-    icon: Store,
-    fields: [
-      ["Restaurant name", "Wah Thali"],
-      ["Opening hours", settings.openingHours],
-      ["Support phone", settings.supportPhone],
-      ["WhatsApp number", settings.whatsappNumber],
-    ],
-  },
-  {
-    title: "Delivery",
-    icon: Truck,
-    fields: [
-      ["Minimum order", String(settings.minimumOrder)],
-      ["Delivery fee", String(settings.deliveryFee)],
-      ["Free delivery threshold", String(settings.freeDeliveryThreshold)],
-      ["Packaging fee", String(settings.packagingFee)],
-    ],
-  },
-  {
-    title: "Payments",
-    icon: CreditCard,
-    fields: [
-      ["GST rate", String(settings.gstRate)],
-      ["COD enabled", "Yes"],
-      ["Razorpay enabled", "No"],
-      ["Refund SLA", "24 hours"],
-    ],
-  },
-  {
-    title: "Notifications",
-    icon: BellRing,
-    fields: [
-      ["Order WhatsApp alerts", "Enabled"],
-      ["Abandoned cart alerts", "Enabled"],
-      ["Low stock alerts", "Enabled"],
-      ["Admin daily digest", "9:00 PM"],
-    ],
-  },
-];
+export const dynamic = "force-dynamic";
 
-export default function AdminSettingsPage() {
+export default async function AdminSettingsPage() {
+  const [settings, categories] = await Promise.all([getBusinessSettingsFromDb(), getCategoriesFromDb()]);
+  const settingGroups = [
+    {
+      title: "Business",
+      icon: Store,
+      fields: [
+        ["Restaurant name", "Wah Thali"],
+        ["Opening hours", settings.openingHours],
+        ["Support phone", settings.supportPhone],
+        ["WhatsApp number", settings.whatsappNumber],
+      ],
+    },
+    {
+      title: "Delivery",
+      icon: Truck,
+      fields: [
+        ["Minimum order", String(settings.minimumOrder)],
+        ["Delivery fee", String(settings.deliveryFee)],
+        ["Free delivery threshold", String(settings.freeDeliveryThreshold)],
+        ["Packaging fee", String(settings.packagingFee)],
+      ],
+    },
+    {
+      title: "Payments",
+      icon: CreditCard,
+      fields: [
+        ["GST rate", String(settings.gstRate)],
+        ["COD enabled", "Yes"],
+        ["Razorpay enabled", "No"],
+        ["Refund SLA", "24 hours"],
+      ],
+    },
+    {
+      title: "Notifications",
+      icon: BellRing,
+      fields: [
+        ["Order WhatsApp alerts", "Enabled"],
+        ["Abandoned cart alerts", "Enabled"],
+        ["Low stock alerts", "Enabled"],
+        ["Admin daily digest", "9:00 PM"],
+      ],
+    },
+  ];
+
   return (
     <main className="min-h-screen bg-white">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">

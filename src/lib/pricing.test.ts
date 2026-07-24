@@ -18,8 +18,8 @@ describe("cart pricing", () => {
     expect(totals.subtotal).toBe(634);
     expect(totals.discount).toBe(50);
     expect(totals.delivery).toBe(0);
-    expect(totals.packaging).toBe(18);
-    expect(totals.gst).toBe(30);
-    expect(totals.grandTotal).toBe(632);
+    expect(totals.packaging).toBe(0);
+    expect(totals.gst).toBe(29);
+    expect(totals.grandTotal).toBe(613);
   });
 });

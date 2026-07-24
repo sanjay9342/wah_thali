@@ -19,7 +19,9 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { MobileNav } from "@/components/mobile-nav";
-import { categories, products } from "@/lib/data";
+import { SiteFooter } from "@/components/site-footer";
+import { aboutWahThali, business } from "@/lib/business";
+import { categories as fallbackCategories, products as fallbackProducts } from "@/lib/data";
 import { calculateCartTotals, formatRupees } from "@/lib/pricing";
 import { writeStoredCart } from "@/lib/cart-storage";
 import { useStoredCart } from "@/lib/use-stored-cart";
@@ -128,7 +130,15 @@ function ProductCard({
   );
 }
 
-export function MenuExperience() {
+export function MenuExperience({
+  initialCategories = fallbackCategories,
+  initialProducts = fallbackProducts,
+}: {
+  initialCategories?: string[];
+  initialProducts?: Product[];
+}) {
+  const categories = initialCategories;
+  const products = initialProducts;
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   const [location, setLocation] = useState("221B Baker Street, Salt Lake");
@@ -169,9 +179,9 @@ export function MenuExperience() {
         `${product.name} ${product.category} ${product.description}`.toLowerCase().includes(needle);
       return categoryMatch && textMatch;
     });
-  }, [activeCategory, query]);
+  }, [activeCategory, products, query]);
 
-  const totals = calculateCartTotals(cart, "WAH50");
+  const totals = calculateCartTotals(cart, "WAH50", products);
 
   function persist(next: CartLine[]) {
     writeStoredCart(next);
@@ -490,6 +500,28 @@ export function MenuExperience() {
         </div>
       </section>
 
+      <section className="mx-auto max-w-6xl px-4 pb-8 sm:px-6 lg:px-8">
+        <div className="rounded-[26px] bg-white p-5 shadow-sm ring-1 ring-border sm:p-6">
+          <p className="text-xs font-black uppercase tracking-widest text-red">About Wah Thali</p>
+          <h2 className="mt-2 text-2xl font-black text-maroon">{business.legalName}</h2>
+          <p className="mt-3 max-w-4xl text-sm leading-7 text-muted">{aboutWahThali}</p>
+          <div className="mt-4 flex flex-wrap gap-2 text-sm font-black">
+            <a href={`tel:${business.phone}`} className="rounded-xl bg-cream px-3 py-2 text-maroon">
+              Call {business.phone}
+            </a>
+            <a href={`mailto:${business.email}`} className="rounded-xl bg-cream px-3 py-2 text-maroon">
+              {business.email}
+            </a>
+            <a href={business.instagramUrl} className="rounded-xl bg-cream px-3 py-2 text-red">
+              Instagram
+            </a>
+            <a href={business.facebookUrl} className="rounded-xl bg-cream px-3 py-2 text-red">
+              Facebook
+            </a>
+          </div>
+        </div>
+      </section>
+
       {cart.length ? (
         <div className="fixed bottom-[92px] left-0 right-0 z-40 px-4">
           <Link prefetch href="/cart" className="mx-auto flex max-w-xl items-center justify-between rounded-2xl bg-maroon px-5 py-4 font-black text-white shadow-2xl">
@@ -499,6 +531,7 @@ export function MenuExperience() {
         </div>
       ) : null}
 
+      <SiteFooter />
       <MobileNav />
 
       {activePopup ? (

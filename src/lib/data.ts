@@ -2,14 +2,14 @@ import type { BusinessSettings, Coupon, Product } from "./types";
 
 export const settings: BusinessSettings = {
   gstRate: 0.05,
-  packagingFee: 18,
-  deliveryFee: 39,
+  packagingFee: 0,
+  deliveryFee: 40,
   freeDeliveryThreshold: 499,
   minimumOrder: 149,
   serviceablePins: ["700001", "700016", "700019", "700029", "700091"],
-  openingHours: "10:30 AM - 11:00 PM",
-  supportPhone: "+91-90000-00000",
-  whatsappNumber: "919000000000",
+  openingHours: "11:30 AM - 10:00 PM",
+  supportPhone: "7001323730",
+  whatsappNumber: "917001323730",
 };
 
 export const categories = [

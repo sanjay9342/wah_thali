@@ -1,7 +1,9 @@
 import { CalendarDays, Copy, Edit3, Plus, TicketPercent, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { coupons, products } from "@/lib/data";
+import { getCouponsFromDb, getProductsFromDb } from "@/lib/db";
 import { formatRupees } from "@/lib/pricing";
+
+export const dynamic = "force-dynamic";
 
 const campaignRows = [
   { code: "WAHTHALI20", title: "Flat 20% off all thalis", audience: "Homepage slider", used: 142, cap: 500, status: "Live" },
@@ -9,7 +11,9 @@ const campaignRows = [
   { code: "WINBACK75", title: "Rs 75 off for churn risk", audience: "Inactive 30 days", used: 31, cap: 120, status: "Live" },
 ];
 
-export default function AdminCouponsPage() {
+export default async function AdminCouponsPage() {
+  const [coupons, products] = await Promise.all([getCouponsFromDb(), getProductsFromDb()]);
+
   return (
     <main className="min-h-screen bg-white">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">

@@ -11,8 +11,11 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { coupons, dashboard, products } from "@/lib/data";
+import { dashboard } from "@/lib/data";
+import { getCouponsFromDb, getProductsFromDb } from "@/lib/db";
 import { formatRupees } from "@/lib/pricing";
+
+export const dynamic = "force-dynamic";
 
 const lowStock = [
   ["Rice", "18 kg", "Order by 6 PM"],
@@ -20,14 +23,15 @@ const lowStock = [
   ["Packaging bowls", "42 pcs", "Vendor follow-up"],
 ];
 
-const operations = [
-  ["Open orders", "18", "6 preparing, 4 packed"],
-  ["Unavailable items", String(products.filter((product) => !product.available).length), "Auto-hidden from menu"],
-  ["Active coupons", String(coupons.length), "2 recover abandoned carts"],
-  ["Kitchen capacity", "78%", "Lunch rush active"],
-];
+export default async function AdminPage() {
+  const [products, coupons] = await Promise.all([getProductsFromDb(), getCouponsFromDb()]);
+  const operations = [
+    ["Open orders", "18", "6 preparing, 4 packed"],
+    ["Unavailable items", String(products.filter((product) => !product.available).length), "Auto-hidden from menu"],
+    ["Active coupons", String(coupons.length), "2 recover abandoned carts"],
+    ["Kitchen capacity", "78%", "Lunch rush active"],
+  ];
 
-export default function AdminPage() {
   return (
     <main className="min-h-screen bg-white">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">

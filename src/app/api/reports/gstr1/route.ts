@@ -1,0 +1,43 @@
+import { NextResponse } from "next/server";
+import { getGstr1Rows } from "@/lib/invoice";
+
+export async function GET() {
+  const header = [
+    "GSTIN/UIN of Recipient",
+    "Invoice Number",
+    "Invoice date",
+    "Place Of Supply",
+    "Invoice Value",
+    "Rate",
+    "Taxable Value",
+    "CGST",
+    "SGST",
+    "IGST",
+    "Cess",
+  ];
+
+  const rows = getGstr1Rows().map((row) => [
+    row.gstin,
+    row.invoiceNumber,
+    row.date,
+    row.placeOfSupply,
+    row.invoiceValue,
+    row.rate,
+    row.taxableValue,
+    row.cgst,
+    row.sgst,
+    row.igst,
+    row.cess,
+  ]);
+
+  const csv = [header, ...rows]
+    .map((line) => line.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(","))
+    .join("\n");
+
+  return new NextResponse(csv, {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": 'attachment; filename="wah-thali-gstr1.csv"',
+    },
+  });
+}

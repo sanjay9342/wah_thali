@@ -50,3 +50,15 @@ textarea {
   background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 18px 48px rgba(141, 0, 33, 0.08);
 }
+
+@media print {
+  header,
+  footer,
+  nav {
+    display: none !important;
+  }
+
+  body {
+    background: #fff;
+  }
+}

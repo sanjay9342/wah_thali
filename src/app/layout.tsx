@@ -8,13 +8,13 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Wah Thali | Fresh Indian Meals",
+  title: "Wah Thali | Fresh Homestyle Thalis in Kolkata",
   description:
-    "Order thalis, biryani, Chinese combos, subscriptions, and corporate meals from Wah Thali.",
+    "Order fresh thalis, biryani, Chinese combos, subscriptions, and corporate meals from Wah Thali, a unit of Backyard Bol LLP.",
   manifest: "/manifest.json",
   openGraph: {
     title: "Wah Thali",
-    description: "Fresh thalis, fast delivery, loyalty rewards, and corporate meals.",
+    description: "Fresh thalis, fast delivery, loyalty rewards, and corporate meals in Kolkata.",
     type: "website",
   },
 };

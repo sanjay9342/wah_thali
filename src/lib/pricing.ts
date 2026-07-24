@@ -1,5 +1,6 @@
 import { coupons, products, settings } from "./data";
 import type { CartLine, Coupon } from "./types";
+import type { Product } from "./types";
 
 export type CartTotals = {
   subtotal: number;
@@ -11,8 +12,8 @@ export type CartTotals = {
   freeDeliveryGap: number;
 };
 
-export function getProductPrice(line: CartLine): number {
-  const product = products.find((item) => item.id === line.productId);
+export function getProductPrice(line: CartLine, productCatalog: Product[] = products): number {
+  const product = productCatalog.find((item) => item.id === line.productId);
   if (!product) {
     throw new Error(`Product ${line.productId} not found`);
   }
@@ -45,9 +46,14 @@ export function applyCoupon(subtotal: number, coupon?: Coupon): number {
   return Math.min((subtotal * coupon.value) / 100, coupon.maxDiscount ?? subtotal);
 }
 
-export function calculateCartTotals(lines: CartLine[], couponCode?: string): CartTotals {
-  const subtotal = lines.reduce((total, line) => total + getProductPrice(line), 0);
-  const coupon = coupons.find((item) => item.code === couponCode?.toUpperCase());
+export function calculateCartTotals(
+  lines: CartLine[],
+  couponCode?: string,
+  productCatalog: Product[] = products,
+  couponCatalog: Coupon[] = coupons,
+): CartTotals {
+  const subtotal = lines.reduce((total, line) => total + getProductPrice(line, productCatalog), 0);
+  const coupon = couponCatalog.find((item) => item.code === couponCode?.toUpperCase());
   const discount = applyCoupon(subtotal, coupon);
   const packaging = lines.length > 0 ? settings.packagingFee : 0;
   const delivery =

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { CalendarClock, CreditCard, MapPin, ShieldCheck } from "lucide-react";
+import { business } from "@/lib/business";
 import { settings } from "@/lib/data";
 
 const paymentMethods = ["Cash on Delivery", "Razorpay test mode", "UPI", "Cards and wallets"];
@@ -27,7 +28,18 @@ export function CheckoutForm() {
               </label>
             ))}
           </div>
-          <p className="mt-3 text-sm text-muted">Serviceable PINs: {settings.serviceablePins.join(", ")}</p>
+          <div className="mt-3 rounded-2xl bg-cream p-3 text-sm text-muted">
+            <p className="font-bold text-charcoal">Delivery rules</p>
+            <p className="mt-1">Delivery charges are auto calculated by distance. Packaging charge is Nil.</p>
+            <div className="mt-2 grid gap-1 text-xs font-bold sm:grid-cols-2">
+              {business.deliveryCharges.map((charge) => (
+                <span key={charge.label}>
+                  {charge.label}: Rs {charge.amount}
+                </span>
+              ))}
+            </div>
+            <p className="mt-2">Serviceable PINs: {settings.serviceablePins.join(", ")}</p>
+          </div>
         </div>
 
         <div className="surface rounded-2xl p-5">
@@ -87,8 +99,18 @@ export function CheckoutForm() {
         <ShieldCheck className="text-maroon" />
         <h2 className="mt-3 text-xl font-black text-maroon">Server validated order</h2>
         <p className="mt-2 text-sm leading-6 text-muted">
-          Totals, modifiers, coupon, loyalty redemption, GST, and delivery rules are recalculated on the server before payment capture.
+          Totals, modifiers, coupon, loyalty redemption, GST, and distance-based delivery rules are recalculated on the server before payment capture.
         </p>
+        <div className="mt-4 grid gap-2 rounded-lg bg-cream p-3 text-xs font-bold text-muted">
+          <p>Cancellation allowed only before preparation starts. Client rule: {business.cancellationWindow}.</p>
+          <p>Approved refunds are processed in {business.refundTimeline}.</p>
+          <div className="flex flex-wrap gap-2 text-red">
+            <Link href="/terms-and-conditions">Terms</Link>
+            <Link href="/refund-cancellation-policy">Refunds</Link>
+            <Link href="/delivery-policy">Delivery</Link>
+            <Link href="/privacy-policy">Privacy</Link>
+          </div>
+        </div>
         <p className="mt-4 rounded-lg bg-cream p-3 text-sm font-bold text-maroon" aria-live="polite">
           {message}
         </p>
