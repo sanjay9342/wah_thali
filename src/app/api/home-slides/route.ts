@@ -22,11 +22,30 @@ const slidesSchema = z.object({
 
 export async function GET() {
   if (!isDatabaseConfigured()) {
-    return NextResponse.json({ slides: defaultHomeSlides, configured: false });
+    return NextResponse.json({ slides: defaultHomeSlides, configured: false, connected: false });
   }
 
-  const row = await prisma.businessSetting.findUnique({ where: { key: "homeSlides" } });
-  return NextResponse.json({ slides: row?.value ?? defaultHomeSlides, configured: true });
+  try {
+    const row = await prisma.businessSetting.findUnique({ where: { key: "homeSlides" } });
+    return NextResponse.json({
+      slides: row?.value ?? defaultHomeSlides,
+      configured: true,
+      connected: true,
+      source: row ? "database" : "default",
+    });
+  } catch (error) {
+    console.error("Home slides API database read failed.", error);
+    return NextResponse.json(
+      {
+        slides: defaultHomeSlides,
+        configured: true,
+        connected: false,
+        source: "default",
+        error: "Database read failed. Check DATABASE_URL in Netlify environment variables and Function logs.",
+      },
+      { status: 200 },
+    );
+  }
 }
 
 export async function PUT(request: Request) {
