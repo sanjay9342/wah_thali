@@ -1,7 +1,7 @@
 import { business } from "@/lib/business";
 
 export const sampleInvoice = {
-  invoiceNumber: "WT-10021",
+  invoiceNumber: "WH0001",
   date: "24/07/2026, 01:10 PM",
   customerName: "Sanjay",
   paymentMode: "Cash on Delivery",

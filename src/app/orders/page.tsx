@@ -1,188 +1,147 @@
 import {
-  ArrowLeft,
-  Bike,
-  CheckCircle2,
   ChevronRight,
-  Clock,
-  CookingPot,
-  Download,
-  MessageCircle,
-  PackageCheck,
-  Phone,
-  ReceiptText,
+  Mic,
+  MoreVertical,
   RotateCcw,
+  Search,
   Star,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
-import { Header } from "@/components/header";
 import { MobileNav } from "@/components/mobile-nav";
-import { products, settings } from "@/lib/data";
+import { products } from "@/lib/data";
 import { formatRupees } from "@/lib/pricing";
 
-const activeOrder = {
-  id: "WT-10021",
-  status: "Preparing",
-  eta: "32 min",
-  placedAt: "5:12 PM",
-  total: 488,
-  rider: "Assigning soon",
-  items: [
-    { name: products[0].name, qty: 1, price: 229 },
-    { name: products[2].name, qty: 1, price: 249 },
-  ],
-};
-
-const timeline = [
-  ["Placed", "5:12 PM", CheckCircle2, true],
-  ["Confirmed", "5:14 PM", CheckCircle2, true],
-  ["Preparing", "Now", CookingPot, true],
-  ["Packed", "Expected 5:42 PM", PackageCheck, false],
-  ["Out for delivery", "Expected 5:48 PM", Bike, false],
-  ["Delivered", "Expected 6:10 PM", Clock, false],
-] as const;
-
-const pastOrders = [
-  { id: "WT-10018", date: "Yesterday", item: "Veg Mini Thali + Gulab Jamun", total: 134, rating: 4.5, status: "Delivered" },
-  { id: "WT-10011", date: "18 Jul", item: "Chinese Hakka Combo", total: 189, rating: 4.4, status: "Delivered" },
-  { id: "WT-10002", date: "12 Jul", item: "Paneer Butter Masala Combo", total: 219, rating: 4.6, status: "Delivered" },
+const orderHistory = [
+  {
+    id: "WH0001",
+    placedAt: "Order placed on 12 Jul, 12:06PM",
+    status: "Delivered",
+    total: 249.45,
+    image: products[4].image,
+    productId: products[4].id,
+    productName: products[4].name,
+    items: [
+      { name: "Paneer Butter Masala Combo", qty: 1, dietaryType: "VEG" },
+      { name: "Chicken puff", qty: 1, dietaryType: "NON_VEG" },
+      { name: "Watermelon juice", qty: 1, dietaryType: "VEG" },
+      { name: "Wheat bread", qty: 1, dietaryType: "VEG" },
+    ],
+  },
+  {
+    id: "WH0002",
+    placedAt: "Order placed on 29 Jun, 8:31PM",
+    status: "Delivered",
+    total: 121.9,
+    image: products[1].image,
+    productId: products[1].id,
+    productName: products[1].name,
+    items: [
+      { name: "Watermelon Juice", qty: 1, dietaryType: "VEG" },
+      { name: "Kadala Mittai", qty: 1, dietaryType: "VEG" },
+    ],
+  },
+  {
+    id: "WH0003",
+    placedAt: "Order placed on 18 Jun, 7:15PM",
+    status: "Delivered",
+    total: 189,
+    image: products[3].image,
+    productId: products[3].id,
+    productName: products[3].name,
+    items: [
+      { name: "Chinese Hakka Combo", qty: 1, dietaryType: "NON_VEG" },
+      { name: "Wheat Bread", qty: 1, dietaryType: "VEG" },
+    ],
+  },
 ];
 
 export default function OrdersPage() {
   return (
     <>
-      <Header />
-      <main className="mx-auto w-full max-w-[430px] px-4 pb-32 pt-5 sm:max-w-5xl sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between">
-          <Link href="/" className="grid h-10 w-10 place-items-center rounded-full bg-white text-charcoal shadow-sm ring-1 ring-border" aria-label="Back home">
-            <ArrowLeft size={20} />
-          </Link>
-          <h1 className="text-xl font-black text-charcoal">Orders</h1>
-          <Link href="/support" className="grid h-10 w-10 place-items-center rounded-full bg-red/10 text-red" aria-label="Support">
-            <MessageCircle size={20} />
-          </Link>
-        </div>
+      <main className="mx-auto min-h-screen max-w-[430px] bg-white px-4 pb-32 pt-8 text-charcoal sm:my-6 sm:rounded-[28px] sm:shadow-[0_18px_60px_rgba(34,31,32,0.12)]">
+        <label className="flex h-16 items-center gap-4 rounded-2xl bg-white px-4 shadow-[0_5px_18px_rgba(34,31,32,0.14)] ring-1 ring-border">
+          <Search size={30} className="shrink-0 text-red" strokeWidth={3} />
+          <input
+            className="min-w-0 flex-1 bg-transparent text-[18px] font-bold text-charcoal placeholder:text-muted"
+            placeholder="Search by order or dish..."
+          />
+          <span className="h-9 w-px bg-border" />
+          <Mic size={24} className="shrink-0 text-red" />
+        </label>
 
-        <div className="mt-5 grid grid-cols-3 gap-1 rounded-2xl bg-white p-1 shadow-sm ring-1 ring-border">
-          {["Active", "History", "Invoices"].map((tab, index) => (
-            <button key={tab} className={`h-9 rounded-xl text-xs font-black ${index === 0 ? "bg-red text-white shadow-[0_8px_18px_rgba(214,0,50,0.22)]" : "text-muted"}`}>
-              {tab}
-            </button>
-          ))}
-        </div>
-
-        <section className="mt-5 overflow-hidden rounded-[28px] bg-white shadow-[0_14px_34px_rgba(34,31,32,0.08)] ring-1 ring-border">
-          <div className="bg-gradient-to-r from-maroon to-red p-5 text-white">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-black uppercase tracking-widest text-white/70">Live order</p>
-                <h2 className="mt-1 text-2xl font-black">{activeOrder.id}</h2>
-                <p className="mt-1 text-sm font-bold text-white/80">{activeOrder.status} · ETA {activeOrder.eta}</p>
-              </div>
-              <span className="rounded-2xl bg-white px-3 py-2 text-sm font-black text-maroon">{formatRupees(activeOrder.total)}</span>
-            </div>
-            <Link href="/order/WT-10021/track" className="mt-4 inline-flex h-10 items-center rounded-xl bg-white px-4 text-sm font-black text-maroon">
-              Full tracking
-            </Link>
-          </div>
-
-          <div className="p-5">
-            <div className="space-y-4">
-              {timeline.map(([label, time, Icon, done], index) => (
-                <div key={label} className="grid grid-cols-[36px_1fr] gap-3">
-                  <div className="relative grid justify-items-center">
-                    <span className={`z-10 grid h-9 w-9 place-items-center rounded-xl ${done ? "bg-red text-white" : "bg-cream text-muted"}`}>
-                      <Icon size={17} />
-                    </span>
-                    {index < timeline.length - 1 ? <span className="absolute top-9 h-full w-px bg-border" /> : null}
-                  </div>
-                  <div className="pb-1">
-                    <p className="font-black text-charcoal">{label}</p>
-                    <p className="text-sm font-semibold text-muted">{time}</p>
-                  </div>
+        <section className="mt-7 grid gap-6">
+          {orderHistory.map((order) => (
+            <article key={order.id} className="overflow-hidden rounded-2xl bg-white shadow-[0_3px_12px_rgba(34,31,32,0.16)] ring-1 ring-border">
+              <div className="grid grid-cols-[78px_1fr_auto] gap-3 p-4">
+                <div className="relative h-[70px] w-[70px] overflow-hidden rounded-xl bg-cream">
+                  <Image src={order.image} alt="" fill sizes="70px" className="object-cover" />
                 </div>
-              ))}
-            </div>
-
-            <div className="mt-5 rounded-2xl bg-cream p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-black text-charcoal">Delivery partner</p>
-                  <p className="mt-1 text-sm font-semibold text-muted">{activeOrder.rider}</p>
-                </div>
-                <div className="flex gap-2">
-                  <a href={`tel:${settings.supportPhone}`} className="grid h-10 w-10 place-items-center rounded-xl bg-white text-red" aria-label="Call support">
-                    <Phone size={18} />
-                  </a>
-                  <a href={`https://wa.me/${settings.whatsappNumber}`} className="grid h-10 w-10 place-items-center rounded-xl bg-white text-red" aria-label="Message support">
-                    <MessageCircle size={18} />
-                  </a>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-5">
-              <h3 className="font-black text-charcoal">Items</h3>
-              <div className="mt-2 grid gap-2">
-                {activeOrder.items.map((item) => (
-                  <div key={item.name} className="flex items-center justify-between rounded-xl bg-cream px-3 py-2 text-sm">
-                    <span className="font-bold text-charcoal">{item.qty} x {item.name}</span>
-                    <span className="font-black text-maroon">{formatRupees(item.price)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-black text-charcoal">Order history</h2>
-            <button className="text-xs font-black text-red">Filter</button>
-          </div>
-          <div className="mt-3 grid gap-3">
-            {pastOrders.map((order) => (
-              <article key={order.id} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-border">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-black text-charcoal">{order.id} · {order.status}</p>
-                    <p className="mt-1 truncate text-sm font-semibold text-muted">{order.item}</p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-black">
-                      <span className="inline-flex items-center gap-1 rounded-lg bg-maroon px-2 py-1 text-white">{order.rating} <Star size={11} className="fill-white" /></span>
-                      <span className="text-muted">{order.date}</span>
-                      <span className="text-maroon">{formatRupees(order.total)}</span>
-                    </div>
-                  </div>
-                  <ChevronRight size={18} className="shrink-0 text-muted" />
-                </div>
-                <div className="mt-4 flex gap-2">
-                  <Link href="/menu" className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-red px-3 text-sm font-black text-white">
-                    <RotateCcw size={16} /> Reorder
+                <div className="min-w-0">
+                  <h2 className="text-[20px] font-black leading-tight text-charcoal">Order #{order.id}</h2>
+                  <p className="mt-1 truncate text-[14px] font-semibold text-muted">{order.placedAt.replace("Order placed on ", "")}</p>
+                  <Link href="/menu" className="mt-1 inline-flex text-[14px] font-black text-red">
+                    View menu
+                    <ChevronRight size={15} />
                   </Link>
-                  <button className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-border px-3 text-sm font-black text-maroon">
-                    <Download size={16} /> Invoice
-                  </button>
                 </div>
-              </article>
-            ))}
-          </div>
-        </section>
+                <button className="grid h-10 w-8 place-items-center text-charcoal" aria-label={`More options for ${order.id}`}>
+                  <MoreVertical size={22} />
+                </button>
+              </div>
 
-        <section className="mt-6 rounded-[24px] bg-white p-5 shadow-sm ring-1 ring-border">
-          <div className="flex items-center gap-3">
-            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-cream text-red">
-              <ReceiptText size={22} />
-            </span>
-            <div>
-              <h2 className="font-black text-charcoal">Need invoice or help?</h2>
-              <p className="mt-1 text-sm font-semibold text-muted">Download bills, request refunds, or raise a ticket.</p>
-            </div>
-          </div>
-          <Link href="/support" className="mt-4 inline-flex h-11 w-full items-center justify-center rounded-xl bg-maroon text-sm font-black text-white">
-            Contact support
-          </Link>
+              <div className="border-t border-border px-4 py-4">
+                <div className="grid gap-4">
+                  {order.items.map((item) => (
+                    <div key={`${order.id}-${item.name}`} className="flex items-center gap-3">
+                      <DietIcon dietaryType={item.dietaryType} />
+                      <p className="text-[17px] font-bold leading-5 text-charcoal">
+                        {item.qty} x {item.name}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-5 border-t border-dashed border-border pt-4">
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-3">
+                    <div>
+                      <p className="text-[14px] font-black text-muted">{order.placedAt}</p>
+                      <p className="mt-2 text-[17px] font-bold text-muted">{order.status}</p>
+                    </div>
+                    <span className="inline-flex items-center text-[17px] font-black text-charcoal">
+                      {formatRupees(order.total)}
+                      <ChevronRight size={20} className="text-muted" />
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid grid-cols-[1fr_auto] items-center gap-3 border-t border-border pt-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[17px] font-black text-charcoal">Rate</span>
+                    {[1, 2, 3, 4, 5].map((value) => (
+                      <Star key={value} size={27} className="text-border" />
+                    ))}
+                  </div>
+                  <Link href="/menu" className="inline-flex h-14 items-center gap-2 rounded-xl bg-red px-5 text-[17px] font-black text-white">
+                    <RotateCcw size={18} /> Reorder
+                  </Link>
+                </div>
+              </div>
+            </article>
+          ))}
         </section>
       </main>
       <MobileNav />
     </>
+  );
+}
+
+function DietIcon({ dietaryType }: { dietaryType: string }) {
+  const nonVeg = dietaryType === "NON_VEG";
+
+  return (
+    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-[4px] border ${nonVeg ? "border-red" : "border-maroon"}`}>
+      <span className={`h-2.5 w-2.5 rounded-full ${nonVeg ? "bg-red" : "bg-maroon"}`} />
+    </span>
   );
 }

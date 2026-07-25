@@ -1,19 +1,23 @@
+"use client";
+
 import { Bell, Heart, History, MapPin, Search, ShoppingCart, User, MessageCircle } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { settings } from "@/lib/data";
+import { useDeliveryLocation } from "@/lib/delivery-location";
 
-export function Header({ showContact = true }: { showContact?: boolean }) {
+export function Header({ showContact = true, whatsappNumber = settings.whatsappNumber }: { showContact?: boolean; whatsappNumber?: string }) {
   const whatsappText = encodeURIComponent("Hi Wah Thali, I want to order food.");
+  const deliveryLocation = useDeliveryLocation();
 
   return (
     <header className="sticky top-0 z-50 overflow-hidden border-b border-border bg-white/95 backdrop-blur">
       <div className="mx-auto grid min-h-[72px] w-full max-w-[430px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-4 py-3 sm:max-w-7xl sm:px-6 md:min-h-20 md:grid-cols-[auto_1fr_auto] md:gap-3 lg:px-8">
-        <Link href="/account" className="flex min-w-0 items-center gap-1.5 md:hidden">
-          <MapPin size={16} className="shrink-0 text-red" />
+        <Link href="/address" className="flex min-w-0 items-center gap-1.5 md:hidden">
+            <MapPin size={16} className="shrink-0 text-red" />
           <span className="min-w-0">
             <span className="block text-[10px] font-bold leading-none text-muted">Deliver to</span>
-            <span className="block max-w-24 truncate text-xs font-black text-charcoal">Salt Lake</span>
+            <span className="block max-w-24 truncate text-xs font-black text-charcoal">{deliveryLocation.address}</span>
           </span>
         </Link>
 
@@ -31,9 +35,9 @@ export function Header({ showContact = true }: { showContact?: boolean }) {
         </Link>
 
         <div className="hidden min-w-0 items-center gap-3 md:flex">
-          <Link href="/account" className="flex h-11 max-w-56 items-center gap-2 rounded-lg border border-border px-3 text-sm font-semibold text-charcoal">
+          <Link href="/address" className="flex h-11 max-w-56 items-center gap-2 rounded-lg border border-border px-3 text-sm font-semibold text-charcoal">
             <MapPin size={18} className="min-w-4 text-red" />
-            <span className="truncate">Salt Lake, Kolkata</span>
+            <span className="truncate">{deliveryLocation.address}</span>
           </Link>
 
           <label className="relative min-w-0 flex-1">
@@ -67,7 +71,7 @@ export function Header({ showContact = true }: { showContact?: boolean }) {
 
         {showContact ? (
           <a
-            href={`https://wa.me/${settings.whatsappNumber}?text=${whatsappText}`}
+            href={`https://wa.me/${whatsappNumber}?text=${whatsappText}`}
             className="grid h-10 w-10 min-w-10 place-items-center justify-self-end rounded-full bg-maroon text-white sm:h-11 sm:w-11 sm:min-w-11 lg:ml-1 lg:rounded-lg"
             aria-label="Chat on WhatsApp"
             title="Chat on WhatsApp"

@@ -45,6 +45,19 @@ textarea {
   outline-color: var(--brand-gold);
 }
 
+button:not(:disabled),
+a,
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+}
+
 .surface {
   border: 1px solid var(--brand-border);
   background: rgba(255, 255, 255, 0.9);

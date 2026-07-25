@@ -1,8 +1,8 @@
 import {
-  AlertTriangle,
   BarChart3,
   ClipboardList,
   IndianRupee,
+  ListTree,
   Percent,
   Package,
   PackageCheck,
@@ -11,25 +11,19 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { dashboard } from "@/lib/data";
-import { getCouponsFromDb, getProductsFromDb } from "@/lib/db";
+import { AdminDashboardProductsClient } from "@/components/admin-dashboard-products-client";
+import { getAdminDashboardMetrics, getProductsFromDb } from "@/lib/db";
 import { formatRupees } from "@/lib/pricing";
 
 export const dynamic = "force-dynamic";
 
-const lowStock = [
-  ["Rice", "18 kg", "Order by 6 PM"],
-  ["Chicken curry base", "7 portions", "Prep required"],
-  ["Packaging bowls", "42 pcs", "Vendor follow-up"],
-];
-
 export default async function AdminPage() {
-  const [products, coupons] = await Promise.all([getProductsFromDb(), getCouponsFromDb()]);
+  const [products, metrics] = await Promise.all([getProductsFromDb(), getAdminDashboardMetrics()]);
   const operations = [
-    ["Open orders", "18", "6 preparing, 4 packed"],
-    ["Unavailable items", String(products.filter((product) => !product.available).length), "Auto-hidden from menu"],
-    ["Active coupons", String(coupons.length), "2 recover abandoned carts"],
-    ["Kitchen capacity", "78%", "Lunch rush active"],
+    ["Open orders", String(metrics.openOrders), "Need restaurant action"],
+    ["Unavailable items", String(metrics.unavailableItems), "Hidden from menu"],
+    ["Active coupons", String(metrics.activeCoupons), "Live coupon codes"],
+    ["Low stock", String(metrics.lowStock.length), "Needs prep or purchase"],
   ];
 
   return (
@@ -45,6 +39,7 @@ export default async function AdminPage() {
             {[
               ["/admin/orders", ClipboardList, "Orders"],
               ["/admin/inventory", PackageCheck, "Inventory"],
+              ["/admin/categories", ListTree, "Categories"],
               ["/admin/coupons", Percent, "Coupons"],
               ["/admin/customers", Users, "Customers"],
               ["/admin/settings", Settings, "Settings"],
@@ -58,10 +53,10 @@ export default async function AdminPage() {
 
         <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            [IndianRupee, "Today's sales", formatRupees(dashboard.salesToday), "Net " + formatRupees(dashboard.netRevenue)],
-            [ClipboardList, "Orders", String(dashboard.orders), "18 live now"],
-            [Users, "Repeat customers", String(dashboard.repeatCustomers), "VIP retention 74%"],
-            [Package, "Active products", String(products.filter((product) => product.available).length), `${products.length} total SKUs`],
+            [IndianRupee, "Today's sales", formatRupees(metrics.salesToday), "Net " + formatRupees(metrics.netRevenue)],
+            [ClipboardList, "Orders", String(metrics.totalOrders), `${metrics.openOrders} live now`],
+            [Users, "Customers", String(metrics.repeatCustomers), "Customers with orders"],
+            [Package, "Active products", String(metrics.activeProducts), `${metrics.totalProducts} total SKUs`],
           ].map(([Icon, label, value, detail]) => (
             <div key={String(label)} className="surface rounded-2xl p-5">
               <Icon className="text-red" size={24} />
@@ -91,6 +86,7 @@ export default async function AdminPage() {
             <div className="mt-5 flex flex-wrap gap-2">
               {[
                 ["/admin/inventory", "Manage products"],
+                ["/admin/categories", "Menu categories"],
                 ["/admin/orders", "Kitchen board"],
                 ["/admin/coupons", "Create coupon"],
               ].map(([href, label]) => (
@@ -102,20 +98,18 @@ export default async function AdminPage() {
           </div>
 
           <aside className="surface rounded-2xl p-5">
-            <h2 className="flex items-center gap-2 text-xl font-black text-maroon">
-              <AlertTriangle className="text-red" /> Action queue
-            </h2>
+            <h2 className="text-xl font-black text-maroon">Action queue</h2>
             <div className="mt-4 space-y-3">
-              {dashboard.leakageAlerts.map((alert) => (
+              {metrics.actionQueue.length ? metrics.actionQueue.map((alert) => (
                 <div key={alert} className="rounded-xl bg-cream p-3 text-sm font-bold">{alert}</div>
-              ))}
-              {lowStock.map(([item, count, action]) => (
-                <div key={item} className="rounded-xl border border-border p-3">
+              )) : <div className="rounded-xl bg-cream p-3 text-sm font-bold">No urgent actions right now.</div>}
+              {metrics.lowStock.slice(0, 5).map((product) => (
+                <div key={product.id} className="rounded-xl border border-border p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="font-black text-charcoal">{item}</p>
-                    <span className="text-sm font-black text-red">{count}</span>
+                    <p className="font-black text-charcoal">{product.name}</p>
+                    <span className="text-sm font-black text-red">{product.stock}</span>
                   </div>
-                  <p className="mt-1 text-xs font-bold text-muted">{action}</p>
+                  <p className="mt-1 text-xs font-bold text-muted">Reorder at {product.reorderAt}</p>
                 </div>
               ))}
             </div>
@@ -132,35 +126,7 @@ export default async function AdminPage() {
               <ShoppingBag size={17} /> Inventory
             </Link>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] text-left text-sm">
-              <thead className="bg-cream text-maroon">
-                <tr>
-                  {["Product", "Category", "Price", "Status", "Prep", "Action"].map((head) => (
-                    <th key={head} className="p-4">{head}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {products.map((product) => (
-                  <tr key={product.id} className="border-t border-border">
-                    <td className="p-4 font-black">{product.name}</td>
-                    <td className="p-4 text-muted">{product.category}</td>
-                    <td className="p-4 font-black">{formatRupees(product.price)}</td>
-                    <td className="p-4">
-                      <span className={`rounded-lg px-3 py-1 font-black ${product.available ? "bg-cream text-success" : "bg-red/10 text-red"}`}>
-                        {product.available ? "Available" : "Hidden"}
-                      </span>
-                    </td>
-                    <td className="p-4">{product.prepTimeMinutes} min</td>
-                    <td className="p-4">
-                      <button className="rounded-lg border border-border px-3 py-2 font-black text-maroon">Edit</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <AdminDashboardProductsClient initialProducts={products} />
         </section>
       </div>
     </main>

@@ -12,7 +12,7 @@ export default function ConfirmedPage() {
         <section className="surface rounded-2xl p-6 text-center">
           <CheckCircle2 className="mx-auto text-maroon" size={56} />
           <h1 className="mt-4 text-3xl font-black text-maroon">Order confirmed</h1>
-          <p className="mt-2 text-muted">Order WT-10021 is accepted for Cash on Delivery.</p>
+          <p className="mt-2 text-muted">Order WH0001 is accepted for Cash on Delivery.</p>
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl bg-cream p-4">
               <p className="text-sm text-muted">ETA</p>
@@ -28,17 +28,17 @@ export default function ConfirmedPage() {
             </div>
           </div>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
-            <Link href="/order/WT-10021/track" className="inline-flex h-12 items-center gap-2 rounded-lg bg-red px-5 font-black text-white">
+            <Link href="/order/WH0001/track" className="inline-flex h-12 items-center gap-2 rounded-lg bg-red px-5 font-black text-white">
               <ReceiptText size={18} /> Track order
             </Link>
-            <Link href="/order/WT-10021/invoice" className="inline-flex h-12 items-center gap-2 rounded-lg bg-maroon px-5 font-black text-white">
+            <Link href="/order/WH0001/invoice" className="inline-flex h-12 items-center gap-2 rounded-lg bg-maroon px-5 font-black text-white">
               <ReceiptText size={18} /> View invoice
             </Link>
             <Link href="/menu" className="inline-flex h-12 items-center gap-2 rounded-lg border border-border bg-white px-5 font-black">
               <RotateCcw size={18} /> Order again
             </Link>
             <a
-              href={`https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent("I need help with order WT-10021")}`}
+              href={`https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent("I need help with order WH0001")}`}
               className="inline-flex h-12 items-center gap-2 rounded-lg border border-border bg-white px-5 font-black text-maroon"
             >
               <MessageCircle size={18} /> WhatsApp support

@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
-import { getBusinessSettingsFromDb, logActivity } from "@/lib/db";
+import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
 const settingsSchema = z.record(z.string(), z.unknown());
 
 export async function GET() {
-  const settings = await getBusinessSettingsFromDb();
+  const settings = await getRestaurantSettingsFromDb();
   return NextResponse.json({ settings });
 }
 

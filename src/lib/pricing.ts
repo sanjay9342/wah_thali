@@ -1,5 +1,5 @@
 import { coupons, products, settings } from "./data";
-import type { CartLine, Coupon } from "./types";
+import type { BusinessSettings, CartLine, Coupon } from "./types";
 import type { Product } from "./types";
 
 export type CartTotals = {
@@ -34,6 +34,16 @@ export function getProductPrice(line: CartLine, productCatalog: Product[] = prod
   return (product.price + variant.price + addonTotal) * line.quantity;
 }
 
+export function getPricableCartLines(lines: CartLine[], productCatalog: Product[] = products): CartLine[] {
+  return lines.filter((line) => {
+    const product = productCatalog.find((item) => item.id === line.productId);
+    if (!product) return false;
+    const variant = product.variants.find((item) => item.id === line.variantId);
+    if (!variant) return false;
+    return line.addonIds.every((addonId) => product.addons.some((item) => item.id === addonId));
+  });
+}
+
 export function applyCoupon(subtotal: number, coupon?: Coupon): number {
   if (!coupon || subtotal < coupon.minOrder) {
     return 0;
@@ -51,19 +61,21 @@ export function calculateCartTotals(
   couponCode?: string,
   productCatalog: Product[] = products,
   couponCatalog: Coupon[] = coupons,
+  activeSettings: BusinessSettings = settings,
 ): CartTotals {
-  const subtotal = lines.reduce((total, line) => total + getProductPrice(line, productCatalog), 0);
+  const pricableLines = getPricableCartLines(lines, productCatalog);
+  const subtotal = pricableLines.reduce((total, line) => total + getProductPrice(line, productCatalog), 0);
   const coupon = couponCatalog.find((item) => item.code === couponCode?.toUpperCase());
   const discount = applyCoupon(subtotal, coupon);
-  const packaging = lines.length > 0 ? settings.packagingFee : 0;
+  const packaging = pricableLines.length > 0 ? activeSettings.packagingFee : 0;
   const delivery =
-    lines.length > 0 && subtotal - discount < settings.freeDeliveryThreshold
-      ? settings.deliveryFee
+    pricableLines.length > 0 && subtotal - discount < activeSettings.freeDeliveryThreshold
+      ? activeSettings.deliveryFee
       : 0;
   const taxable = Math.max(subtotal - discount + packaging + delivery, 0);
-  const gst = Math.round(taxable * settings.gstRate);
+  const gst = Math.round(taxable * activeSettings.gstRate);
   const grandTotal = taxable + gst;
-  const freeDeliveryGap = Math.max(settings.freeDeliveryThreshold - (subtotal - discount), 0);
+  const freeDeliveryGap = Math.max(activeSettings.freeDeliveryThreshold - (subtotal - discount), 0);
 
   return {
     subtotal,

@@ -5,7 +5,7 @@ import { MobileNav } from "@/components/mobile-nav";
 import { ThermalInvoice } from "@/components/thermal-invoice";
 
 export const metadata: Metadata = {
-  title: "Invoice WT-10021 | Wah Thali",
+  title: "Invoice WH0001 | Wah Thali",
 };
 
 export default function InvoicePage() {
@@ -17,7 +17,7 @@ export default function InvoicePage() {
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="font-black uppercase tracking-widest text-red">Thermal invoice</p>
-              <h1 className="text-3xl font-black text-maroon">Invoice WT-10021</h1>
+              <h1 className="text-3xl font-black text-maroon">Invoice WH0001</h1>
               <p className="mt-1 text-sm font-semibold text-muted">Designed for 58mm or 80mm receipt printers.</p>
             </div>
             <div className="flex gap-2">

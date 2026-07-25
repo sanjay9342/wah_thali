@@ -1,6 +1,7 @@
 import { CartClient } from "@/components/cart-client";
-import { Header } from "@/components/header";
-import { MobileNav } from "@/components/mobile-nav";
+import { getCouponsFromDb, getProductsFromDb, getRestaurantSettingsFromDb } from "@/lib/db";
+
+export const dynamic = "force-dynamic";
 
 export default async function CartPage({
   searchParams,
@@ -8,14 +9,15 @@ export default async function CartPage({
   searchParams: Promise<{ add?: string }>;
 }) {
   const params = await searchParams;
+  const [products, coupons, restaurantSettings] = await Promise.all([
+    getProductsFromDb(),
+    getCouponsFromDb(),
+    getRestaurantSettingsFromDb(),
+  ]);
 
   return (
-    <>
-      <Header showContact={false} />
-      <main className="bg-cream px-4 pb-24 pt-5 sm:px-6 lg:px-8">
-        <CartClient addProductId={params.add} />
-      </main>
-      <MobileNav />
-    </>
+    <main className="bg-[#f2f0f5] sm:px-6 lg:px-8">
+      <CartClient addProductId={params.add} initialProducts={products} initialCoupons={coupons} restaurantSettings={restaurantSettings} />
+    </main>
   );
 }

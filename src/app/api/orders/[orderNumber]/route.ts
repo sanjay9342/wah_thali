@@ -43,7 +43,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ or
     return NextResponse.json({ error: "Invalid order update", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  const existing = await prisma.order.findUnique({ where: { orderNumber } });
+  if (parsed.data.status === "CANCELLED" && !parsed.data.note?.trim()) {
+    return NextResponse.json({ error: "Decline reason is required." }, { status: 400 });
+  }
+
+  const existing = await prisma.order.findUnique({ where: { orderNumber }, include: { items: true } });
   if (!existing) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
@@ -52,19 +56,30 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ or
     return NextResponse.json({ error: `Cannot move from ${existing.status} to ${parsed.data.status}` }, { status: 409 });
   }
 
-  const order = await prisma.order.update({
-    where: { orderNumber },
-    data: {
-      status: parsed.data.status,
-      timeline: {
-        create: {
-          fromStatus: existing.status,
-          toStatus: parsed.data.status,
-          note: parsed.data.note,
+  const order = await prisma.$transaction(async (tx) => {
+    if (parsed.data.status === "CANCELLED" && existing.status !== "CANCELLED") {
+      for (const item of existing.items) {
+        await tx.inventoryItem.updateMany({
+          where: { productId: item.productId },
+          data: { stock: { increment: item.quantity } },
+        });
+      }
+    }
+
+    return tx.order.update({
+      where: { orderNumber },
+      data: {
+        status: parsed.data.status,
+        timeline: {
+          create: {
+            fromStatus: existing.status,
+            toStatus: parsed.data.status,
+            note: parsed.data.note,
+          },
         },
       },
-    },
-    include: { customer: true, items: true, timeline: { orderBy: { createdAt: "asc" } } },
+      include: { customer: true, items: true, timeline: { orderBy: { createdAt: "asc" } } },
+    });
   });
 
   await logActivity({

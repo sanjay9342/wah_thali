@@ -213,6 +213,7 @@ model Product {
   addons      ProductAddon[]
   orderItems  OrderItem[]
   inventory   InventoryItem?
+  reviews     Review[]
 
   @@index([categoryId])
   @@index([available])
@@ -291,6 +292,7 @@ model Order {
   items       OrderItem[]
   payments    Payment[]
   timeline    OrderStatusHistory[]
+  reviews     Review[]
   createdAt   DateTime            @default(now())
 
   @@index([status])
@@ -367,11 +369,19 @@ model SupportTicket {
 model Review {
   id         String   @id @default(cuid())
   customerId String
+  orderId    String
+  productId  String
   rating     Int
   comment    String?
   moderated  Boolean  @default(false)
   customer   Customer @relation(fields: [customerId], references: [id])
+  order      Order    @relation(fields: [orderId], references: [id])
+  product    Product  @relation(fields: [productId], references: [id])
   createdAt  DateTime @default(now())
+
+  @@unique([orderId, productId])
+  @@index([productId])
+  @@index([customerId])
 }
 
 model WhatsAppMessage {

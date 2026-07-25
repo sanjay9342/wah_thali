@@ -318,54 +318,56 @@ async function main() {
     });
   }
 
-  const customer = await prisma.customer.upsert({
-    where: { mobile: "919000000000" },
-    create: {
-      name: "Sanjay",
-      mobile: "919000000000",
-      email: "customer@example.com",
-      loyalty: { create: { points: 1240, tier: "Gold member" } },
-      addresses: {
-        create: {
-          label: "Home",
-          line1: "221B Baker Street",
-          area: "Salt Lake",
-          city: "Kolkata",
-          state: "West Bengal",
-          pinCode: "700091",
-          isDefault: true,
+  if (process.env.WAH_SEED_DEMO_DATA === "true") {
+    const customer = await prisma.customer.upsert({
+      where: { mobile: "919000000000" },
+      create: {
+        name: "Sanjay",
+        mobile: "919000000000",
+        email: "customer@example.com",
+        loyalty: { create: { points: 1240, tier: "Gold member" } },
+        addresses: {
+          create: {
+            label: "Home",
+            line1: "221B Baker Street",
+            area: "Salt Lake",
+            city: "Kolkata",
+            state: "West Bengal",
+            pinCode: "700091",
+            isDefault: true,
+          },
         },
       },
-    },
-    update: { name: "Sanjay" },
-  });
+      update: { name: "Sanjay" },
+    });
 
-  await prisma.order.upsert({
-    where: { orderNumber: "WT-10021" },
-    create: {
-      orderNumber: "WT-10021",
-      customerId: customer.id,
-      status: "PREPARING",
-      subtotal: 488,
-      discount: 0,
-      gst: 15,
-      grandTotal: 550,
-      items: {
-        create: [
-          { productId: "p1", name: "Wah Special Chicken Thali", quantity: 1, price: 229 },
-          { productId: "p3", name: "Kolkata Chicken Biryani", quantity: 1, price: 249 },
-        ],
+    await prisma.order.upsert({
+      where: { orderNumber: "WH0001" },
+      create: {
+        orderNumber: "WH0001",
+        customerId: customer.id,
+        status: "PREPARING",
+        subtotal: 488,
+        discount: 0,
+        gst: 15,
+        grandTotal: 550,
+        items: {
+          create: [
+            { productId: "p1", name: "Wah Special Chicken Thali", quantity: 1, price: 229 },
+            { productId: "p3", name: "Kolkata Chicken Biryani", quantity: 1, price: 249 },
+          ],
+        },
+        timeline: {
+          create: [
+            { toStatus: "NEW", note: "Placed" },
+            { fromStatus: "NEW", toStatus: "CONFIRMED", note: "Confirmed" },
+            { fromStatus: "CONFIRMED", toStatus: "PREPARING", note: "Preparing" },
+          ],
+        },
       },
-      timeline: {
-        create: [
-          { toStatus: "NEW", note: "Placed" },
-          { fromStatus: "NEW", toStatus: "CONFIRMED", note: "Confirmed" },
-          { fromStatus: "CONFIRMED", toStatus: "PREPARING", note: "Preparing" },
-        ],
-      },
-    },
-    update: { status: "PREPARING" },
-  });
+      update: { status: "PREPARING" },
+    });
+  }
 
   await prisma.activityEvent.create({
     data: {

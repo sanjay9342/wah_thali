@@ -35,7 +35,7 @@ export default function TrackPage() {
             <div className="absolute bottom-4 right-4 grid h-16 w-16 place-items-center rounded-full bg-white/15">
               <Bike size={34} />
             </div>
-            <p className="text-xs font-black uppercase tracking-widest text-white/70">WT-10021</p>
+            <p className="text-xs font-black uppercase tracking-widest text-white/70">WH0001</p>
             <h2 className="mt-2 text-3xl font-black">Arrives in 32 min</h2>
             <p className="mt-2 max-w-56 text-sm font-bold text-white/80">Your thali is being prepared fresh in the kitchen.</p>
             <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/20">

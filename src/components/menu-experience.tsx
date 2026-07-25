@@ -1,9 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bell,
-  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -14,18 +13,19 @@ import {
   Plus,
   Search,
   Star,
+  TimerReset,
   Store,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { MobileNav } from "@/components/mobile-nav";
 import { SiteFooter } from "@/components/site-footer";
-import { aboutWahThali, business } from "@/lib/business";
 import { categories as fallbackCategories, products as fallbackProducts } from "@/lib/data";
-import { calculateCartTotals, formatRupees } from "@/lib/pricing";
+import { useDeliveryLocation } from "@/lib/delivery-location";
+import { calculateCartTotals, formatRupees, getPricableCartLines } from "@/lib/pricing";
 import { writeStoredCart } from "@/lib/cart-storage";
 import { useStoredCart } from "@/lib/use-stored-cart";
-import type { CartLine, Product } from "@/lib/types";
+import type { CartLine, HomeSlide, Product, RestaurantSettings } from "@/lib/types";
 
 function getQuantity(lines: CartLine[], productId: string) {
   return lines
@@ -73,6 +73,8 @@ function ProductCard({
   onAdd,
   onDecrease,
   onToggleSave,
+  onOpen,
+  orderingDisabled,
 }: {
   product: Product;
   quantity: number;
@@ -80,10 +82,12 @@ function ProductCard({
   onAdd: () => void;
   onDecrease: () => void;
   onToggleSave: () => void;
+  onOpen: () => void;
+  orderingDisabled: boolean;
 }) {
   return (
     <article className="grid grid-cols-[104px_1fr] gap-3 rounded-3xl bg-white p-3 shadow-[0_12px_32px_rgba(34,31,32,0.08)] ring-1 ring-border">
-      <div className="relative">
+      <button className="relative text-left" onClick={onOpen} aria-label={`View details for ${product.name}`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={product.image} alt={product.name} className="h-28 w-full rounded-2xl object-cover" loading="lazy" />
         <span
@@ -93,13 +97,13 @@ function ProductCard({
         >
           <span className={`h-2.5 w-2.5 rounded-full ${product.dietaryType === "NON_VEG" ? "bg-red" : "bg-maroon"}`} />
         </span>
-      </div>
+      </button>
       <div className="min-w-0">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
+          <button className="min-w-0 text-left" onClick={onOpen}>
             <h3 className="truncate text-sm font-black text-charcoal">{product.name}</h3>
             <p className="mt-1 truncate text-xs font-semibold text-muted">{product.category}</p>
-          </div>
+          </button>
           <button
             className={`grid h-8 w-8 place-items-center rounded-full ${
               saved ? "bg-red text-white" : "bg-cream text-red"
@@ -119,56 +123,195 @@ function ProductCard({
           {product.offer ? <span className="text-red">{product.offer}</span> : null}
         </div>
 
-        <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted">{product.description}</p>
-
-        <div className="mt-3 flex items-center justify-between gap-2">
+        <div className="mt-6 flex items-center justify-between gap-2">
           <span className="font-black text-charcoal">{formatRupees(product.price)}</span>
-          <QuantityControl quantity={quantity} onAdd={onAdd} onDecrease={onDecrease} />
+          {orderingDisabled ? (
+            <button disabled className="h-10 w-28 cursor-not-allowed rounded-xl bg-muted/20 text-xs font-black uppercase text-muted">
+              Closed
+            </button>
+          ) : (
+            <QuantityControl quantity={quantity} onAdd={onAdd} onDecrease={onDecrease} />
+          )}
         </div>
       </div>
     </article>
   );
 }
 
+function DishDetailSheet({
+  product,
+  quantity,
+  onAdd,
+  onDecrease,
+  onClose,
+  orderingDisabled,
+}: {
+  product: Product;
+  quantity: number;
+  onAdd: () => void;
+  onDecrease: () => void;
+  onClose: () => void;
+  orderingDisabled: boolean;
+}) {
+  const hasChoices = product.variants.length > 1 || product.addons.length > 0;
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-charcoal/62 backdrop-blur-[1px]" onClick={onClose}>
+      <button
+        className="absolute left-1/2 top-[calc(24vh-28px)] z-10 grid h-14 w-14 -translate-x-1/2 place-items-center rounded-full bg-charcoal/85 text-white shadow-2xl sm:top-[calc(50%-280px)]"
+        onClick={onClose}
+        aria-label="Close dish details"
+      >
+        <X size={30} strokeWidth={3} />
+      </button>
+
+      <section
+        className="max-h-[76vh] w-full max-w-xl overflow-hidden rounded-t-[28px] bg-white shadow-[0_-18px_46px_rgba(34,31,32,0.28)] sm:mb-6 sm:rounded-[28px]"
+        onClick={(event) => event.stopPropagation()}
+        aria-modal="true"
+        role="dialog"
+        aria-labelledby="dish-detail-title"
+      >
+        <div className="relative h-[45vh] min-h-[280px] max-h-[430px] w-full bg-border sm:h-[360px]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
+        </div>
+
+        <div className="relative px-6 pb-[calc(env(safe-area-inset-bottom)+26px)] pt-6">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4">
+            <div className="min-w-0">
+              <span
+                className={`grid h-7 w-7 place-items-center rounded-md border bg-white ${
+                  product.dietaryType === "NON_VEG" ? "border-red" : "border-maroon"
+                }`}
+              >
+                <span className={`h-3.5 w-3.5 rounded-full ${product.dietaryType === "NON_VEG" ? "bg-red" : "bg-maroon"}`} />
+              </span>
+              <h2 id="dish-detail-title" className="mt-3 text-xl font-black leading-tight text-charcoal">
+                {product.name}
+              </h2>
+              <p className="mt-3 text-xl font-black text-charcoal">{formatRupees(product.price)}</p>
+            </div>
+
+            <div className="pt-4">
+              {orderingDisabled ? (
+                <button disabled className="h-14 w-32 cursor-not-allowed rounded-xl bg-muted/15 text-sm font-black uppercase text-muted shadow-lg ring-1 ring-border">
+                  Closed
+                </button>
+              ) : (
+                <QuantityControl quantity={quantity} onAdd={onAdd} onDecrease={onDecrease} />
+              )}
+              {hasChoices ? <p className="mt-2 text-center text-sm font-bold text-muted">Customisable</p> : null}
+            </div>
+          </div>
+
+          <div className="mt-5 inline-flex items-center gap-1.5 rounded-lg bg-maroon px-2.5 py-1.5 text-sm font-black text-white">
+            <Star size={15} className="fill-white" />
+            {product.rating} ({product.ratingCount})
+          </div>
+
+          <p className="mt-5 text-[15px] font-semibold leading-6 text-muted">{product.description}</p>
+
+          {product.recentReviews?.length ? (
+            <div className="mt-6 border-t border-border pt-4">
+              <h3 className="text-sm font-black text-charcoal">Customer reviews</h3>
+              <div className="mt-3 grid gap-3">
+                {product.recentReviews.map((review) => (
+                  <article key={review.id} className="rounded-2xl bg-cream p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="truncate text-sm font-black text-charcoal">{review.customerName}</p>
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-maroon px-2 py-1 text-xs font-black text-white">
+                        <Star size={11} className="fill-white" />
+                        {review.rating}
+                      </span>
+                    </div>
+                    {review.comment ? <p className="mt-2 text-xs font-semibold leading-5 text-muted">{review.comment}</p> : null}
+                  </article>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function MenuExperience({
   initialCategories = fallbackCategories,
   initialProducts = fallbackProducts,
+  initialSlides,
+  initialCategoryImages = {},
+  restaurantSettings,
+  initialActiveCategory,
 }: {
   initialCategories?: string[];
   initialProducts?: Product[];
+  initialSlides?: HomeSlide[];
+  initialCategoryImages?: Record<string, string>;
+  restaurantSettings?: RestaurantSettings;
+  initialActiveCategory?: string;
 }) {
   const categories = initialCategories;
   const products = initialProducts;
   const [query, setQuery] = useState("");
-  const [activeCategory, setActiveCategory] = useState("All");
-  const [location, setLocation] = useState("221B Baker Street, Salt Lake");
+  const [activeCategory, setActiveCategory] = useState(() => {
+    if (!initialActiveCategory || initialActiveCategory === "All") return "All";
+    return categories.includes(initialActiveCategory) ? initialActiveCategory : "All";
+  });
+  const deliveryLocation = useDeliveryLocation();
   const [activePopup, setActivePopup] = useState<"location" | "notifications" | null>(null);
   const [savedProductIds, setSavedProductIds] = useState<string[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [activeSlide, setActiveSlide] = useState(0);
   const cart = useStoredCart();
-  const promoSlides = [
+  const validCart = useMemo(() => getPricableCartLines(cart, products), [cart, products]);
+  const fallbackSlides: HomeSlide[] = [
     {
+      id: "thali-deal",
       eyebrow: "Thali deal",
       title: "Flat 20% OFF",
       body: "on all Thalis Today!",
       code: "WAHTHALI20",
       image: "/wah-thali-meal-cutout-v2.png",
+      targetCategory: "Exclusive Thali",
+      active: true,
+      sortOrder: 1,
     },
     {
+      id: "family-feast",
       eyebrow: "Family feast",
       title: "Combo at Rs 499",
       body: "2 thalis, dessert, and drinks.",
       code: "FAMILY10",
       image: "/wah-thali-meal-cutout-v2.png",
+      targetCategory: "Indian Combo",
+      active: true,
+      sortOrder: 2,
     },
     {
+      id: "lunch-saver",
       eyebrow: "Lunch saver",
       title: "Mini meals from Rs 99",
       body: "Fast office lunch, fresh daily.",
       code: "MINI99",
       image: "/wah-thali-meal-cutout-v2.png",
+      targetCategory: "Meal at 99",
+      active: true,
+      sortOrder: 3,
     },
   ];
+  const promoSlides = initialSlides?.length ? initialSlides : fallbackSlides;
+
+  useEffect(() => {
+    if (promoSlides.length <= 1) return;
+
+    const timer = window.setInterval(() => {
+      setActiveSlide((current) => (current + 1) % promoSlides.length);
+    }, 4500);
+
+    return () => window.clearInterval(timer);
+  }, [promoSlides.length]);
 
   const visibleProducts = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -181,17 +324,46 @@ export function MenuExperience({
     });
   }, [activeCategory, products, query]);
 
-  const totals = calculateCartTotals(cart, "WAH50", products);
+  const storeMode = restaurantSettings?.storeMode ?? "OPEN";
+  const orderingDisabled = storeMode === "CLOSED" || storeMode === "PAUSED";
+  const statusMessage = getStoreStatusMessage(restaurantSettings);
+  const totals = calculateCartTotals(validCart, "WAH50", products, undefined, restaurantSettings);
+
+  useEffect(() => {
+    if (validCart.length !== cart.length) {
+      writeStoredCart(validCart);
+    }
+  }, [cart, validCart]);
+
+  useEffect(() => {
+    if (!selectedProduct) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setSelectedProduct(null);
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [selectedProduct]);
 
   function persist(next: CartLine[]) {
     writeStoredCart(next);
   }
 
   function addProduct(product: Product) {
-    const existingIndex = cart.findIndex((line) => line.productId === product.id);
+    if (orderingDisabled) return;
+
+    const existingIndex = validCart.findIndex((line) => line.productId === product.id);
     if (existingIndex >= 0) {
       persist(
-        cart.map((line, index) =>
+        validCart.map((line, index) =>
           index === existingIndex ? { ...line, quantity: line.quantity + 1 } : line,
         ),
       );
@@ -199,7 +371,7 @@ export function MenuExperience({
     }
 
     persist([
-      ...cart,
+      ...validCart,
       {
         productId: product.id,
         variantId: product.variants[0]?.id ?? "regular",
@@ -211,7 +383,7 @@ export function MenuExperience({
 
   function decreaseProduct(product: Product) {
     persist(
-      cart
+      validCart
         .map((line) =>
           line.productId === product.id ? { ...line, quantity: line.quantity - 1 } : line,
         )
@@ -271,14 +443,16 @@ export function MenuExperience({
 
           <button
             className="absolute left-3 top-[54px] z-10 grid max-w-[calc(100%-86px)] grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-2 text-left"
-            onClick={() => setActivePopup("location")}
+            onClick={() => {
+              window.location.href = "/address";
+            }}
           >
             <span className="grid h-8 w-8 place-items-center rounded-2xl bg-white/88 text-red shadow-[0_8px_18px_rgba(34,31,32,0.10)] ring-1 ring-border/70 backdrop-blur">
               <MapPin size={15} className="fill-red/10" />
             </span>
             <span className="min-w-0">
               <span className="block text-[10px] font-semibold leading-none text-muted">Deliver to</span>
-              <span className="mt-1 block truncate text-[11px] font-black text-charcoal min-[380px]:text-xs">{location}</span>
+              <span className="mt-1 block truncate text-[11px] font-black text-charcoal min-[380px]:text-xs">{deliveryLocation.address}</span>
             </span>
             <ChevronDown size={13} className="text-charcoal" />
           </button>
@@ -351,14 +525,16 @@ export function MenuExperience({
             <div className="mt-5 max-w-[620px] pr-9 sm:mt-8 sm:pr-0 lg:mt-9">
               <button
                 className="grid min-w-0 max-w-full grid-cols-[42px_minmax(0,1fr)_auto] items-center gap-2 text-left sm:grid-cols-[50px_minmax(0,1fr)_auto] sm:gap-3 lg:grid-cols-[54px_minmax(0,1fr)_auto]"
-                onClick={() => setActivePopup("location")}
+                onClick={() => {
+                  window.location.href = "/address";
+                }}
               >
                 <span className="grid h-10 w-10 place-items-center rounded-2xl bg-white/80 text-red shadow-[0_8px_18px_rgba(34,31,32,0.08)] ring-1 ring-border/70 backdrop-blur sm:h-12 sm:w-12 lg:h-[52px] lg:w-[52px]">
                   <MapPin size={19} className="fill-red/10" />
                 </span>
                 <span className="min-w-0">
                   <span className="block text-xs font-semibold leading-none text-muted sm:text-sm lg:text-base">Deliver to</span>
-                  <span className="mt-1.5 block truncate text-sm font-black text-charcoal min-[380px]:text-base sm:text-xl lg:text-2xl">{location}</span>
+                  <span className="mt-1.5 block truncate text-sm font-black text-charcoal min-[380px]:text-base sm:text-xl lg:text-2xl">{deliveryLocation.address}</span>
                 </span>
                 <ChevronDown size={17} className="text-charcoal" />
               </button>
@@ -378,37 +554,50 @@ export function MenuExperience({
       </section>
 
       <section className="mx-auto max-w-6xl px-4 py-4 sm:px-6 sm:py-5 lg:px-8">
-        <div className="relative mb-4 overflow-hidden rounded-2xl bg-gradient-to-r from-maroon to-red p-4 text-white shadow-[0_12px_28px_rgba(214,0,50,0.22)] sm:mb-5 sm:rounded-3xl sm:p-5">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.18),transparent_28%),radial-gradient(circle_at_80%_0%,rgba(255,255,255,0.16),transparent_24%)]" />
-          <div className="relative z-10 grid min-h-24 grid-cols-[1fr_94px] items-center gap-3 sm:min-h-32 sm:grid-cols-[1fr_160px]">
-            <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-widest text-white/75 sm:text-xs">{promoSlides[activeSlide].eyebrow}</p>
-              <h2 className="mt-1 text-lg font-black leading-tight sm:text-3xl">{promoSlides[activeSlide].title}</h2>
-              <p className="mt-1 text-xs font-bold text-white/85 sm:text-base">{promoSlides[activeSlide].body}</p>
-              <span className="mt-3 inline-flex h-8 items-center rounded-full border border-white/35 px-3 text-[10px] font-black sm:text-xs">
-                Use code: {promoSlides[activeSlide].code}
-              </span>
-            </div>
-            <div className="relative h-24 sm:h-32">
-              <Image
-                src={promoSlides[activeSlide].image}
-                alt=""
-                fill
-                sizes="(max-width: 639px) 94px, 160px"
-                className="object-contain drop-shadow-[0_16px_22px_rgba(34,31,32,0.28)]"
-              />
+        {storeMode !== "OPEN" ? (
+          <div className={`mb-4 rounded-2xl border p-4 shadow-sm ${storeMode === "BUSY" ? "border-amber-200 bg-amber-50 text-amber-950" : "border-red/20 bg-white text-maroon"}`}>
+            <div className="flex items-start gap-3">
+              {storeMode === "BUSY" ? <TimerReset className="mt-0.5 shrink-0" size={22} /> : <Store className="mt-0.5 shrink-0 text-red" size={22} />}
+              <div>
+                <p className="text-sm font-black uppercase tracking-wide">
+                  {storeMode === "BUSY" ? "Kitchen busy" : storeMode === "PAUSED" ? "Ordering paused" : "Restaurant closed"}
+                </p>
+                <p className="mt-1 text-sm font-bold">{statusMessage}</p>
+                <p className="mt-1 text-xs font-semibold opacity-80">Opening hours: {restaurantSettings?.openingHours ?? "11:30 AM - 10:00 PM"}</p>
+              </div>
             </div>
           </div>
+        ) : null}
+
+        <div className="relative mb-4 h-32 overflow-hidden rounded-2xl bg-white shadow-[0_12px_28px_rgba(34,31,32,0.14)] ring-1 ring-border sm:mb-5 sm:h-40 sm:rounded-3xl">
+          <Link
+            href={getSlideHref(promoSlides[activeSlide], categories)}
+            onClick={() => {
+              const target = getSlideTargetCategory(promoSlides[activeSlide], categories);
+              if (target) setActiveCategory(categories.includes(target) ? target : "All");
+            }}
+            className="absolute inset-0 block"
+            aria-label={`View ${getSlideTargetCategory(promoSlides[activeSlide], categories) ?? "all food"} offers`}
+          >
+            <Image
+              src={promoSlides[activeSlide].image}
+              alt={promoSlides[activeSlide].title}
+              fill
+              sizes="(max-width: 639px) 100vw, 1152px"
+              priority
+              className="object-cover object-center transition-opacity duration-500"
+            />
+          </Link>
           <button
             onClick={() => setActiveSlide((current) => (current + promoSlides.length - 1) % promoSlides.length)}
-            className="absolute left-2 top-1/2 hidden h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-white/18 text-white backdrop-blur sm:grid"
+            className="absolute left-2 top-1/2 hidden h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/85 text-maroon shadow-lg backdrop-blur sm:grid"
             aria-label="Previous offer"
           >
             <ChevronLeft size={18} />
           </button>
           <button
             onClick={() => setActiveSlide((current) => (current + 1) % promoSlides.length)}
-            className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-white text-red shadow-lg"
+            className="absolute right-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-red shadow-lg backdrop-blur"
             aria-label="Next offer"
           >
             <ChevronRight size={18} />
@@ -416,9 +605,9 @@ export function MenuExperience({
           <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1.5">
             {promoSlides.map((slide, index) => (
               <button
-                key={slide.code}
+                key={slide.id}
                 onClick={() => setActiveSlide(index)}
-                className={`h-1.5 rounded-full ${activeSlide === index ? "w-5 bg-white" : "w-1.5 bg-white/45"}`}
+                className={`h-1.5 rounded-full shadow ${activeSlide === index ? "w-5 bg-white" : "w-1.5 bg-white/60"}`}
                 aria-label={`Show ${slide.title}`}
               />
             ))}
@@ -448,7 +637,7 @@ export function MenuExperience({
               <span className="mx-auto h-14 w-14 overflow-hidden rounded-full bg-cream">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={products[index % products.length].image}
+                  src={initialCategoryImages[slugifyCategory(category)] ?? products[index % products.length]?.image ?? "/wah-thali-meal-cutout-v2.png"}
                   alt=""
                   className="h-full w-full object-cover"
                   loading="lazy"
@@ -460,7 +649,7 @@ export function MenuExperience({
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 pb-6 sm:px-6 lg:px-8">
+      <section id="menu-items" className="mx-auto max-w-6xl scroll-mt-5 px-4 pb-6 sm:px-6 lg:px-8">
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-black text-charcoal">Popular Dishes</h2>
@@ -483,11 +672,13 @@ export function MenuExperience({
               <ProductCard
                 key={product.id}
                 product={product}
-                quantity={getQuantity(cart, product.id)}
+                quantity={getQuantity(validCart, product.id)}
                 saved={savedProductIds.includes(product.id)}
                 onAdd={() => addProduct(product)}
                 onDecrease={() => decreaseProduct(product)}
                 onToggleSave={() => toggleSaved(product)}
+                onOpen={() => setSelectedProduct(product)}
+                orderingDisabled={orderingDisabled}
               />
             ))
           ) : (
@@ -500,32 +691,10 @@ export function MenuExperience({
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 pb-8 sm:px-6 lg:px-8">
-        <div className="rounded-[26px] bg-white p-5 shadow-sm ring-1 ring-border sm:p-6">
-          <p className="text-xs font-black uppercase tracking-widest text-red">About Wah Thali</p>
-          <h2 className="mt-2 text-2xl font-black text-maroon">{business.legalName}</h2>
-          <p className="mt-3 max-w-4xl text-sm leading-7 text-muted">{aboutWahThali}</p>
-          <div className="mt-4 flex flex-wrap gap-2 text-sm font-black">
-            <a href={`tel:${business.phone}`} className="rounded-xl bg-cream px-3 py-2 text-maroon">
-              Call {business.phone}
-            </a>
-            <a href={`mailto:${business.email}`} className="rounded-xl bg-cream px-3 py-2 text-maroon">
-              {business.email}
-            </a>
-            <a href={business.instagramUrl} className="rounded-xl bg-cream px-3 py-2 text-red">
-              Instagram
-            </a>
-            <a href={business.facebookUrl} className="rounded-xl bg-cream px-3 py-2 text-red">
-              Facebook
-            </a>
-          </div>
-        </div>
-      </section>
-
-      {cart.length ? (
+      {validCart.length ? (
         <div className="fixed bottom-[92px] left-0 right-0 z-40 px-4">
           <Link prefetch href="/cart" className="mx-auto flex max-w-xl items-center justify-between rounded-2xl bg-maroon px-5 py-4 font-black text-white shadow-2xl">
-            <span>{cart.reduce((total, line) => total + line.quantity, 0)} items</span>
+            <span>{validCart.reduce((total, line) => total + line.quantity, 0)} items</span>
             <span>{formatRupees(totals.grandTotal)} - View cart</span>
           </Link>
         </div>
@@ -533,6 +702,17 @@ export function MenuExperience({
 
       <SiteFooter />
       <MobileNav />
+
+      {selectedProduct ? (
+        <DishDetailSheet
+          product={selectedProduct}
+          quantity={getQuantity(validCart, selectedProduct.id)}
+          onAdd={() => addProduct(selectedProduct)}
+          onDecrease={() => decreaseProduct(selectedProduct)}
+          onClose={() => setSelectedProduct(null)}
+          orderingDisabled={orderingDisabled}
+        />
+      ) : null}
 
       {activePopup ? (
         <div className="fixed inset-0 z-[70] bg-charcoal/40 px-4 py-5 backdrop-blur-sm" onClick={() => setActivePopup(null)}>
@@ -542,7 +722,7 @@ export function MenuExperience({
           >
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-black text-maroon">
-                {activePopup === "location" ? "Choose delivery location" : "Notifications"}
+                {activePopup === "location" ? "Select a location" : "Notifications"}
               </h2>
               <button className="grid h-9 w-9 place-items-center rounded-full bg-cream text-maroon" onClick={() => setActivePopup(null)} aria-label="Close popup">
                 <X size={18} />
@@ -553,33 +733,22 @@ export function MenuExperience({
               <div className="mt-4 space-y-3">
                 <label className="flex h-12 items-center gap-3 rounded-2xl bg-cream px-4">
                   <Search size={17} className="text-muted" />
-                  <input className="min-w-0 flex-1 bg-transparent text-sm font-semibold" placeholder="Search area or PIN code" />
+                  <input className="min-w-0 flex-1 bg-transparent text-sm font-semibold" placeholder="Search for area, street name..." />
                 </label>
-                {[
-                  "221B Baker Street, Salt Lake",
-                  "Sector V, Kolkata 700091",
-                  "Park Circus, Kolkata 700017",
-                ].map((item) => (
-                  <button
-                    key={item}
-                    onClick={() => {
-                      setLocation(item);
-                      setActivePopup(null);
-                    }}
-                    className={`flex w-full items-center justify-between rounded-2xl border p-4 text-left text-sm font-black ${
-                      location === item ? "border-red bg-red/5 text-maroon" : "border-border bg-white text-charcoal"
-                    }`}
-                  >
-                    <span className="flex min-w-0 items-center gap-3">
-                      <MapPin size={18} className="min-w-5 text-red" />
-                      <span className="truncate">{item}</span>
-                    </span>
-                    {location === item ? <Check size={18} className="text-red" /> : null}
-                  </button>
-                ))}
-                <p className="rounded-2xl bg-cream p-3 text-xs font-bold text-muted">
-                  Serviceable PINs: 700001, 700016, 700019, 700029, 700091.
-                </p>
+                <Link href="/address" className="flex w-full items-center justify-between rounded-2xl border border-border bg-white p-4 text-left text-sm font-black text-red">
+                  <span className="flex min-w-0 items-center gap-3">
+                    <MapPin size={18} className="min-w-5 text-red" />
+                    <span className="truncate">Use current location</span>
+                  </span>
+                  <ChevronRight size={18} />
+                </Link>
+                <Link href="/address" className="flex w-full items-center justify-between rounded-2xl border border-border bg-white p-4 text-left text-sm font-black text-red">
+                  <span className="flex min-w-0 items-center gap-3">
+                    <Plus size={18} className="min-w-5 text-red" />
+                    <span className="truncate">Add Address</span>
+                  </span>
+                  <ChevronRight size={18} />
+                </Link>
               </div>
             ) : (
               <div className="mt-4 space-y-3">
@@ -603,4 +772,46 @@ export function MenuExperience({
       ) : null}
     </main>
   );
+}
+
+function slugifyCategory(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function getSlideHref(slide: HomeSlide, categories: string[]) {
+  const target = getSlideTargetCategory(slide, categories);
+  if (!target || target === "All") return "/menu#menu-items";
+  return `/menu?category=${encodeURIComponent(target)}#menu-items`;
+}
+
+function getSlideTargetCategory(slide: HomeSlide, categories: string[]) {
+  const savedTarget = slide.targetCategory?.trim();
+  if (savedTarget && (savedTarget === "All" || categories.includes(savedTarget))) return savedTarget;
+
+  const text = `${slide.eyebrow} ${slide.title} ${slide.body} ${slide.code}`.toLowerCase();
+  const inferred =
+    text.includes("mini") || text.includes("99")
+      ? "Meal at 99"
+      : text.includes("family") || text.includes("combo")
+        ? "Indian Combo"
+        : text.includes("thali")
+          ? "Exclusive Thali"
+          : categories[0];
+
+  return categories.includes(inferred) ? inferred : categories[0] ?? "All";
+}
+
+function getStoreStatusMessage(settings?: RestaurantSettings) {
+  if (!settings) return "Ordering is controlled by the restaurant.";
+  const customReason = settings.storeStatusReason.trim();
+  if (customReason) return customReason;
+  if (settings.storeMode === "BUSY") return settings.busyMessage;
+  if (settings.storeMode === "PAUSED") return settings.pausedMessage;
+  if (settings.storeMode === "CLOSED") return settings.closedMessage;
+  return "Restaurant is accepting orders.";
 }

@@ -16,6 +16,11 @@ const couponSchema = z.object({
 });
 
 export async function GET() {
+  if (isDatabaseConfigured()) {
+    const coupons = await prisma.coupon.findMany({ orderBy: { code: "asc" } });
+    return NextResponse.json({ coupons });
+  }
+
   const coupons = await getCouponsFromDb();
   return NextResponse.json({ coupons });
 }
