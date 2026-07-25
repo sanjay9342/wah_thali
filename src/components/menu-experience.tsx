@@ -433,7 +433,7 @@ export function MenuExperience({
           </Link>
 
           <button
-            className="absolute left-3 top-2.5 z-30 grid h-8 w-8 place-items-center rounded-full bg-white/94 text-charcoal shadow-[0_8px_18px_rgba(34,31,32,0.14)] ring-1 ring-border/80 backdrop-blur"
+            className="absolute right-3 top-2.5 z-30 grid h-8 w-8 place-items-center rounded-full bg-white/94 text-charcoal shadow-[0_8px_18px_rgba(34,31,32,0.14)] ring-1 ring-border/80 backdrop-blur"
             onClick={() => setActivePopup("notifications")}
             aria-label="Notifications"
           >
