@@ -585,6 +585,7 @@ export function MenuExperience({
               fill
               sizes="(max-width: 639px) 100vw, 1152px"
               priority
+              unoptimized
               className="object-cover object-center transition-opacity duration-500"
             />
           </Link>
