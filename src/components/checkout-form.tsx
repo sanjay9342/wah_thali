@@ -2,20 +2,26 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { CalendarClock, CreditCard, LocateFixed, MapPin, ShieldCheck, Store } from "lucide-react";
 import { business } from "@/lib/business";
+import { writeStoredCart } from "@/lib/cart-storage";
 import { saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
+import { useStoredCart } from "@/lib/use-stored-cart";
 import type { RestaurantSettings } from "@/lib/types";
 
 export function CheckoutForm({ restaurantSettings }: { restaurantSettings: RestaurantSettings }) {
+  const router = useRouter();
   const paymentMethods = [
     ...(restaurantSettings.codEnabled ? ["Cash on Delivery"] : []),
     ...(restaurantSettings.onlinePaymentsEnabled ? ["Razorpay test mode", "UPI", "Cards and wallets"] : []),
   ];
+  const cartLines = useStoredCart();
   const deliveryLocation = useDeliveryLocation();
   const [deliveryMode, setDeliveryMode] = useState<"now" | "schedule">("now");
   const [paymentMethod, setPaymentMethod] = useState(paymentMethods[0] ?? "No payment method");
   const [locating, setLocating] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [address, setAddress] = useState({
     name: "",
     phone: "",
@@ -36,6 +42,48 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
         : "No payment method is enabled. Please contact support.",
   );
   const mapUrl = address.latitude && address.longitude ? `https://www.google.com/maps?q=${address.latitude},${address.longitude}` : "";
+
+  async function placeOrder() {
+    if (orderingDisabled || !paymentMethods.length || submitting) return;
+
+    if (!cartLines.length) {
+      setMessage("Your cart is empty. Add items before placing the order.");
+      return;
+    }
+
+    if (!address.name.trim() || !address.phone.trim()) {
+      setMessage("Please enter customer name and phone number.");
+      return;
+    }
+
+    setSubmitting(true);
+    setMessage("Creating your order...");
+
+    try {
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName: address.name.trim(),
+          customerMobile: address.phone.trim(),
+          items: cartLines,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        setMessage(data.error ?? "Order could not be created. Please try again.");
+        return;
+      }
+
+      writeStoredCart([]);
+      router.push(`/order/${data.order.orderNumber}/confirmed`);
+    } catch {
+      setMessage("Order could not be created. Please check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function detectLocation() {
     if (!("geolocation" in navigator)) {
@@ -245,9 +293,14 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
             Ordering not available
           </button>
         ) : (
-          <Link prefetch href="/order/WH0001/confirmed" className="mt-5 flex h-12 items-center justify-center rounded-lg bg-red font-black text-white">
-            Place order
-          </Link>
+          <button
+            type="button"
+            onClick={placeOrder}
+            disabled={submitting}
+            className="mt-5 flex h-12 w-full items-center justify-center rounded-lg bg-red font-black text-white disabled:opacity-60"
+          >
+            {submitting ? "Placing order..." : "Place order"}
+          </button>
         )}
       </aside>
     </div>
