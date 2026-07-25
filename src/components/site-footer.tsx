@@ -11,7 +11,7 @@ export function SiteFooter() {
   const mapHref = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}`;
 
   return (
-    <footer className="bg-transparent pb-24 md:px-6 md:pt-6 lg:px-8">
+    <footer className="bg-transparent md:px-6 md:pb-24 md:pt-6 lg:px-8">
       <div
         className="relative mx-auto hidden min-h-[450px] max-w-6xl overflow-hidden rounded-b-[44px] rounded-t-[12px] bg-maroon bg-cover bg-center px-8 pt-14 text-white shadow-[0_18px_54px_rgba(72,0,17,0.28)] md:block"
         style={{ backgroundImage: "url('/wah-thali-footer-bg.png')" }}
