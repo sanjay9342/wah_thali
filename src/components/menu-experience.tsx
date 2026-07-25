@@ -410,7 +410,7 @@ export function MenuExperience({
             sizes="(max-width: 639px) 390px, 100vw"
             className="-z-20 object-cover object-[56%_center]"
           />
-          <div className="pointer-events-none absolute left-[min(calc(100vw-120px),270px)] top-[56px] -z-10 h-[138px] w-[138px] min-[380px]:left-[min(calc(100vw-132px),258px)] min-[380px]:top-[52px] min-[380px]:h-[150px] min-[380px]:w-[150px]">
+          <div className="pointer-events-none absolute left-[calc(100vw-118px)] top-[66px] -z-10 h-[126px] w-[126px] min-[380px]:left-[calc(100vw-134px)] min-[380px]:top-[62px] min-[380px]:h-[144px] min-[380px]:w-[144px]">
             <Image
               src="/wah-thali-meal-cutout-v2.png"
               alt=""
@@ -433,7 +433,7 @@ export function MenuExperience({
           </Link>
 
           <button
-            className="absolute left-[min(calc(100vw-44px),346px)] top-2.5 z-30 grid h-8 w-8 place-items-center rounded-full bg-white/94 text-charcoal shadow-[0_8px_18px_rgba(34,31,32,0.14)] ring-1 ring-border/80 backdrop-blur"
+            className="absolute left-3 top-2.5 z-30 grid h-8 w-8 place-items-center rounded-full bg-white/94 text-charcoal shadow-[0_8px_18px_rgba(34,31,32,0.14)] ring-1 ring-border/80 backdrop-blur"
             onClick={() => setActivePopup("notifications")}
             aria-label="Notifications"
           >
@@ -457,7 +457,7 @@ export function MenuExperience({
             <ChevronDown size={13} className="text-charcoal" />
           </button>
 
-          <label className="absolute left-3 top-[102px] z-10 flex h-8 w-[calc(100vw-126px)] max-w-[260px] items-center gap-2.5 rounded-2xl bg-white/95 px-3 shadow-[0_8px_18px_rgba(34,31,32,0.11)] ring-1 ring-border/80 backdrop-blur min-[380px]:w-[calc(100vw-136px)]">
+          <label className="absolute left-3 top-[102px] z-10 flex h-8 w-[calc(100vw-154px)] max-w-[245px] items-center gap-2.5 rounded-2xl bg-white/95 px-3 shadow-[0_8px_18px_rgba(34,31,32,0.11)] ring-1 ring-border/80 backdrop-blur min-[380px]:w-[calc(100vw-178px)] min-[380px]:max-w-[258px]">
             <Search size={15} className="shrink-0 text-charcoal/80" />
             <input
               value={query}

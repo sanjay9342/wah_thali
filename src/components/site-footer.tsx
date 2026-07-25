@@ -63,7 +63,7 @@ export function SiteFooter() {
           backgroundRepeat: "no-repeat",
         }}
       >
-        <div className="absolute left-1/2 top-[146px] z-20 grid h-24 w-24 -translate-x-1/2 place-items-center rounded-full bg-[#fff4df] shadow-[0_8px_26px_rgba(0,0,0,0.18)] ring-4 ring-[#f2cb83]">
+        <div className="absolute left-1/2 top-[158px] z-20 grid h-24 w-24 -translate-x-1/2 place-items-center rounded-full bg-[#fff4df] shadow-[0_8px_26px_rgba(0,0,0,0.18)] ring-4 ring-[#f2cb83]">
           <Image
             src="/wah-thali-logo-cutout.png"
             alt={business.brandName}
@@ -73,7 +73,7 @@ export function SiteFooter() {
           />
         </div>
 
-        <div className="absolute left-4 right-4 top-[350px] z-20 grid grid-cols-3 gap-2 p-2">
+        <div className="absolute left-4 right-4 top-[378px] z-20 grid grid-cols-3 gap-2 p-2">
           <FooterContact
             icon={<MapPin size={17} />}
             title="Visit"
