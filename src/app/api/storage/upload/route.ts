@@ -4,7 +4,7 @@ import pathModule from "node:path";
 import { logActivity } from "@/lib/db";
 import { getSupabaseAdminClient, isSupabaseConfigured } from "@/lib/supabase";
 
-const defaultBucket = "wah-thali-assets";
+const defaultBucket = process.env.SUPABASE_STORAGE_BUCKET ?? "wah-thali-assets";
 
 export async function POST(request: Request) {
   const formData = await request.formData();
@@ -26,11 +26,17 @@ export async function POST(request: Request) {
   const buffer = Buffer.from(await file.arrayBuffer());
 
   if (!isSupabaseConfigured()) {
+    if (process.env.NODE_ENV === "production") {
+      return NextResponse.json({ error: "Supabase storage credentials are not configured." }, { status: 503 });
+    }
     return uploadToPublicFolder(storagePath, buffer);
   }
 
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
+    if (process.env.NODE_ENV === "production") {
+      return NextResponse.json({ error: "Supabase storage client could not be created." }, { status: 503 });
+    }
     return uploadToPublicFolder(storagePath, buffer);
   }
 
@@ -40,7 +46,10 @@ export async function POST(request: Request) {
   });
 
   if (error) {
-    console.error("Supabase image upload failed. Falling back to local public upload.", error);
+    console.error("Supabase image upload failed.", error);
+    if (process.env.NODE_ENV === "production") {
+      return NextResponse.json({ error: error.message }, { status: 502 });
+    }
     return uploadToPublicFolder(storagePath, buffer);
   }
 
