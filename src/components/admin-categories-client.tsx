@@ -8,6 +8,7 @@ type AdminCategory = {
   id: string;
   name: string;
   image?: string;
+  offer?: string;
   visible: boolean;
   sortOrder: number;
   _count?: { products: number };
@@ -17,6 +18,7 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
   const [categories, setCategories] = useState(initialCategories);
   const [newCategory, setNewCategory] = useState("");
   const [newCategoryImage, setNewCategoryImage] = useState("");
+  const [newCategoryOffer, setNewCategoryOffer] = useState("");
   const [message, setMessage] = useState("");
   const [uploading, setUploading] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -63,6 +65,7 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
         body: JSON.stringify({
           name: newCategory.trim(),
           image: newCategoryImage.trim(),
+          offer: newCategoryOffer.trim(),
           visible: true,
           sortOrder: categories.length + 1,
         }),
@@ -71,6 +74,7 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
       if (!response.ok) throw new Error(data.error ?? "Category save failed.");
       setNewCategory("");
       setNewCategoryImage("");
+      setNewCategoryOffer("");
       await refreshCategories();
       setMessage("Category added live.");
     });
@@ -125,6 +129,8 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
             <div className="mt-4 grid gap-3 rounded-xl border border-border bg-cream p-4">
               <input value={newCategory} onChange={(event) => setNewCategory(event.target.value)} className="h-11 rounded-lg border border-border bg-white px-3 text-sm font-bold" placeholder="New category name" />
               <input value={newCategoryImage} onChange={(event) => setNewCategoryImage(event.target.value)} className="h-11 rounded-lg border border-border bg-white px-3 text-sm font-bold" placeholder="Image URL or /public path" />
+              <input value={newCategoryOffer} onChange={(event) => setNewCategoryOffer(event.target.value)} className="h-11 rounded-lg border border-border bg-white px-3 text-sm font-bold" placeholder="Category offer, e.g. 30% OFF up to Rs 75" />
+              <p className="text-xs font-bold text-muted">Shown on dishes in this category unless that dish has its own offer.</p>
               {newCategoryImage ? (
                 <div className="h-32 overflow-hidden rounded-xl bg-white ring-1 ring-border">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -174,6 +180,9 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
                       }} />
                       <input className="h-10 min-w-0 rounded-lg border border-border bg-cream px-3 text-xs font-bold" defaultValue={category.image ?? ""} placeholder="Image URL" onBlur={(event) => {
                         if (event.target.value !== (category.image ?? "")) updateCategory(category, { image: event.target.value });
+                      }} />
+                      <input className="h-10 min-w-0 rounded-lg border border-border bg-cream px-3 text-xs font-bold" defaultValue={category.offer ?? ""} placeholder="Category offer shown on dishes" onBlur={(event) => {
+                        if (event.target.value !== (category.offer ?? "")) updateCategory(category, { offer: event.target.value });
                       }} />
                     </div>
                   </div>

@@ -7,6 +7,7 @@ import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 const categorySchema = z.object({
   name: z.string().min(1),
   image: z.string().optional(),
+  offer: z.string().optional(),
   visible: z.boolean().default(true),
   sortOrder: z.coerce.number().int().default(0),
 });
@@ -16,7 +17,7 @@ export async function GET() {
     return NextResponse.json({ categories: [], configured: false });
   }
 
-  const [categories, imageSetting] = await Promise.all([
+  const [categories, imageSetting, offerSetting] = await Promise.all([
     prisma.category.findMany({
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: {
@@ -28,13 +29,16 @@ export async function GET() {
       },
     }),
     prisma.businessSetting.findUnique({ where: { key: "categoryImages" } }),
+    prisma.businessSetting.findUnique({ where: { key: "categoryOffers" } }),
   ]);
   const images = getImageMap(imageSetting?.value);
+  const offers = getTextMap(offerSetting?.value);
 
   return NextResponse.json({
     categories: categories.map((category) => ({
       ...category,
       image: images[category.slug] ?? category.products[0]?.images[0]?.url ?? "/wah-thali-meal-cutout-v2.png",
+      offer: offers[category.slug] ?? "",
     })),
     configured: true,
   });
@@ -50,7 +54,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid category payload", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { image, ...categoryData } = parsed.data;
+  const { image, offer, ...categoryData } = parsed.data;
   const slug = slugify(categoryData.name);
   const category = await prisma.category.upsert({
     where: { slug: slugify(parsed.data.name) },
@@ -73,6 +77,21 @@ export async function POST(request: Request) {
     });
   }
 
+  if (offer !== undefined) {
+    const existing = await prisma.businessSetting.findUnique({ where: { key: "categoryOffers" } });
+    const offers = getTextMap(existing?.value);
+    if (offer.trim()) {
+      offers[slug] = offer.trim();
+    } else {
+      delete offers[slug];
+    }
+    await prisma.businessSetting.upsert({
+      where: { key: "categoryOffers" },
+      create: { key: "categoryOffers", value: offers as Prisma.InputJsonValue },
+      update: { value: offers as Prisma.InputJsonValue },
+    });
+  }
+
   await logActivity({
     type: "CATEGORY_SAVED",
     entity: "Category",
@@ -84,6 +103,10 @@ export async function POST(request: Request) {
 }
 
 function getImageMap(value: unknown): Record<string, string> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, string>) : {};
+}
+
+function getTextMap(value: unknown): Record<string, string> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, string>) : {};
 }
 

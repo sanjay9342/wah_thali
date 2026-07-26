@@ -7,6 +7,7 @@ import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 const categorySchema = z.object({
   name: z.string().min(1).optional(),
   image: z.string().optional(),
+  offer: z.string().optional(),
   visible: z.boolean().optional(),
   sortOrder: z.coerce.number().int().optional(),
 });
@@ -22,7 +23,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Invalid category update", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { image, ...categoryData } = parsed.data;
+  const { image, offer, ...categoryData } = parsed.data;
   const previous = await prisma.category.findUniqueOrThrow({ where: { id } });
   const category = await prisma.category.update({
     where: { id },
@@ -49,6 +50,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     });
   }
 
+  if (offer !== undefined || categoryData.name) {
+    const existing = await prisma.businessSetting.findUnique({ where: { key: "categoryOffers" } });
+    const offers = getTextMap(existing?.value);
+    const previousSlug = previous.slug;
+    const nextSlug = category.slug;
+    const nextOffer = offer !== undefined ? offer.trim() : offers[previousSlug];
+
+    delete offers[previousSlug];
+    if (nextOffer) offers[nextSlug] = nextOffer;
+
+    await prisma.businessSetting.upsert({
+      where: { key: "categoryOffers" },
+      create: { key: "categoryOffers", value: offers as Prisma.InputJsonValue },
+      update: { value: offers as Prisma.InputJsonValue },
+    });
+  }
+
   await logActivity({
     type: "CATEGORY_UPDATED",
     entity: "Category",
@@ -60,6 +78,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 }
 
 function getImageMap(value: unknown): Record<string, string> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, string>) : {};
+}
+
+function getTextMap(value: unknown): Record<string, string> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, string>) : {};
 }
 

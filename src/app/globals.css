@@ -20,7 +20,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter);
+  --font-sans: var(--font-nunito);
   --color-maroon: var(--brand-maroon);
   --color-red: var(--brand-red);
   --color-gold: var(--brand-gold);
@@ -34,7 +34,13 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
+  font-family: var(--font-nunito), Arial, Helvetica, sans-serif;
+}
+
+.foodie-display {
+  font-family: var(--font-display), var(--font-nunito), Arial, Helvetica, sans-serif;
+  font-weight: 400;
+  letter-spacing: 0;
 }
 
 html {
@@ -66,59 +72,6 @@ textarea:disabled {
   border: 1px solid var(--brand-border);
   background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 14px 34px rgba(34, 31, 32, 0.06);
-}
-
-.cart-fly-to-header {
-  animation: cart-fly-to-header 760ms cubic-bezier(0.18, 0.72, 0.18, 1) forwards;
-  transform-origin: right center;
-  will-change: transform, opacity, filter;
-}
-
-.cart-catch-pulse {
-  animation: cart-catch-pulse 760ms ease-out;
-}
-
-@keyframes cart-fly-to-header {
-  0% {
-    opacity: 1;
-    filter: blur(0);
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-
-  28% {
-    opacity: 1;
-    filter: blur(0);
-    transform: translate3d(18px, -54px, 0) scale(0.92);
-  }
-
-  62% {
-    opacity: 0.92;
-    filter: blur(0);
-    transform: translate3d(calc(24vw), calc(-48vh), 0) scale(0.58);
-  }
-
-  86% {
-    opacity: 0.55;
-    filter: blur(0.3px);
-    transform: translate3d(calc(43vw - 32px), calc(-82vh + 70px), 0) scale(0.3);
-  }
-
-  100% {
-    opacity: 0;
-    filter: blur(0.6px);
-    transform: translate3d(calc(50vw - 38px), calc(-100vh + 102px), 0) scale(0.16);
-  }
-}
-
-@keyframes cart-catch-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-
-  72% {
-    transform: scale(1.18);
-  }
 }
 
 @media print {

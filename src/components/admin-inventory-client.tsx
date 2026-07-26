@@ -464,7 +464,7 @@ function ProductModal({
               <option value="Hot">Hot</option>
             </select>
           </label>
-          <Field label="Offer" value={form.offer} onChange={(value) => update({ offer: value })} />
+          <Field label="Dish offer (overrides category offer)" value={form.offer} onChange={(value) => update({ offer: value })} />
           <div className="grid gap-3 rounded-xl border border-border bg-cream p-3 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
               <div>

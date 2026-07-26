@@ -1,7 +1,9 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  ArrowLeft,
+  ArrowRight,
   BadgeCheck,
   BadgePercent,
   Bell,
@@ -35,7 +37,7 @@ import { writeStoredCart } from "@/lib/cart-storage";
 import { useDeliveryLocation } from "@/lib/delivery-location";
 import { formatRupees, getPricableCartLines, getProductPrice } from "@/lib/pricing";
 import { useStoredCart } from "@/lib/use-stored-cart";
-import type { CartLine, HomeSlide, Product, RestaurantSettings } from "@/lib/types";
+import type { CartLine, CategoryOfferMap, HomeSlide, Product, RestaurantSettings } from "@/lib/types";
 
 function getQuantity(lines: CartLine[], productId: string) {
   return lines
@@ -137,17 +139,86 @@ function DetailQuantityControl({
   );
 }
 
-function DietMark({ type }: { type: Product["dietaryType"] }) {
+function DietMark({ type, compact = false }: { type: Product["dietaryType"]; compact?: boolean }) {
   const isNonVeg = type === "NON_VEG";
+  const colorClass = isNonVeg ? "border-[#c62828]" : "border-[#078b52]";
+  const dotClass = isNonVeg ? "bg-[#c62828]" : "bg-[#078b52]";
   return (
-    <span className={`grid h-5 w-5 place-items-center rounded-[4px] border-2 bg-white ${isNonVeg ? "border-red" : "border-maroon"}`}>
-      <span className={`h-2.5 w-2.5 rounded-full ${isNonVeg ? "bg-red" : "bg-maroon"}`} />
+    <span
+      className={`grid shrink-0 place-items-center rounded-[4px] border-2 bg-white ${colorClass} ${compact ? "h-4 w-4" : "h-5 w-5"}`}
+      title={isNonVeg ? "Non veg" : "Veg"}
+      aria-label={isNonVeg ? "Non veg" : "Veg"}
+    >
+      <span className={`rounded-full ${dotClass} ${compact ? "h-2 w-2" : "h-2.5 w-2.5"}`} />
     </span>
+  );
+}
+
+type DietFilter = "ALL" | "VEG" | "NON_VEG";
+type PriceSort = "NONE" | "LOW_HIGH" | "HIGH_LOW";
+
+function matchesDietFilter(product: Product, filter: DietFilter) {
+  if (filter === "ALL") return true;
+  if (filter === "VEG") return product.dietaryType !== "NON_VEG";
+  return product.dietaryType === "NON_VEG";
+}
+
+function sortProductsByPrice(products: Product[], sort: PriceSort) {
+  if (sort === "NONE") return products;
+  return [...products].sort((left, right) => sort === "LOW_HIGH" ? left.price - right.price : right.price - left.price);
+}
+
+function DietFilterToggle({ value, onChange }: { value: DietFilter; onChange: (value: DietFilter) => void }) {
+  const items: Array<{ value: DietFilter; label: string; activeClass: string; idleClass: string }> = [
+    { value: "ALL", label: "All", activeClass: "bg-charcoal text-white", idleClass: "bg-white text-charcoal ring-1 ring-[#e8edf3]" },
+    { value: "VEG", label: "Veg", activeClass: "bg-[#078b52] text-white", idleClass: "bg-[#f0fbf5] text-[#078b52] ring-1 ring-[#b8e6cf]" },
+    { value: "NON_VEG", label: "Non veg", activeClass: "bg-maroon text-white", idleClass: "bg-[#fff4f5] text-maroon ring-1 ring-[#efc8d1]" },
+  ];
+
+  return (
+    <div className="inline-flex items-center gap-1.5 rounded-full bg-white p-1 shadow-[0_6px_16px_rgba(17,24,39,0.055)] ring-1 ring-[#e8edf3]" aria-label="Diet filter">
+      {items.map((item) => (
+        <button
+          key={item.value}
+          type="button"
+          onClick={() => onChange(item.value)}
+          className={`h-7 rounded-full px-3 text-[10px] font-black transition-colors ${value === item.value ? item.activeClass : item.idleClass}`}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PriceSortToggle({ value, onChange }: { value: PriceSort; onChange: (value: PriceSort) => void }) {
+  const items: Array<{ value: PriceSort; label: string }> = [
+    { value: "NONE", label: "Default" },
+    { value: "LOW_HIGH", label: "Low to high" },
+    { value: "HIGH_LOW", label: "High to low" },
+  ];
+
+  return (
+    <div className="flex justify-center gap-1.5">
+      {items.map((item) => (
+        <button
+          key={item.value}
+          type="button"
+          onClick={() => onChange(item.value)}
+          className={`h-7 rounded-full px-3 text-[10px] font-black transition-colors ${
+            value === item.value ? "bg-maroon text-white" : "bg-white text-[#68707c] ring-1 ring-[#e8edf3]"
+          }`}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
 function ProductCard({
   product,
+  offer,
   quantity,
   saved,
   onAdd,
@@ -157,6 +228,7 @@ function ProductCard({
   orderingDisabled,
 }: {
   product: Product;
+  offer?: string;
   quantity: number;
   saved: boolean;
   onAdd: () => void;
@@ -184,10 +256,12 @@ function ProductCard({
       <div className="p-2 sm:p-4">
         <div className="flex items-start justify-between gap-2">
           <button className="min-w-0 text-left" onClick={onOpen}>
-            <h3 className="line-clamp-1 text-[10px] font-black leading-tight text-charcoal sm:text-base">{product.name}</h3>
+            <span className="flex min-w-0 items-center justify-between gap-1.5">
+              <h3 className="line-clamp-1 min-w-0 text-[10px] font-black leading-tight text-charcoal sm:text-base">{product.name}</h3>
+              <DietMark type={product.dietaryType} compact />
+            </span>
             <p className="mt-1 line-clamp-1 text-[8px] font-black uppercase tracking-wide text-muted sm:text-[11px]">{product.category}</p>
           </button>
-          <span className="hidden sm:inline-flex"><DietMark type={product.dietaryType} /></span>
         </div>
 
         <div className="mt-2 flex flex-wrap items-center gap-1 text-[8px] font-bold text-muted sm:mt-3 sm:gap-2 sm:text-[11px]">
@@ -198,13 +272,9 @@ function ProductCard({
           <span>{product.prepTimeMinutes}-{product.prepTimeMinutes + 8} min</span>
         </div>
 
-        {product.offer ? (
-          <p className="mt-2 line-clamp-1 text-[8px] font-black text-maroon sm:mt-3 sm:text-[11px]">{product.offer}</p>
-        ) : (
-          <p className="mt-2 line-clamp-1 text-[8px] font-black text-maroon sm:mt-3 sm:text-[11px]">Fresh homely meal</p>
-        )}
+        {offer ? <p className="mt-2 line-clamp-1 text-[8px] font-black text-maroon sm:mt-3 sm:text-[11px]">{offer}</p> : null}
 
-        <div className="mt-3 flex items-center justify-between gap-1.5 sm:mt-4 sm:gap-3">
+        <div className={`${offer ? "mt-3 sm:mt-4" : "mt-2 sm:mt-3"} flex items-center justify-between gap-1.5 sm:gap-3`}>
           <span className="text-[10px] font-black text-charcoal sm:text-base">{formatRupees(product.price)}</span>
           <QuantityControl quantity={quantity} onAdd={onAdd} onDecrease={onDecrease} disabled={orderingDisabled} />
         </div>
@@ -213,6 +283,75 @@ function ProductCard({
   );
 }
 
+function FoodieProductCard({
+  product,
+  offer,
+  quantity,
+  saved,
+  onAdd,
+  onDecrease,
+  onOpen,
+  onToggleSave,
+  orderingDisabled,
+}: {
+  product: Product;
+  offer?: string;
+  quantity: number;
+  saved: boolean;
+  onAdd: () => void;
+  onDecrease: () => void;
+  onOpen: () => void;
+  onToggleSave: () => void;
+  orderingDisabled: boolean;
+}) {
+  return (
+    <article className="flex h-full min-w-0 flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_8px_18px_rgba(34,31,32,0.055)] ring-1 ring-[#eef1f6]">
+      <div className="relative aspect-[1.32/1] overflow-hidden bg-[#f3f5f8]">
+        <button className="block h-full w-full text-left" onClick={onOpen} aria-label={`View details for ${product.name}`}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="eager" />
+        </button>
+        <button
+          className="absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-full bg-white text-[#98a0ad] shadow-[0_8px_18px_rgba(34,31,32,0.12)]"
+          onClick={onToggleSave}
+          aria-label={saved ? `Remove ${product.name} from wishlist` : `Save ${product.name}`}
+        >
+          <Heart size={17} strokeWidth={2.2} className={saved ? "fill-red text-red" : ""} />
+        </button>
+      </div>
+
+      <div className="flex flex-1 flex-col px-3 pb-2.5 pt-2.5">
+        <button className="block w-full text-left" onClick={onOpen}>
+          <span className="flex min-w-0 items-center justify-between gap-1.5">
+            <h3 className="line-clamp-1 min-w-0 text-[14px] font-black leading-tight text-[#111827]">{product.name}</h3>
+            <DietMark type={product.dietaryType} compact />
+          </span>
+          <p className="mt-1 line-clamp-1 text-[10px] font-black uppercase tracking-wide text-[#a0a6b0]">{foodieCategoryLabel(product.category)}</p>
+        </button>
+        <div className="mt-2 flex items-center gap-2 text-[10px] font-extrabold text-[#5f6875]">
+          <span className="inline-flex items-center gap-1 rounded-lg bg-[#fff6ed] px-1.5 py-0.5 font-black text-[#ff6b00]">
+            <Star size={10} className="fill-[#ff6b00]" />
+            {product.rating}
+          </span>
+          <span className="text-[#d8dce3]">•</span>
+          <span>{product.prepTimeMinutes}-{product.prepTimeMinutes + 5} min</span>
+        </div>
+        {offer ? (
+          <div className="mt-2 border-t border-[#eef1f6] pt-2">
+            <p className="flex items-center gap-1.5 text-[10px] font-black text-[#078b52]">
+              <span className="text-lg">?</span>
+              {offer}
+            </p>
+          </div>
+        ) : null}
+        <div className="mt-auto flex items-center justify-between gap-2 pt-2.5">
+          <span className="text-[13px] font-black text-[#111827]">{formatRupees(product.price)}</span>
+          <QuantityControl quantity={quantity} onAdd={onAdd} onDecrease={onDecrease} disabled={orderingDisabled} />
+        </div>
+      </div>
+    </article>
+  );
+}
 function DishDetailSheet({
   product,
   quantity,
@@ -343,6 +482,7 @@ export function MenuExperience({
   initialProducts = fallbackProducts,
   initialSlides,
   initialCategoryImages = {},
+  initialCategoryOffers = {},
   restaurantSettings,
   initialActiveCategory,
 }: {
@@ -350,11 +490,13 @@ export function MenuExperience({
   initialProducts?: Product[];
   initialSlides?: HomeSlide[];
   initialCategoryImages?: Record<string, string>;
+  initialCategoryOffers?: CategoryOfferMap;
   restaurantSettings?: RestaurantSettings;
   initialActiveCategory?: string;
 }) {
   const categories = initialCategories;
   const products = initialProducts;
+  const categoryOffers = initialCategoryOffers;
   const pathname = usePathname();
   const deliveryLocation = useDeliveryLocation();
   const [query, setQuery] = useState("");
@@ -366,6 +508,10 @@ export function MenuExperience({
   const [activeSlide, setActiveSlide] = useState(0);
   const [savedProductIds, setSavedProductIds] = useState<string[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [mobileMenuView, setMobileMenuView] = useState<"home" | "categories" | "category">("home");
+  const [mobileCategory, setMobileCategory] = useState("All");
+  const [dietFilter, setDietFilter] = useState<DietFilter>("ALL");
+  const [priceSort, setPriceSort] = useState<PriceSort>("NONE");
   const [hiddenCartCount, setHiddenCartCount] = useState(0);
   const [cartBarClosing, setCartBarClosing] = useState(false);
   const cart = useStoredCart();
@@ -379,15 +525,16 @@ export function MenuExperience({
     return products.filter((product) => {
       const categoryMatch = activeCategory === "All" || product.category === activeCategory;
       const textMatch = !needle || `${product.name} ${product.category} ${product.description}`.toLowerCase().includes(needle);
-      return product.available && categoryMatch && textMatch;
+      return product.available && categoryMatch && textMatch && matchesDietFilter(product, dietFilter);
     });
-  }, [activeCategory, products, query]);
+  }, [activeCategory, dietFilter, products, query]);
 
   const popularProducts = useMemo(() => {
     const bestsellers = visibleProducts.filter((product) => product.bestseller);
     const otherProducts = visibleProducts.filter((product) => !bestsellers.some((item) => item.id === product.id));
-    return [...bestsellers, ...otherProducts];
-  }, [visibleProducts]);
+    const sortedProducts = [...bestsellers, ...otherProducts];
+    return sortProductsByPrice(sortedProducts, priceSort);
+  }, [priceSort, visibleProducts]);
 
   const promoSlides = useMemo(() => {
     const slides = initialSlides?.length ? initialSlides : [
@@ -477,16 +624,40 @@ export function MenuExperience({
     window.setTimeout(() => {
       setHiddenCartCount(cartCount);
       setCartBarClosing(false);
-    }, 520);
+    }, 240);
   }
 
   const categoryItems = ["All", ...categories];
+  const allProductCategories = useMemo(
+    () => Array.from(new Set([...categories, ...products.map((product) => product.category)])),
+    [categories, products],
+  );
+  const mobileCategoryProducts = useMemo(() => {
+    const source = mobileCategory === "All"
+      ? products
+      : products.filter((product) => product.category === mobileCategory);
+    return sortProductsByPrice(source.filter((product) => product.available && matchesDietFilter(product, dietFilter)), priceSort);
+  }, [dietFilter, mobileCategory, priceSort, products]);
+  const searchGroups = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return allProductCategories
+      .map((category) => {
+        const items = products.filter((product) => {
+          const matchesCategory = product.category === category;
+          const matchesText = !needle || `${product.name} ${product.category} ${product.description}`.toLowerCase().includes(needle);
+          return product.available && matchesCategory && matchesText && matchesDietFilter(product, dietFilter);
+        });
+        return { category, items: sortProductsByPrice(items, priceSort) };
+      })
+      .filter((group) => group.items.length > 0);
+  }, [allProductCategories, dietFilter, priceSort, products, query]);
   const cartCount = validCart.reduce((total, line) => total + line.quantity, 0);
   const cartSubtotal = useMemo(
     () => validCart.reduce((total, line) => total + getProductPrice(line, products), 0),
     [products, validCart],
   );
   const isHomePage = pathname === "/";
+  const isSearchPage = pathname === "/menu";
   const showCartBar = cartCount > 0 && hiddenCartCount !== cartCount;
 
   return (
@@ -526,30 +697,172 @@ export function MenuExperience({
           </Link>
         </div>
 
-        <div className="grid h-[58px] grid-cols-[1fr_auto_auto] items-center gap-2 px-3 lg:hidden">
+        <div className={`${mobileMenuView === "category" || isSearchPage ? "hidden" : "grid"} h-[66px] grid-cols-[1fr_auto_auto] items-center gap-2.5 px-4 lg:hidden`}>
           <Link href="/address" className="flex min-w-0 items-center gap-2">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#fff4f5] text-red">
-              <MapPin size={16} />
+            <span className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-[15px] bg-[#f5f6f8] text-[#374151]">
+              <MapPin size={21} strokeWidth={2.5} />
             </span>
             <span className="min-w-0">
-              <span className="block text-[8px] font-black uppercase tracking-wide text-muted">Delivering to</span>
-              <span className="block truncate text-[11px] font-black leading-tight text-charcoal">{deliveryLocation.address}</span>
+              <span className="block text-[10px] font-black uppercase tracking-wide text-[#a0a6b0]">Delivering to</span>
+              <span className="block truncate text-[14px] font-black leading-tight text-charcoal">{deliveryLocation.address}</span>
             </span>
-            <ChevronDown size={12} />
+            <ChevronDown size={14} className="text-[#6b7280]" />
           </Link>
 
-          <button className="relative grid h-9 w-9 place-items-center" onClick={() => setActivePopup("notifications")} aria-label="Notifications">
-            <Bell size={21} />
-            <span className="absolute right-2 top-1.5 h-2 w-2 rounded-full bg-red" />
+          <button className="relative grid h-9 w-9 place-items-center text-[#374151]" onClick={() => setActivePopup("notifications")} aria-label="Notifications">
+            <Bell size={25} strokeWidth={2.2} />
+            <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-[#ff2446]" />
           </button>
-          <Link href="/cart" className={`relative grid h-9 w-9 place-items-center ${cartBarClosing ? "cart-catch-pulse" : ""}`} aria-label="Cart">
-            <ShoppingCart size={23} />
-            {cartCount ? <span className="absolute right-0 top-0 rounded-full bg-red px-1.5 text-[9px] font-black text-white">{cartCount}</span> : null}
+          <Link href="/cart" className="relative grid h-9 w-9 place-items-center text-[#374151]" aria-label="Cart">
+            <ShoppingCart size={29} strokeWidth={2.3} />
+            {cartCount ? <span className="absolute -right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
           </Link>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1250px] gap-6 px-3 pt-3 sm:px-6 lg:grid-cols-[224px_minmax(0,1fr)] lg:px-0 lg:pt-6">
+      {isSearchPage ? (
+        <section className="min-h-screen bg-[#f7f8fc] px-5 pb-24 pt-1 lg:hidden">
+          <Link href="/" className="mb-1 inline-grid h-8 w-8 place-items-center rounded-full bg-white text-maroon shadow-[0_8px_20px_rgba(17,24,39,0.06)] ring-1 ring-[#e8edf3]" aria-label="Back to home">
+            <ArrowLeft size={19} strokeWidth={3} />
+          </Link>
+          <div className="rounded-[26px] bg-[#d8f7e9] px-6 py-6 shadow-[0_12px_30px_rgba(17,24,39,0.04)]">
+            <h1 className="max-w-[250px] text-[25px] font-black leading-[1.35] text-[#111827]">
+              What are you
+              <span className="block">looking for today?</span>
+            </h1>
+            <label className="mt-7 grid h-[62px] grid-cols-[50px_1fr_54px] items-center rounded-full border-[3px] border-maroon/55 bg-white px-3 shadow-[0_8px_20px_rgba(17,24,39,0.06)]">
+              <Search size={28} className="mx-auto text-maroon" strokeWidth={3} />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className="min-w-0 bg-transparent text-[20px] font-semibold text-[#111827] outline-none placeholder:text-[#a8adb7]"
+                placeholder="Search fresh dishes"
+              />
+              <button type="button" className="grid h-[50px] w-[50px] place-items-center rounded-full bg-maroon text-white" aria-label="Search">
+                <ArrowRight size={28} strokeWidth={3} className="translate-y-[1px]" />
+              </button>
+            </label>
+          </div>
+
+          <div className="sticky top-0 z-30 -mx-5 mt-4 bg-[#f7f8fc]/95 px-5 py-2 backdrop-blur">
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <DietFilterToggle value={dietFilter} onChange={setDietFilter} />
+              <PriceSortToggle value={priceSort} onChange={setPriceSort} />
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-8">
+            {searchGroups.map((group) => (
+              <section key={group.category}>
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-[22px] font-black text-[#111827]">{shortCategoryName(group.category)}</h2>
+                  <span className="text-[14px] font-black text-[#ff6b00]">{group.items.length} {group.items.length === 1 ? "item" : "items"}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {group.items.map((product) => (
+                    <FoodieProductCard
+                      key={product.id}
+                      product={product}
+                      offer={getProductOffer(product, categoryOffers)}
+                      quantity={getQuantity(validCart, product.id)}
+                      saved={savedProductIds.includes(product.id)}
+                      onAdd={() => product.addons.length ? setSelectedProduct(product) : addProduct(product)}
+                      onDecrease={() => decreaseProduct(product)}
+                      onOpen={() => setSelectedProduct(product)}
+                      onToggleSave={() => toggleSaved(product)}
+                      orderingDisabled={orderingDisabled}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {mobileMenuView === "categories" ? (
+        <section className="min-h-[calc(100vh-72px)] bg-[#f7f8fc] px-5 pb-24 pt-6 lg:hidden">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileMenuView("home")}
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-maroon shadow-[0_8px_18px_rgba(17,24,39,0.06)] ring-1 ring-[#e8edf3]"
+              aria-label="Back to home"
+            >
+              <ArrowLeft size={22} strokeWidth={3} />
+            </button>
+            <h1 className="text-[26px] font-black leading-tight text-[#111827]">All Categories</h1>
+          </div>
+          <div className="mt-7 grid grid-cols-3 gap-x-3 gap-y-6">
+            {categoryItems.map((category) => (
+              <button
+                key={category}
+                onClick={() => {
+                  setMobileCategory(category);
+                  setActiveCategory(category);
+                  setMobileMenuView("category");
+                }}
+                className="grid h-[92px] place-items-center rounded-[16px] bg-[#f0f4fc] text-center shadow-[inset_0_0_0_1px_#e1e7f1]"
+              >
+                <span className="grid h-[46px] w-[46px] place-items-center overflow-hidden rounded-full bg-white shadow-[0_8px_18px_rgba(34,31,32,0.08)]">
+                  {category === "All" ? (
+                    <Grid3X3 size={24} strokeWidth={3} />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[82%] w-[82%] rounded-full object-cover" loading="eager" />
+                  )}
+                </span>
+                <span className="max-w-[76px] truncate text-[14px] font-black leading-tight text-[#1f2937]">{shortCategoryName(category)}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {mobileMenuView === "category" ? (
+        <section className="min-h-screen bg-[#f7f8fc] pb-24 lg:hidden">
+          <div className="sticky top-0 z-40 grid h-[58px] grid-cols-[46px_1fr_46px_46px] items-center border-b border-[#e7ebf2] bg-white px-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)]">
+            <button className="grid h-10 w-10 place-items-center text-maroon" onClick={() => setMobileMenuView("categories")} aria-label="Back to categories">
+              <ArrowLeft size={25} strokeWidth={2.7} />
+            </button>
+            <h1 className="text-center text-[25px] font-black leading-none text-maroon">{shortCategoryName(mobileCategory)}</h1>
+            <button className="grid h-10 w-10 place-items-center rounded-full bg-white text-maroon shadow-[0_8px_22px_rgba(34,31,32,0.08)] ring-1 ring-[#eef1f6]" onClick={() => setActivePopup("filters")} aria-label="Filters">
+              <SlidersHorizontal size={23} strokeWidth={2.6} />
+            </button>
+            <Link href="/cart" className="relative grid h-10 w-10 place-items-center text-maroon" aria-label="Cart">
+              <ShoppingCart size={27} strokeWidth={2.6} />
+              {cartCount ? <span className="absolute right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
+            </Link>
+          </div>
+          <div className="px-5 pt-11">
+            <div className="mb-7 flex items-center justify-between">
+              <h2 className="text-[25px] font-bold text-[#111827]">{shortCategoryName(mobileCategory)} Products</h2>
+              <span className="text-[25px] font-bold text-[#111827]">{mobileCategoryProducts.length} {mobileCategoryProducts.length === 1 ? "item" : "items"}</span>
+            </div>
+            <div className="mb-5 flex justify-center">
+              <DietFilterToggle value={dietFilter} onChange={setDietFilter} />
+            </div>
+            <div className="grid grid-cols-2 gap-5">
+              {mobileCategoryProducts.map((product) => (
+                <FoodieProductCard
+                  key={product.id}
+                  product={product}
+                  offer={getProductOffer(product, categoryOffers)}
+                  quantity={getQuantity(validCart, product.id)}
+                  saved={savedProductIds.includes(product.id)}
+                  onAdd={() => product.addons.length ? setSelectedProduct(product) : addProduct(product)}
+                  onDecrease={() => decreaseProduct(product)}
+                  onOpen={() => setSelectedProduct(product)}
+                  onToggleSave={() => toggleSaved(product)}
+                  orderingDisabled={orderingDisabled}
+                />
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <div className={`${mobileMenuView === "home" && !isSearchPage ? "grid" : "hidden lg:grid"} mx-auto max-w-[1250px] gap-6 px-3 pt-3 sm:px-6 lg:grid-cols-[224px_minmax(0,1fr)] lg:px-0 lg:pt-6`}>
         <aside className="sticky top-[128px] hidden h-[520px] overflow-hidden rounded-2xl border border-[#f1e7e4] bg-white p-4 shadow-[0_14px_40px_rgba(34,31,32,0.04)] lg:block">
           <div className="mb-4 flex items-center gap-2 border-b border-[#f1e7e4] pb-4 text-sm font-black uppercase tracking-wide text-muted">
             <BookOpen size={18} />
@@ -673,12 +986,18 @@ export function MenuExperience({
           ) : null}
 
           <section className="mt-5 lg:mt-8">
-            <div className="flex gap-4 overflow-x-auto pb-3 lg:justify-between lg:overflow-visible">
-              {categoryItems.slice(0, 6).map((category) => (
+            <div className="flex justify-center gap-3 overflow-x-auto pb-3 lg:justify-between lg:overflow-visible">
+              {categoryItems.slice(0, 4).map((category) => (
                 <button
                   key={category}
-                  onClick={() => setActiveCategory(category)}
-                  className="grid min-w-[60px] place-items-center gap-1.5 text-center"
+                  onClick={() => {
+                    setActiveCategory(category);
+                    if (category !== "All") {
+                      setMobileCategory(category);
+                      setMobileMenuView("category");
+                    }
+                  }}
+                  className="grid min-w-[54px] place-items-center gap-1.5 text-center"
                 >
                   <span className={`grid h-14 w-14 place-items-center overflow-hidden rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] sm:h-20 sm:w-20 lg:h-24 lg:w-24 ${
                     activeCategory === category ? "border-red bg-red text-white" : "border-[#f1e7e4] bg-white text-charcoal"
@@ -695,24 +1014,38 @@ export function MenuExperience({
                   </span>
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => setMobileMenuView("categories")}
+                className="grid min-w-[54px] place-items-center gap-1.5 text-center"
+              >
+                <span className="grid h-14 w-14 place-items-center rounded-full border border-[#f1e7e4] bg-[#f8fafc] text-charcoal shadow-[0_8px_22px_rgba(34,31,32,0.06)] sm:h-20 sm:w-20 lg:h-24 lg:w-24">
+                  <Grid3X3 size={21} />
+                </span>
+                <span className="max-w-[62px] truncate text-[11px] font-black text-charcoal sm:max-w-20 sm:text-sm">More</span>
+              </button>
             </div>
           </section>
 
-          <section id="menu-items" className="mt-8 pb-8">
-            <div className="mb-5 flex items-center justify-between">
-              <h2 className="text-2xl font-black text-charcoal lg:text-3xl">Popular Dishes</h2>
-              <button onClick={() => setActiveCategory("All")} className="inline-flex items-center gap-1 text-sm font-black text-red">
-                View all <ChevronRight size={16} />
+          <section id="menu-items" className="mt-6 pb-16 lg:pb-8">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="foodie-display text-[31px] leading-none text-charcoal lg:font-sans lg:text-3xl lg:font-black">Popular Dishes</h2>
+              <button onClick={() => setActiveCategory("All")} className="inline-flex items-center gap-1 text-[13px] font-black text-maroon lg:text-sm">
+                View all <ChevronRight size={13} />
               </button>
+            </div>
+            <div className="mb-4 flex justify-center lg:justify-start">
+              <DietFilterToggle value={dietFilter} onChange={setDietFilter} />
             </div>
 
             {popularProducts.length ? (
               <>
               <div className="grid grid-cols-2 gap-3 pb-3 lg:hidden">
                 {popularProducts.slice(0, 6).map((product) => (
-                  <ProductCard
+                  <FoodieProductCard
                     key={product.id}
                     product={product}
+                    offer={getProductOffer(product, categoryOffers)}
                     quantity={getQuantity(validCart, product.id)}
                     saved={savedProductIds.includes(product.id)}
                     onAdd={() => product.addons.length ? setSelectedProduct(product) : addProduct(product)}
@@ -728,6 +1061,7 @@ export function MenuExperience({
                   <ProductCard
                     key={product.id}
                     product={product}
+                    offer={getProductOffer(product, categoryOffers)}
                     quantity={getQuantity(validCart, product.id)}
                     saved={savedProductIds.includes(product.id)}
                     onAdd={() => product.addons.length ? setSelectedProduct(product) : addProduct(product)}
@@ -751,16 +1085,16 @@ export function MenuExperience({
           <section className="mt-2 pb-8 lg:mt-4">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-[20px] font-black text-charcoal lg:text-3xl">Best Offers for You</h2>
-              <Link href="/offers" className="inline-flex items-center gap-1 text-[11px] font-black text-red lg:text-sm">
-                View all <ChevronRight size={14} />
+              <Link href="/offers" className="inline-flex items-center gap-1 text-[11px] font-black text-maroon lg:text-sm">
+                View all <ChevronRight size={13} />
               </Link>
             </div>
 
             <div className="grid gap-3 lg:grid-cols-3">
               {[
-                ["FLAT 50% OFF", "up to ₹120", "Use Code: PARTY", "bg-[#e8f7ed] text-[#16833d]"],
-                ["FREE DELIVERY", "on orders above ₹199", "Use Code: FREEDEL", "bg-[#fff0e8] text-[#c95000]"],
-                ["30% OFF", "up to ₹80", "Use Code: YUMMY", "bg-[#f3ecff] text-[#6c35d5]"],
+                ["FLAT 50% OFF", "up to â‚¹120", "Use Code: PARTY", "bg-[#e8f7ed] text-[#16833d]"],
+                ["FREE DELIVERY", "on orders above â‚¹199", "Use Code: FREEDEL", "bg-[#fff0e8] text-[#c95000]"],
+                ["30% OFF", "up to â‚¹80", "Use Code: YUMMY", "bg-[#f3ecff] text-[#6c35d5]"],
               ].map(([title, subtitle, code, classes]) => (
                 <article key={title} className={`min-h-[96px] rounded-[12px] p-5 lg:min-h-[112px] ${classes}`}>
                   <div className="flex h-full items-center justify-between gap-4">
@@ -818,8 +1152,8 @@ export function MenuExperience({
               </h2>
               <p className="mt-3 flex items-center justify-center gap-1 text-[9px] font-black text-[#a7adba] lg:text-xs">
                 <span>Crafted with</span>
-                <Heart size={11} className="fill-red text-red" />
-                <span>in Asansol, India</span>
+                <Heart size={11} className="fill-[#ff2446] text-[#ff2446]" />
+                <span>in Kolkata, India</span>
               </p>
             </section>
           ) : null}
@@ -829,14 +1163,14 @@ export function MenuExperience({
       <div
         className={`fixed bottom-[72px] left-0 right-0 z-[60] px-5 transition-all duration-300 ease-out lg:bottom-6 ${
           cartBarClosing
-            ? "pointer-events-none translate-y-0 opacity-100"
+            ? "pointer-events-none translate-y-3 opacity-0"
             : showCartBar
               ? "translate-y-0 opacity-100"
               : "pointer-events-none translate-y-6 opacity-0"
         }`}
         aria-live="polite"
       >
-        <div className={`mx-auto grid h-14 max-w-[320px] grid-cols-[1fr_auto_34px] items-center gap-3 rounded-[16px] bg-charcoal px-4 text-white shadow-[0_16px_34px_rgba(34,31,32,0.28)] lg:max-w-[380px] ${cartBarClosing ? "cart-fly-to-header" : ""}`}>
+        <div className="mx-auto grid h-14 max-w-[320px] grid-cols-[1fr_auto_34px] items-center gap-3 rounded-[16px] bg-charcoal px-4 text-white shadow-[0_16px_34px_rgba(34,31,32,0.28)] lg:max-w-[380px]">
           <div className="flex min-w-0 items-center gap-3">
             <span className="relative grid h-8 w-8 shrink-0 place-items-center rounded-full bg-red text-white">
               <ShoppingCart size={16} strokeWidth={3} />
@@ -942,6 +1276,10 @@ function getCategoryImage(category: string, images: Record<string, string>, prod
   return matchingProduct?.image ?? "/wah-thali-meal-cutout-v2.png";
 }
 
+function getProductOffer(product: Product, categoryOffers: CategoryOfferMap) {
+  return product.offer?.trim() || categoryOffers[slugifyCategory(product.category)]?.trim() || undefined;
+}
+
 function shortCategoryName(category: string) {
   const compact = category
     .replace("Chef's Recommendations", "Chef")
@@ -950,6 +1288,19 @@ function shortCategoryName(category: string) {
     .replace(" Combo", "");
 
   return compact.length > 14 ? compact.split(" ")[0] : compact;
+}
+
+function foodieCategoryLabel(category: string) {
+  return category
+    .replace("Exclusive Thali", "Indian, North Indi...")
+    .replace("Mini Thali", "Indian")
+    .replace("Meal at 99", "Indian")
+    .replace("Kolkata Biryani", "Fast Food, Cuisines")
+    .replace("Biryani Combo", "Fast Food, Cuisines")
+    .replace("Chinese Combo", "Fast Food, Cuisines")
+    .replace("Indian Combo", "Indian, North Indi...")
+    .replace("Subscription Meals", "Fast Food, Cuisines")
+    .toUpperCase();
 }
 
 function slugifyCategory(value: string) {

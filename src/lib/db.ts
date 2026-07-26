@@ -3,7 +3,7 @@ import "server-only";
 import { Prisma } from "@prisma/client";
 import { coupons as fallbackCoupons, products as fallbackProducts, settings as fallbackSettings } from "@/lib/data";
 import { prisma, isDatabaseConfigured } from "@/lib/prisma";
-import type { AdvancedSettings, AdminCustomer, AdminOrder, AdminProduct, BusinessSettings, CategoryImageMap, Coupon, HomeSlide, Product, RestaurantSettings, StoreMode } from "@/lib/types";
+import type { AdvancedSettings, AdminCustomer, AdminOrder, AdminProduct, BusinessSettings, CategoryImageMap, CategoryOfferMap, Coupon, HomeSlide, Product, RestaurantSettings, StoreMode } from "@/lib/types";
 
 type ProductWithRelations = Prisma.ProductGetPayload<{
   include: {
@@ -139,6 +139,22 @@ export async function getCategoryImagesFromDb(): Promise<CategoryImageMap> {
     return isCategoryImageMap(row?.value) ? row.value : {};
   } catch (error) {
     console.error("Category image read failed.", error);
+    return {};
+  }
+}
+
+function isCategoryOfferMap(value: unknown): value is CategoryOfferMap {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+export async function getCategoryOffersFromDb(): Promise<CategoryOfferMap> {
+  if (!isDatabaseConfigured()) return {};
+
+  try {
+    const row = await prisma.businessSetting.findUnique({ where: { key: "categoryOffers" } });
+    return isCategoryOfferMap(row?.value) ? row.value : {};
+  } catch (error) {
+    console.error("Category offer read failed.", error);
     return {};
   }
 }

@@ -1,5 +1,5 @@
 import { AdminCategoriesClient } from "@/components/admin-categories-client";
-import { getCategoryImagesFromDb } from "@/lib/db";
+import { getCategoryImagesFromDb, getCategoryOffersFromDb } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -9,12 +9,13 @@ export default async function AdminCategoriesPage() {
     return <AdminCategoriesClient initialCategories={[]} />;
   }
 
-  const [categories, categoryImages] = await Promise.all([
+  const [categories, categoryImages, categoryOffers] = await Promise.all([
     prisma.category.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: { _count: { select: { products: true } } },
     }),
     getCategoryImagesFromDb(),
+    getCategoryOffersFromDb(),
   ]);
 
   return (
@@ -26,6 +27,7 @@ export default async function AdminCategoriesPage() {
         sortOrder: category.sortOrder,
         _count: category._count,
         image: categoryImages[category.slug] ?? "/wah-thali-meal-cutout-v2.png",
+        offer: categoryOffers[category.slug] ?? "",
       }))}
     />
   );

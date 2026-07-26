@@ -73,6 +73,7 @@ export type AdminCustomer = {
 };
 
 export type CategoryImageMap = Record<string, string>;
+export type CategoryOfferMap = Record<string, string>;
 
 export type CartLine = {
   productId: string;
