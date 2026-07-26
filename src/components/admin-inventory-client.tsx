@@ -23,6 +23,7 @@ type ProductForm = {
   offer: string;
   bestseller: boolean;
   available: boolean;
+  addons: { id?: string; name: string; price: string }[];
 };
 
 const emptyForm: ProductForm = {
@@ -41,6 +42,7 @@ const emptyForm: ProductForm = {
   offer: "",
   bestseller: false,
   available: true,
+  addons: [],
 };
 
 export function AdminInventoryClient({
@@ -143,6 +145,9 @@ export function AdminInventoryClient({
         offer: form.offer || null,
         bestseller: form.bestseller,
         available: form.available,
+        addons: form.addons
+          .filter((addon) => addon.name.trim())
+          .map((addon) => ({ id: addon.id, name: addon.name.trim(), price: Number(addon.price || 0), available: true })),
       };
 
       const response = await fetch(form.id ? `/api/products/${form.id}` : "/api/products", {
@@ -385,6 +390,11 @@ function toProductForm(product: AdminProduct): ProductForm {
     offer: product.offer ?? "",
     bestseller: Boolean(product.bestseller),
     available: product.available,
+    addons: product.addons.map((addon) => ({
+      id: addon.id,
+      name: addon.name,
+      price: String(addon.price),
+    })),
   };
 }
 
@@ -405,6 +415,12 @@ function ProductModal({
 }) {
   function update(patch: Partial<ProductForm>) {
     setForm({ ...form, ...patch });
+  }
+
+  function updateAddon(index: number, patch: Partial<ProductForm["addons"][number]>) {
+    update({
+      addons: form.addons.map((addon, addonIndex) => (addonIndex === index ? { ...addon, ...patch } : addon)),
+    });
   }
 
   return (
@@ -449,6 +465,52 @@ function ProductModal({
             </select>
           </label>
           <Field label="Offer" value={form.offer} onChange={(value) => update({ offer: value })} />
+          <div className="grid gap-3 rounded-xl border border-border bg-cream p-3 sm:col-span-2">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-black text-maroon">Add-ons</p>
+                <p className="text-xs font-bold text-muted">Shown to customers when this dish is opened.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => update({ addons: [...form.addons, { name: "", price: "0" }] })}
+                className="h-9 rounded-lg bg-maroon px-3 text-xs font-black text-white"
+              >
+                Add add-on
+              </button>
+            </div>
+            {form.addons.length ? (
+              <div className="grid gap-2">
+                {form.addons.map((addon, index) => (
+                  <div key={addon.id ?? index} className="grid gap-2 sm:grid-cols-[1fr_120px_auto]">
+                    <input
+                      value={addon.name}
+                      onChange={(event) => updateAddon(index, { name: event.target.value })}
+                      className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-bold text-charcoal"
+                      placeholder="Add-on name, e.g. Extra paneer"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      value={addon.price}
+                      onChange={(event) => updateAddon(index, { price: event.target.value })}
+                      className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-bold text-charcoal"
+                      placeholder="Price"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => update({ addons: form.addons.filter((_, addonIndex) => addonIndex !== index) })}
+                      className="h-10 rounded-lg border border-border px-3 text-xs font-black text-red"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-muted">No add-ons yet.</p>
+            )}
+          </div>
           <label className="flex items-center gap-3 rounded-lg border border-border bg-cream px-3 py-3 text-sm font-black text-charcoal">
             <input type="checkbox" checked={form.available} onChange={(event) => update({ available: event.target.checked })} />
             Available on live menu

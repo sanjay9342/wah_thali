@@ -155,8 +155,8 @@ export function CartClient({
   }
 
   return (
-    <section className="relative mx-auto min-h-screen max-w-[430px] bg-[#f2f0f5] pb-32 text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.12)] sm:my-6 sm:min-h-0 sm:overflow-hidden sm:rounded-[28px]">
-      <div className="bg-gradient-to-r from-[#c9edff] via-[#e9f8ff] to-white px-4 pb-5 pt-4 shadow-sm">
+    <section className="relative mx-auto min-h-screen max-w-[430px] bg-white pb-32 text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-6 sm:min-h-0 sm:overflow-hidden sm:rounded-[28px] lg:max-w-5xl">
+      <div className="bg-[#fff4f5] px-4 pb-5 pt-4 shadow-sm lg:px-6">
         <div className="flex items-start justify-between gap-3">
           <Link href="/menu" className="mt-1 grid h-10 w-10 place-items-center rounded-full text-charcoal" aria-label="Back to menu">
             <ChevronLeft size={31} strokeWidth={2.4} />
@@ -176,7 +176,7 @@ export function CartClient({
         </div>
 
         {totalSavings > 0 ? (
-          <p className="mt-4 inline-flex rounded-xl bg-[#75d0ff]/60 px-4 py-2 text-[15px] font-black text-charcoal">
+          <p className="mt-4 inline-flex rounded-xl bg-white px-4 py-2 text-[15px] font-black text-red shadow-sm">
             {formatRupees(totalSavings)} Saved with Wah Thali
           </p>
         ) : null}
@@ -213,7 +213,7 @@ export function CartClient({
           </div>
         ) : null}
 
-        <div className="space-y-5">
+        <div className="space-y-5 lg:grid lg:grid-cols-2 lg:gap-5 lg:space-y-0">
         {validLines.map((line, index) => {
           const product = initialProducts.find((item) => item.id === line.productId);
           if (!product) return null;
@@ -401,8 +401,8 @@ export function CartClient({
         {message}
       </p>
 
-      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-white px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 shadow-[0_-12px_30px_rgba(34,31,32,0.12)] sm:absolute sm:left-1/2 sm:max-w-[430px] sm:-translate-x-1/2 sm:rounded-t-2xl">
-        <div className="mx-auto grid max-w-[430px] grid-cols-[1fr_1.45fr] gap-3">
+      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-white px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 shadow-[0_-12px_30px_rgba(34,31,32,0.12)] sm:absolute sm:left-1/2 sm:max-w-[430px] sm:-translate-x-1/2 sm:rounded-t-2xl lg:max-w-5xl">
+        <div className="mx-auto grid max-w-[430px] grid-cols-[1fr_1.45fr] gap-3 lg:max-w-4xl">
           <div className="min-w-0">
             <p className="text-[12px] font-black uppercase tracking-[0.18em] text-muted">Pay using</p>
             <p className="mt-1 truncate text-[17px] font-bold text-charcoal">Cash / UPI</p>

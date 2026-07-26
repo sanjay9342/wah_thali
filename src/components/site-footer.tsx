@@ -5,124 +5,39 @@ import { business, policies } from "@/lib/business";
 
 export function SiteFooter() {
   const footerLinks = [
-    { slug: "about", title: "About Wah Thali" },
+    { slug: "about", title: "About" },
     ...policies.map((policy) => ({ slug: policy.slug, title: policy.title })),
   ];
   const mapHref = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}`;
 
   return (
-    <footer className="bg-transparent md:px-6 md:pb-24 md:pt-6 lg:px-8">
-      <div
-        className="relative mx-auto hidden min-h-[560px] max-w-6xl overflow-hidden rounded-b-[44px] rounded-t-[12px] bg-maroon bg-cover bg-center px-8 pt-14 text-white shadow-[0_18px_54px_rgba(72,0,17,0.28)] md:block"
-        style={{ backgroundImage: "url('/wah-thali-footer-bg.png')" }}
-      >
-        <div className="absolute left-1/2 top-[206px] z-20 grid h-32 w-32 -translate-x-1/2 place-items-center rounded-full bg-[#fff4df] shadow-[0_8px_26px_rgba(0,0,0,0.18)] ring-4 ring-[#f2cb83] lg:top-[202px] lg:h-36 lg:w-36">
-          <Image
-            src="/wah-thali-logo-cutout.png"
-            alt={business.brandName}
-            width={154}
-            height={154}
-            className="mt-1 h-[104px] w-[104px] object-contain lg:h-[118px] lg:w-[118px]"
-          />
+    <footer className="border-t border-[#f1e7e4] bg-white px-4 pb-28 pt-8 lg:pb-8">
+      <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[1.2fr_1fr]">
+        <div>
+          <Link href="/" className="relative block h-14 w-44 overflow-hidden">
+            <Image src="/wah-thali-logo-cutout.png" alt={business.brandName} fill sizes="176px" className="object-contain object-left" />
+          </Link>
+          <p className="mt-3 max-w-md text-sm font-semibold leading-6 text-muted">Fresh homestyle meals from Kolkata. Simple ordering, clean food, and fast delivery.</p>
         </div>
 
-        <div className="absolute left-[11%] top-[348px] z-20 w-[220px]">
-          <FooterContact
-            icon={<MapPin size={24} />}
-            title="Visit Us"
-            body={business.address}
-            href={mapHref}
-          />
+        <div className="grid gap-3 sm:grid-cols-3">
+          <FooterContact icon={<MapPin size={18} />} title="Visit" body="Map" href={mapHref} />
+          <FooterContact icon={<Phone size={18} />} title="Call" body={business.phone} href={`tel:${business.phone}`} />
+          <FooterContact icon={<Mail size={18} />} title="Email" body={business.email} href={`mailto:${business.email}`} />
         </div>
-        <div className="absolute left-1/2 top-[348px] z-20 w-[130px] -translate-x-1/2">
-          <FooterContact
-            icon={<Phone size={24} />}
-            title="Call Us"
-            body={business.phone}
-            href={`tel:${business.phone}`}
-          />
-        </div>
-        <div className="absolute right-[11%] top-[348px] z-20 w-[170px]">
-          <FooterContact
-            icon={<Mail size={24} />}
-            title="Email Us"
-            body={business.email}
-            href={`mailto:${business.email}`}
-          />
-        </div>
-
-        <FooterBottom footerLinks={footerLinks} className="bottom-9 md:left-8 md:right-8 md:pt-5" />
       </div>
 
-      <div
-        className="relative min-h-[620px] overflow-hidden rounded-b-[30px] bg-[#fff4df] bg-center text-white shadow-[0_18px_54px_rgba(72,0,17,0.28)] md:hidden"
-        style={{
-          backgroundImage: "url('/wah-thali-footer-mobile-bg.png')",
-          backgroundSize: "cover",
-          backgroundPosition: "center top",
-          backgroundRepeat: "no-repeat",
-        }}
-      >
-        <div className="absolute left-1/2 top-[178px] z-20 grid h-24 w-24 -translate-x-1/2 place-items-center rounded-full bg-[#fff4df] shadow-[0_8px_26px_rgba(0,0,0,0.18)] ring-4 ring-[#f2cb83]">
-          <Image
-            src="/wah-thali-logo-cutout.png"
-            alt={business.brandName}
-            width={128}
-            height={128}
-            className="mt-2 h-20 w-20 object-contain"
-          />
-        </div>
-
-        <div className="absolute left-4 right-4 top-[378px] z-20 grid grid-cols-3 gap-2 p-2">
-          <FooterContact
-            icon={<MapPin size={17} />}
-            title="Visit"
-            body="Map"
-            href={mapHref}
-            compact
-          />
-          <FooterContact
-            icon={<Phone size={17} />}
-            title="Call"
-            body={business.phone}
-            href={`tel:${business.phone}`}
-            compact
-          />
-          <FooterContact
-            icon={<Mail size={17} />}
-            title="Email"
-            body={business.email}
-            href={`mailto:${business.email}`}
-            compact
-          />
-        </div>
-
-        <FooterBottom footerLinks={footerLinks} mobile className="bottom-[78px]" />
+      <div className="mx-auto mt-6 flex max-w-7xl flex-wrap items-center justify-between gap-4 border-t border-[#f1e7e4] pt-5">
+        <nav className="flex flex-wrap gap-x-5 gap-y-2 text-xs font-black text-muted" aria-label="Footer links">
+          {footerLinks.map((link) => (
+            <Link key={link.slug} href={`/${link.slug}`} className="hover:text-red">
+              {link.title}
+            </Link>
+          ))}
+        </nav>
+        <p className="text-xs font-semibold text-muted">&copy; {new Date().getFullYear()} {business.legalName}</p>
       </div>
     </footer>
-  );
-}
-
-function FooterBottom({
-  footerLinks,
-  mobile = false,
-  className = "",
-}: {
-  footerLinks: { slug: string; title: string }[];
-  mobile?: boolean;
-  className?: string;
-}) {
-  return (
-    <div className={`absolute left-4 right-4 z-20 mx-auto max-w-5xl border-t border-[#c99a57]/35 pt-3 ${className || (mobile ? "bottom-5" : "bottom-10 md:left-8 md:right-8 md:pt-5")}`}>
-      <nav className={`flex flex-wrap items-center justify-center gap-y-2 font-semibold text-[#f5d5a1] ${mobile ? "gap-x-3 text-[9px]" : "gap-x-7 text-[11px]"}`} aria-label="Footer links">
-            {footerLinks.map((link) => (
-              <Link key={link.slug} href={`/${link.slug}`} className="hover:text-white">
-                {link.title}
-              </Link>
-            ))}
-          </nav>
-      <p className={`mt-3 text-center font-semibold leading-4 text-[#f5d5a1]/85 ${mobile ? "text-[9px]" : "text-[11px]"}`}>&copy; {new Date().getFullYear()} {business.legalName}. Fresh homestyle meals from Kolkata.</p>
-    </div>
   );
 }
 
@@ -131,27 +46,19 @@ function FooterContact({
   title,
   body,
   href,
-  compact = false,
 }: {
   icon: React.ReactNode;
   title: string;
   body: string;
-  href?: string;
-  compact?: boolean;
+  href: string;
 }) {
-  const content = (
-    <>
-      <span className={`mx-auto grid place-items-center rounded-full bg-[#fff4df] text-maroon shadow-[0_8px_18px_rgba(0,0,0,0.18)] ring-2 ring-[#e5bd73] ${compact ? "h-9 w-9" : "h-12 w-12"}`}>
-        {icon}
+  return (
+    <a href={href} className="flex items-center gap-3 rounded-2xl border border-[#f1e7e4] bg-white p-3 shadow-[0_10px_24px_rgba(34,31,32,0.04)]">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#fff4f5] text-red">{icon}</span>
+      <span className="min-w-0">
+        <span className="block text-sm font-black text-charcoal">{title}</span>
+        <span className="block truncate text-xs font-semibold text-muted">{body}</span>
       </span>
-      <span className={`${compact ? "mt-1 text-[10px]" : "mt-2 text-sm"} block text-center font-black text-[#ffe7b0] drop-shadow`}>{title}</span>
-      <span className={`mx-auto mt-1 block text-center font-semibold text-[#f6d6a5] drop-shadow ${compact ? "max-w-[140px] text-[8px] leading-3" : "max-w-[220px] text-xs leading-5"}`}>{body}</span>
-    </>
+    </a>
   );
-
-  if (href) {
-    return <a href={href} className="block">{content}</a>;
-  }
-
-  return <div>{content}</div>;
 }

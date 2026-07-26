@@ -20,6 +20,11 @@ const productSchema = z.object({
   stock: z.coerce.number().int().nonnegative().default(0),
   reorderAt: z.coerce.number().int().nonnegative().default(0),
   margin: z.coerce.number().int().min(0).max(100).default(0),
+  addons: z.array(z.object({
+    name: z.string().min(1),
+    price: z.coerce.number().int().nonnegative(),
+    available: z.boolean().default(true),
+  })).default([]),
 });
 
 export async function GET() {
@@ -37,7 +42,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid product payload", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { category, image, prepTimeMinutes, stock, reorderAt, margin, ...product } = parsed.data;
+  const { category, image, prepTimeMinutes, stock, reorderAt, margin, addons, ...product } = parsed.data;
   const slug = product.slug ?? slugify(product.name);
   const saved = await prisma.product.create({
     data: {
@@ -52,6 +57,7 @@ export async function POST(request: Request) {
       },
       images: image ? { create: { url: image, alt: product.name, sortOrder: 0 } } : undefined,
       variants: { create: { name: "Regular", price: 0 } },
+      addons: addons.length ? { create: addons } : undefined,
       inventory: { create: { stock, reorderAt, margin } },
     },
     include: {

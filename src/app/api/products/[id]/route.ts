@@ -19,6 +19,12 @@ const updateProductSchema = z.object({
   stock: z.coerce.number().int().nonnegative().optional(),
   reorderAt: z.coerce.number().int().nonnegative().optional(),
   margin: z.coerce.number().int().min(0).max(100).optional(),
+  addons: z.array(z.object({
+    id: z.string().optional(),
+    name: z.string().min(1),
+    price: z.coerce.number().int().nonnegative(),
+    available: z.boolean().default(true),
+  })).optional(),
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -32,7 +38,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Invalid product update", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { category, image, prepTimeMinutes, stock, reorderAt, margin, ...productUpdate } = parsed.data;
+  const { category, image, prepTimeMinutes, stock, reorderAt, margin, addons, ...productUpdate } = parsed.data;
   const product = await prisma.product.update({
     where: { id },
     data: {
@@ -51,6 +57,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           ? {
               deleteMany: {},
               ...(image ? { create: { url: image, alt: productUpdate.name ?? "Product image", sortOrder: 0 } } : {}),
+            }
+          : undefined,
+      addons:
+        addons !== undefined
+          ? {
+              deleteMany: {},
+              create: addons.map((addon) => ({
+                name: addon.name,
+                price: addon.price,
+                available: addon.available,
+              })),
             }
           : undefined,
       inventory:

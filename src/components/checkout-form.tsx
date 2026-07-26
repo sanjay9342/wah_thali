@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { CalendarClock, CreditCard, LocateFixed, MapPin, ShieldCheck, Store } from "lucide-react";
 import { business } from "@/lib/business";
 import { writeStoredCart } from "@/lib/cart-storage";
+import { readCustomerSession } from "@/lib/customer-session";
 import { saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
 import { useStoredCart } from "@/lib/use-stored-cart";
 import type { RestaurantSettings } from "@/lib/types";
@@ -18,13 +19,14 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
   ];
   const cartLines = useStoredCart();
   const deliveryLocation = useDeliveryLocation();
+  const customerSession = readCustomerSession();
   const [deliveryMode, setDeliveryMode] = useState<"now" | "schedule">("now");
   const [paymentMethod, setPaymentMethod] = useState(paymentMethods[0] ?? "No payment method");
   const [locating, setLocating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [address, setAddress] = useState({
-    name: "",
-    phone: "",
+    name: customerSession?.name ?? "",
+    phone: customerSession?.mobile ?? "",
     area: deliveryLocation.address === "Select delivery location" ? "" : deliveryLocation.address,
     pinCode: "",
     landmark: "",

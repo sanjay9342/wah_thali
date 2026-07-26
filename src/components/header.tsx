@@ -1,95 +1,74 @@
 "use client";
 
-import { Bell, Heart, History, MapPin, Search, ShoppingCart, User, MessageCircle } from "lucide-react";
+import { Bell, ChevronDown, MapPin, ShoppingCart } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { settings } from "@/lib/data";
+import { useStoredCart } from "@/lib/use-stored-cart";
 import { useDeliveryLocation } from "@/lib/delivery-location";
 
-export function Header({ showContact = true, whatsappNumber = settings.whatsappNumber }: { showContact?: boolean; whatsappNumber?: string }) {
-  const whatsappText = encodeURIComponent("Hi Wah Thali, I want to order food.");
+export function Header({ showContact = true }: { showContact?: boolean; whatsappNumber?: string }) {
   const deliveryLocation = useDeliveryLocation();
+  const cart = useStoredCart();
+  const cartCount = cart.reduce((total, line) => total + line.quantity, 0);
 
   return (
-    <header className="sticky top-0 z-50 overflow-hidden border-b border-border bg-white/95 backdrop-blur">
-      <div className="mx-auto grid min-h-[72px] w-full max-w-[430px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-4 py-3 sm:max-w-7xl sm:px-6 md:min-h-20 md:grid-cols-[auto_1fr_auto] md:gap-3 lg:px-8">
-        <Link href="/address" className="flex min-w-0 items-center gap-1.5 md:hidden">
-            <MapPin size={16} className="shrink-0 text-red" />
-          <span className="min-w-0">
-            <span className="block text-[10px] font-bold leading-none text-muted">Deliver to</span>
-            <span className="block max-w-24 truncate text-xs font-black text-charcoal">{deliveryLocation.address}</span>
-          </span>
+    <header className="sticky top-0 z-50 border-b border-[#f1e7e4] bg-white/96 backdrop-blur">
+      <div className="mx-auto hidden h-[104px] max-w-[1250px] items-center gap-6 px-0 lg:flex">
+        <Link href="/" className="relative h-16 w-[164px] overflow-hidden border-r border-[#f1e7e4] pr-6" aria-label="Wah Thali home">
+          <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill priority sizes="164px" className="object-contain object-left" />
         </Link>
 
-        <Link href="/" className="flex min-w-fit -translate-x-2 items-center justify-self-center md:translate-x-0 md:justify-self-start" aria-label="Wah Thali home">
-          <span className="relative block h-12 w-36 overflow-hidden sm:h-[54px] sm:w-44 md:h-14 md:w-52">
-            <Image
-              src="/wah-thali-logo-cutout.png"
-              alt="Wah Thali"
-              fill
-              priority
-              sizes="(max-width: 767px) 144px, 208px"
-              className="object-contain"
-            />
-          </span>
+        <Link href="/address" className="flex min-w-0 max-w-[300px] items-center gap-3 text-sm font-black">
+          <MapPin size={18} className="text-red" />
+          <span className="truncate">{deliveryLocation.address}</span>
+          <ChevronDown size={16} className="text-muted" />
         </Link>
 
-        <div className="hidden min-w-0 items-center gap-3 md:flex">
-          <Link href="/address" className="flex h-11 max-w-56 items-center gap-2 rounded-lg border border-border px-3 text-sm font-semibold text-charcoal">
-            <MapPin size={18} className="min-w-4 text-red" />
-            <span className="truncate">{deliveryLocation.address}</span>
-          </Link>
-
-          <label className="relative min-w-0 flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={18} />
-            <input
-              className="h-11 w-full rounded-lg border border-border bg-cream pl-10 pr-3 text-sm"
-              placeholder="Search thali, biryani, momos, dessert"
-            />
-          </label>
-        </div>
-
-        <nav className="ml-auto hidden items-center gap-1 lg:flex">
+        <nav className="ml-auto flex items-center gap-8 text-sm font-black">
           {[
-            ["/account", User, "Account"],
-            ["/orders", History, "Orders"],
-            ["/offers", Bell, "Offers"],
-            ["/wishlist", Heart, "Wishlist"],
-            ["/cart", ShoppingCart, "Cart"],
-          ].map(([href, Icon, label]) => (
-            <Link
-              key={String(label)}
-              href={String(href)}
-              className="grid h-11 min-w-11 place-items-center rounded-lg text-muted hover:bg-cream hover:text-maroon"
-              aria-label={String(label)}
-              title={String(label)}
-            >
-              <Icon size={19} />
+            ["/", "Home"],
+            ["/menu", "Search"],
+            ["/orders", "Orders"],
+            ["/offers", "Offers"],
+            ["/support", "Help"],
+          ].map(([href, label]) => (
+            <Link key={href} href={href} className="text-charcoal hover:text-red">
+              {label}
             </Link>
           ))}
         </nav>
 
+        <Link href="/cart" className="relative grid h-11 w-11 place-items-center text-charcoal" aria-label="Cart">
+          <ShoppingCart size={30} />
+          {cartCount ? <span className="absolute -right-1 top-0 rounded-full bg-red px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
+        </Link>
         {showContact ? (
-          <a
-            href={`https://wa.me/${whatsappNumber}?text=${whatsappText}`}
-            className="grid h-10 w-10 min-w-10 place-items-center justify-self-end rounded-full bg-maroon text-white sm:h-11 sm:w-11 sm:min-w-11 lg:ml-1 lg:rounded-lg"
-            aria-label="Chat on WhatsApp"
-            title="Chat on WhatsApp"
-          >
-            <MessageCircle size={19} />
-          </a>
-        ) : (
-          <span className="h-10 w-10 justify-self-end sm:h-11 sm:w-11 lg:ml-1" aria-hidden="true" />
-        )}
+          <Link href="/login" className="rounded-xl bg-red px-6 py-3 text-sm font-black text-white shadow-[0_9px_20px_rgba(141,0,33,0.18)]">
+            Sign In
+          </Link>
+        ) : null}
       </div>
-      <div className="mx-auto w-full max-w-[430px] border-t border-border px-4 py-3 md:hidden">
-        <label className="relative block">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={18} />
-          <input
-            className="h-11 w-full rounded-lg border border-border bg-cream pl-10 pr-3 text-sm"
-            placeholder="Search Wah Thali"
-          />
-        </label>
+
+      <div className="grid h-[58px] grid-cols-[1fr_auto_auto] items-center gap-2 px-3 lg:hidden">
+        <Link href="/address" className="flex min-w-0 items-center gap-2">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#fff4f5] text-red">
+            <MapPin size={16} />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[8px] font-black uppercase tracking-wide text-muted">Delivering to</span>
+            <span className="block truncate text-[11px] font-black leading-tight text-charcoal">{deliveryLocation.address}</span>
+          </span>
+          <ChevronDown size={12} />
+        </Link>
+
+        <button className="relative grid h-9 w-9 place-items-center" aria-label="Notifications">
+          <Bell size={21} />
+          <span className="absolute right-2 top-1.5 h-2 w-2 rounded-full bg-red" />
+        </button>
+        <Link href="/cart" className="relative grid h-9 w-9 place-items-center" aria-label="Cart">
+          <ShoppingCart size={23} />
+          {cartCount ? <span className="absolute right-0 top-0 rounded-full bg-red px-1.5 text-[9px] font-black text-white">{cartCount}</span> : null}
+        </Link>
       </div>
     </header>
   );

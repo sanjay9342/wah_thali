@@ -47,3 +47,5 @@ npm run build
 ## Next Credentials Needed
 
 Copy `.env.example` to `.env.local` and fill Supabase, Razorpay, Meta WhatsApp, n8n, Google Maps, and SMTP values when ready. No secrets are committed.
+
+

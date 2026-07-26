@@ -1,4 +1,5 @@
 import { CartClient } from "@/components/cart-client";
+import { Header } from "@/components/header";
 import { getCouponsFromDb, getProductsFromDb, getRestaurantSettingsFromDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +17,11 @@ export default async function CartPage({
   ]);
 
   return (
-    <main className="bg-[#f2f0f5] sm:px-6 lg:px-8">
-      <CartClient addProductId={params.add} initialProducts={products} initialCoupons={coupons} restaurantSettings={restaurantSettings} />
-    </main>
+    <>
+      <Header />
+      <main className="bg-white px-0 pb-24 sm:px-6 lg:px-8">
+        <CartClient addProductId={params.add} initialProducts={products} initialCoupons={coupons} restaurantSettings={restaurantSettings} />
+      </main>
+    </>
   );
 }
