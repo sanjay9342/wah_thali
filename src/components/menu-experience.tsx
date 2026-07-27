@@ -30,11 +30,13 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { MobileNav } from "@/components/mobile-nav";
 import { categories as fallbackCategories, products as fallbackProducts } from "@/lib/data";
 import { writeStoredCart } from "@/lib/cart-storage";
-import { useDeliveryLocation } from "@/lib/delivery-location";
+import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
+import { isServiceableLocation, useDeliveryLocation } from "@/lib/delivery-location";
+import { clearNotifications, markNotificationsRead, useNotifications } from "@/lib/notifications";
 import { formatRupees, getPricableCartLines, getProductPrice } from "@/lib/pricing";
 import { useStoredCart } from "@/lib/use-stored-cart";
 import type { CartLine, CategoryOfferMap, HomeSlide, Product, RestaurantSettings } from "@/lib/types";
@@ -498,7 +500,9 @@ export function MenuExperience({
   const products = initialProducts;
   const categoryOffers = initialCategoryOffers;
   const pathname = usePathname();
+  const router = useRouter();
   const deliveryLocation = useDeliveryLocation();
+  const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState(() => {
     if (!initialActiveCategory || initialActiveCategory === "All") return "All";
@@ -514,10 +518,13 @@ export function MenuExperience({
   const [priceSort, setPriceSort] = useState<PriceSort>("NONE");
   const [hiddenCartCount, setHiddenCartCount] = useState(0);
   const [cartBarClosing, setCartBarClosing] = useState(false);
-  const cart = useStoredCart();
+  const cartOwnerId = customerSession?.mobile;
+  const cart = useStoredCart(cartOwnerId);
+  const { items: notifications, unreadCount } = useNotifications(cartOwnerId);
   const validCart = useMemo(() => getPricableCartLines(cart, products), [cart, products]);
   const storeMode = restaurantSettings?.storeMode ?? "OPEN";
-  const orderingDisabled = storeMode === "CLOSED" || storeMode === "PAUSED";
+  const serviceable = isServiceableLocation(deliveryLocation, restaurantSettings?.serviceablePins ?? []);
+  const orderingDisabled = storeMode === "CLOSED" || storeMode === "PAUSED" || !serviceable;
   const statusMessage = getStoreStatusMessage(restaurantSettings);
 
   const visibleProducts = useMemo(() => {
@@ -553,6 +560,15 @@ export function MenuExperience({
   }, [initialSlides]);
 
   useEffect(() => {
+    function refreshSession() {
+      setCustomerSession(readCustomerSession());
+    }
+
+    refreshSession();
+    return subscribeCustomerSession(refreshSession);
+  }, []);
+
+  useEffect(() => {
     if (promoSlides.length <= 1) return;
     const timer = window.setInterval(() => {
       setActiveSlide((current) => (current + 1) % promoSlides.length);
@@ -562,9 +578,9 @@ export function MenuExperience({
 
   useEffect(() => {
     if (validCart.length !== cart.length) {
-      writeStoredCart(validCart);
+      writeStoredCart(validCart, cartOwnerId);
     }
-  }, [cart, validCart]);
+  }, [cart, cartOwnerId, validCart]);
 
   useEffect(() => {
     if (!selectedProduct) return;
@@ -583,11 +599,15 @@ export function MenuExperience({
   }, [selectedProduct]);
 
   function persist(next: CartLine[]) {
-    writeStoredCart(next);
+    writeStoredCart(next, cartOwnerId);
   }
 
   function addProduct(product: Product, addonIds: string[] = []) {
     if (orderingDisabled) return;
+    if (!cartOwnerId) {
+      router.push(`/login?next=${encodeURIComponent(pathname)}`);
+      return;
+    }
     const variantId = product.variants[0]?.id ?? "regular";
     const sortedAddonIds = [...addonIds].sort();
     const existingIndex = validCart.findIndex((line) =>
@@ -660,6 +680,92 @@ export function MenuExperience({
   const isSearchPage = pathname === "/menu";
   const showCartBar = cartCount > 0 && hiddenCartCount !== cartCount;
 
+  if (!serviceable) {
+    return (
+      <main className="min-h-screen bg-white pb-24 text-charcoal">
+        <header className="sticky top-0 z-50 border-b border-[#f1e7e4] bg-white/96 backdrop-blur">
+          <div className="mx-auto hidden h-[104px] max-w-[1250px] items-center gap-6 px-0 lg:flex">
+            <Link href="/" className="relative h-16 w-[164px] overflow-hidden border-r border-[#f1e7e4] pr-6" aria-label="Wah Thali home">
+              <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill priority sizes="164px" className="object-contain object-left" />
+            </Link>
+            <Link href="/address" className="flex min-w-0 max-w-[360px] items-center gap-3 text-sm font-black">
+              <MapPin size={18} className="text-maroon" />
+              <span className="truncate">{deliveryLocation.address}</span>
+              <ChevronDown size={16} className="text-muted" />
+            </Link>
+            <nav className="ml-auto flex items-center gap-8 text-sm font-black">
+              {[
+                ["/", "Home"],
+                ["/menu", "Search"],
+                ["/orders", "Orders"],
+                ["/offers", "Offers"],
+                ["/support", "Help"],
+              ].map(([href, label]) => (
+                <Link key={href} href={href} className={href === pathname ? "text-maroon" : "text-charcoal hover:text-maroon"}>
+                  {label}
+                </Link>
+              ))}
+            </nav>
+            <Link href="/cart" className="relative grid h-11 w-11 place-items-center text-charcoal" aria-label="Cart">
+              <ShoppingCart size={30} />
+              {cartCount ? <span className="absolute -right-1 top-0 rounded-full bg-maroon px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
+            </Link>
+            <Link href="/login" className="rounded-xl bg-maroon px-6 py-3 text-sm font-black text-white shadow-[0_9px_20px_rgba(141,0,33,0.18)]">
+              Sign In
+            </Link>
+          </div>
+
+          <div className="grid h-[66px] grid-cols-[1fr_auto_auto] items-center gap-2.5 px-5 lg:hidden">
+            <Link href="/address" className="flex min-w-0 items-center gap-2">
+              <span className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-[15px] bg-[#f5f6f8] text-[#374151]">
+                <MapPin size={21} strokeWidth={2.5} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[10px] font-black uppercase tracking-wide text-[#a0a6b0]">Delivering to</span>
+                <span className="block truncate text-[14px] font-black leading-tight text-charcoal">{deliveryLocation.address}</span>
+              </span>
+              <ChevronDown size={14} className="text-[#6b7280]" />
+            </Link>
+            <button
+              className="relative grid h-9 w-9 place-items-center text-[#374151]"
+              onClick={() => {
+                setActivePopup("notifications");
+                markNotificationsRead(cartOwnerId);
+              }}
+              aria-label="Notifications"
+            >
+              <Bell size={25} strokeWidth={2.2} />
+              {unreadCount ? (
+                <span className="absolute -right-0.5 top-0 grid h-4 min-w-4 place-items-center rounded-full bg-maroon px-1 text-[9px] font-black text-white">
+                  {unreadCount}
+                </span>
+              ) : null}
+            </button>
+            <Link href="/cart" className="relative grid h-9 w-9 place-items-center text-[#374151]" aria-label="Cart">
+              <ShoppingCart size={29} strokeWidth={2.3} />
+              {cartCount ? <span className="absolute -right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
+            </Link>
+          </div>
+        </header>
+
+        <section className="flex min-h-[calc(100vh-150px)] flex-col items-center justify-center px-8 pb-28 text-center lg:min-h-[calc(100vh-104px)]">
+          <div className="grid h-24 w-24 place-items-center rounded-full bg-[#fff4f5] text-maroon">
+            <MapPin size={48} strokeWidth={2.7} />
+          </div>
+          <h1 className="mt-7 text-[28px] font-black leading-tight text-charcoal">Service Not Available</h1>
+          <p className="mt-4 max-w-[340px] text-[17px] font-semibold leading-7 text-muted">
+            We currently do not deliver to your selected location. Please change your location to explore our products.
+          </p>
+          <Link href="/address" className="mt-8 inline-flex h-14 min-w-[230px] items-center justify-center rounded-2xl bg-maroon px-7 text-[17px] font-black text-white shadow-[0_14px_26px_rgba(141,0,33,0.2)]">
+            Choose Location
+          </Link>
+        </section>
+
+        <MobileNav />
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-white pb-24 text-charcoal lg:pb-0">
       <header className="sticky top-0 z-50 border-b border-[#f1e7e4] bg-white/96 backdrop-blur">
@@ -697,7 +803,7 @@ export function MenuExperience({
           </Link>
         </div>
 
-        <div className={`${mobileMenuView === "category" || isSearchPage ? "hidden" : "grid"} h-[66px] grid-cols-[1fr_auto_auto] items-center gap-2.5 px-4 lg:hidden`}>
+        <div className={`${mobileMenuView === "category" || isSearchPage ? "hidden" : "grid"} h-[66px] grid-cols-[1fr_auto_auto] items-center gap-2.5 px-5 lg:hidden`}>
           <Link href="/address" className="flex min-w-0 items-center gap-2">
             <span className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-[15px] bg-[#f5f6f8] text-[#374151]">
               <MapPin size={21} strokeWidth={2.5} />
@@ -709,9 +815,20 @@ export function MenuExperience({
             <ChevronDown size={14} className="text-[#6b7280]" />
           </Link>
 
-          <button className="relative grid h-9 w-9 place-items-center text-[#374151]" onClick={() => setActivePopup("notifications")} aria-label="Notifications">
+          <button
+            className="relative grid h-9 w-9 place-items-center text-[#374151]"
+            onClick={() => {
+              setActivePopup("notifications");
+              markNotificationsRead(cartOwnerId);
+            }}
+            aria-label="Notifications"
+          >
             <Bell size={25} strokeWidth={2.2} />
-            <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-[#ff2446]" />
+            {unreadCount ? (
+              <span className="absolute -right-0.5 top-0 grid h-4 min-w-4 place-items-center rounded-full bg-maroon px-1 text-[9px] font-black text-white">
+                {unreadCount}
+              </span>
+            ) : null}
           </button>
           <Link href="/cart" className="relative grid h-9 w-9 place-items-center text-[#374151]" aria-label="Cart">
             <ShoppingCart size={29} strokeWidth={2.3} />
@@ -721,7 +838,7 @@ export function MenuExperience({
       </header>
 
       {isSearchPage ? (
-        <section className="min-h-screen bg-[#f7f8fc] px-5 pb-24 pt-1 lg:hidden">
+        <section className="min-h-screen bg-[#f7f8fc] px-6 pb-24 pt-1 lg:hidden">
           <Link href="/" className="mb-1 inline-grid h-8 w-8 place-items-center rounded-full bg-white text-maroon shadow-[0_8px_20px_rgba(17,24,39,0.06)] ring-1 ring-[#e8edf3]" aria-label="Back to home">
             <ArrowLeft size={19} strokeWidth={3} />
           </Link>
@@ -744,7 +861,7 @@ export function MenuExperience({
             </label>
           </div>
 
-          <div className="sticky top-0 z-30 -mx-5 mt-4 bg-[#f7f8fc]/95 px-5 py-2 backdrop-blur">
+          <div className="sticky top-0 z-30 -mx-6 mt-4 bg-[#f7f8fc]/95 px-6 py-2 backdrop-blur">
             <div className="flex flex-wrap items-center justify-center gap-2">
               <DietFilterToggle value={dietFilter} onChange={setDietFilter} />
               <PriceSortToggle value={priceSort} onChange={setPriceSort} />
@@ -845,7 +962,7 @@ export function MenuExperience({
               {cartCount ? <span className="absolute right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
             </Link>
           </div>
-          <div className="px-5 pt-11">
+          <div className="px-6 pt-11">
             <div className="mb-7 flex items-center justify-between">
               <h2 className="text-[25px] font-bold text-[#111827]">{shortCategoryName(mobileCategory)} Products</h2>
               <span className="text-[25px] font-bold text-[#111827]">{mobileCategoryProducts.length} {mobileCategoryProducts.length === 1 ? "item" : "items"}</span>
@@ -873,7 +990,7 @@ export function MenuExperience({
         </section>
       ) : null}
 
-      <div className={`${mobileMenuView === "home" && !isSearchPage ? "grid" : "hidden lg:grid"} mx-auto max-w-[1250px] gap-6 px-3 pt-3 sm:px-6 lg:grid-cols-[224px_minmax(0,1fr)] lg:px-0 lg:pt-6`}>
+      <div className={`${mobileMenuView === "home" && !isSearchPage ? "grid" : "hidden lg:grid"} mx-auto max-w-[1250px] gap-6 px-4 pt-3 sm:px-6 lg:grid-cols-[224px_minmax(0,1fr)] lg:px-0 lg:pt-6`}>
         <aside className="sticky top-[128px] hidden h-[520px] overflow-hidden rounded-2xl border border-[#f1e7e4] bg-white p-4 shadow-[0_14px_40px_rgba(34,31,32,0.04)] lg:block">
           <div className="mb-4 flex items-center gap-2 border-b border-[#f1e7e4] pb-4 text-sm font-black uppercase tracking-wide text-muted">
             <BookOpen size={18} />
@@ -904,7 +1021,7 @@ export function MenuExperience({
 
         <div className="min-w-0">
           {isHomePage ? (
-            <section className="relative mb-4 h-[156px] overflow-hidden rounded-[14px] bg-red shadow-[0_10px_24px_rgba(34,31,32,0.08)] lg:hidden">
+            <section className="relative mb-4 h-[166px] overflow-hidden rounded-[20px] bg-red shadow-[0_10px_24px_rgba(34,31,32,0.08)] lg:hidden">
               <Image
                 src={promoSlides[activeSlide]?.image || "/wah-thali-meal-cutout-v2.png"}
                 alt={promoSlides[activeSlide]?.title || "Wah Thali offer"}
@@ -996,7 +1113,7 @@ export function MenuExperience({
             </section>
           ) : null}
 
-          <section className="mt-5 lg:mt-8">
+          <section className="mt-6 lg:mt-8">
             <div className="flex justify-center gap-3 overflow-x-auto pb-3 lg:justify-between lg:overflow-visible">
               {categoryItems.slice(0, 5).map((category) => (
                 <button
@@ -1222,32 +1339,55 @@ export function MenuExperience({
       ) : null}
 
       {activePopup ? (
-        <div className="fixed inset-0 z-[70] bg-charcoal/40 px-4 py-5 backdrop-blur-sm" onClick={() => setActivePopup(null)}>
+        <div className="fixed inset-0 z-[70] bg-charcoal/30 px-4 py-5 backdrop-blur-[2px]" onClick={() => setActivePopup(null)}>
           <div
-            className="mx-auto mt-16 max-w-md rounded-[28px] bg-white p-5 shadow-2xl ring-1 ring-border"
+            className={`ml-auto w-full bg-white p-4 shadow-2xl ring-1 ring-border ${
+              activePopup === "notifications"
+                ? "mt-[70px] max-w-[315px] rounded-[24px]"
+                : "mx-auto mt-16 max-w-md rounded-[28px]"
+            }`}
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-black text-maroon">
                 {activePopup === "notifications" ? "Notifications" : activePopup === "filters" ? "Filters" : "Wah Thali"}
               </h2>
-              <button className="grid h-9 w-9 place-items-center rounded-full bg-[#fff4f5] text-maroon" onClick={() => setActivePopup(null)} aria-label="Close popup">
-                <X size={18} />
-              </button>
+              <div className="flex items-center gap-2">
+                {activePopup === "notifications" && notifications.length ? (
+                  <button
+                    type="button"
+                    onClick={() => clearNotifications(cartOwnerId)}
+                    className="rounded-full bg-[#fff4f5] px-3 py-2 text-[11px] font-black text-maroon"
+                  >
+                    Clear
+                  </button>
+                ) : null}
+                <button className="grid h-9 w-9 place-items-center rounded-full bg-[#fff4f5] text-maroon" onClick={() => setActivePopup(null)} aria-label="Close popup">
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {activePopup === "notifications" ? (
-              <div className="mt-4 space-y-3">
-                {[
-                  ["Order updates", "Preparing, packed, out for delivery, and delivered alerts."],
-                  ["Coupons", "Personal offers and recovery coupons."],
-                  ["Loyalty", "Points earned, expiring points, and tier changes."],
-                ].map(([title, body]) => (
-                  <div key={title} className="rounded-2xl border border-border bg-[#fff8f9] p-4">
-                    <p className="font-black text-charcoal">{title}</p>
-                    <p className="mt-1 text-xs leading-5 text-muted">{body}</p>
+              <div className="mt-4 max-h-[360px] space-y-2 overflow-y-auto pr-1">
+                {notifications.length ? (
+                  notifications.map((notification) => (
+                    <div key={notification.id} className="rounded-2xl border border-[#f0e2e4] bg-[#fff8f9] p-3">
+                      <div className="flex items-start gap-2">
+                        <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${notification.read ? "bg-muted/35" : "bg-maroon"}`} />
+                        <span className="min-w-0">
+                          <span className="block text-[13px] font-black leading-tight text-charcoal">{notification.title}</span>
+                          <span className="mt-1 block text-[11px] font-bold leading-4 text-muted">{notification.body}</span>
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-border bg-[#fff8f9] p-5 text-center">
+                    <p className="text-sm font-black text-charcoal">No notifications yet</p>
+                    <p className="mt-1 text-[11px] font-bold leading-4 text-muted">Account and order updates will appear here.</p>
                   </div>
-                ))}
+                )}
               </div>
             ) : activePopup === "filters" ? (
               <div className="mt-4 grid gap-3">

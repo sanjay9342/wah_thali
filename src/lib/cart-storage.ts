@@ -3,26 +3,31 @@ import type { CartLine } from "./types";
 export const cartStorageKey = "wah-thali-cart";
 export const emptyCartSnapshot = "[]";
 
-export function readStoredCart(): CartLine[] {
+function getScopedCartStorageKey(ownerId?: string | null) {
+  return ownerId ? `${cartStorageKey}:${ownerId}` : cartStorageKey;
+}
+
+export function readStoredCart(ownerId?: string | null): CartLine[] {
   if (typeof window === "undefined") return [];
 
   try {
-    const raw = window.localStorage.getItem(cartStorageKey);
+    const raw = window.localStorage.getItem(getScopedCartStorageKey(ownerId));
     return raw ? (JSON.parse(raw) as CartLine[]) : [];
   } catch {
     return [];
   }
 }
 
-export function writeStoredCart(lines: CartLine[]) {
+export function writeStoredCart(lines: CartLine[], ownerId?: string | null) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(cartStorageKey, JSON.stringify(lines));
+  window.localStorage.setItem(getScopedCartStorageKey(ownerId), JSON.stringify(lines));
   window.dispatchEvent(new Event("wah-cart-change"));
 }
 
-export function getCartSnapshot(): string {
+export function getCartSnapshot(ownerId?: string | null): string {
   if (typeof window === "undefined") return emptyCartSnapshot;
-  return window.localStorage.getItem(cartStorageKey) ?? emptyCartSnapshot;
+  if (!ownerId) return emptyCartSnapshot;
+  return window.localStorage.getItem(getScopedCartStorageKey(ownerId)) ?? emptyCartSnapshot;
 }
 
 export function getServerCartSnapshot(): string {

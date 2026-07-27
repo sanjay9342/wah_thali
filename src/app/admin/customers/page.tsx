@@ -23,8 +23,8 @@ export default async function AdminCustomersPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href="/admin" className="inline-flex h-11 items-center rounded-lg border border-border px-4 font-black">Dashboard</Link>
-            <Link href="/checkout" className="inline-flex h-11 items-center gap-2 rounded-lg bg-red px-4 font-black text-white">
-              <Plus size={18} /> Test checkout
+            <Link href="/login" className="inline-flex h-11 items-center gap-2 rounded-lg bg-maroon px-4 font-black text-white">
+              <Plus size={18} /> Add customer
             </Link>
           </div>
         </div>
@@ -89,7 +89,7 @@ export default async function AdminCustomersPage() {
             )) : (
               <div className="surface rounded-2xl p-8 text-center">
                 <h2 className="text-xl font-black text-maroon">No live customers yet</h2>
-                <p className="mt-2 text-sm font-semibold text-muted">Customers will appear after checkout creates real orders.</p>
+                <p className="mt-2 text-sm font-semibold text-muted">Customers will appear after signup, saved addresses, or checkout orders.</p>
               </div>
             )}
           </div>

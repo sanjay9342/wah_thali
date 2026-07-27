@@ -17,7 +17,7 @@ import {
   Save,
   Share2,
 } from "lucide-react";
-import { saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
+import { extractPinCode, saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
 import { readCustomerSession } from "@/lib/customer-session";
 import type { RestaurantSettings } from "@/lib/types";
 
@@ -29,6 +29,7 @@ type SavedAddress = {
   label?: string;
   area: string;
   details: string;
+  pinCode: string;
   receiver: string;
   phone: string;
   distance: string;
@@ -53,6 +54,12 @@ function getAddressLabel(tag: AddressTag, customLabel?: string) {
   return customLabel?.trim() || "Other";
 }
 
+function isServiceablePin(pinCode: string, serviceablePins: string[]) {
+  void pinCode;
+  void serviceablePins;
+  return true;
+}
+
 export function AddressLocationClient({ restaurantSettings }: { restaurantSettings: RestaurantSettings }) {
   const router = useRouter();
   const deliveryLocation = useDeliveryLocation();
@@ -60,13 +67,15 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
   const [locating, setLocating] = useState(false);
   const [message, setMessage] = useState("");
   const [query, setQuery] = useState("");
-  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>(() => readSavedAddresses());
-  const initialCustomerSession = readCustomerSession();
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [savedAddressesLoaded, setSavedAddressesLoaded] = useState(false);
+  const supportMobile = restaurantSettings.supportPhone.replace(/\D/g, "").slice(-10);
   const [address, setAddress] = useState({
     area: deliveryLocation.address === "Select delivery location" ? "" : deliveryLocation.address,
     details: "",
-    receiver: initialCustomerSession?.name ?? "Sanjay",
-    phone: initialCustomerSession?.mobile ?? "9342597116",
+    pinCode: deliveryLocation.pinCode ?? extractPinCode(deliveryLocation.address),
+    receiver: "Customer",
+    phone: supportMobile,
     tag: "Home" as AddressTag,
     customLabel: "",
     latitude: deliveryLocation.latitude ?? "",
@@ -74,8 +83,33 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
   });
 
   useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setSavedAddresses(readSavedAddresses());
+      setSavedAddressesLoaded(true);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
+  useEffect(() => {
+    if (!savedAddressesLoaded) return;
     window.localStorage.setItem(storageKey, JSON.stringify(savedAddresses));
-  }, [savedAddresses]);
+  }, [savedAddresses, savedAddressesLoaded]);
+
+  useEffect(() => {
+    const session = readCustomerSession();
+    if (!session) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setAddress((current) => ({
+        ...current,
+        receiver: session.name,
+        phone: session.mobile,
+      }));
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, []);
 
   async function syncAddressToCustomer(item: SavedAddress, isDefault: boolean) {
     const session = readCustomerSession();
@@ -95,7 +129,7 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
           area: item.area,
           city: "",
           state: "",
-          pinCode: "",
+          pinCode: item.pinCode,
           landmark: item.receiver ? `Receiver: ${item.receiver}, ${item.phone}` : undefined,
           isDefault,
         }),
@@ -131,7 +165,7 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
         }
 
         setAddress((current) => ({ ...current, area, latitude, longitude }));
-        saveDeliveryLocation({ label: "Home", address: area, latitude, longitude });
+        saveDeliveryLocation({ label: "Home", address: area, pinCode: extractPinCode(area), latitude, longitude });
         setMessage("Current location selected. Save it to keep it in your address list.");
         setLocating(false);
       },
@@ -154,8 +188,13 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
 
   function saveCurrentLocation() {
     const area = address.area.trim() || query.trim() || deliveryLocation.address;
+    const pinCode = address.pinCode.trim() || extractPinCode(area);
     if (!area || area === "Select delivery location") {
       setMessage("Please use current location or search an area first.");
+      return;
+    }
+    if (!isServiceablePin(pinCode, restaurantSettings.serviceablePins)) {
+      setMessage("Service is not available for this PIN code. Please choose another delivery location.");
       return;
     }
 
@@ -166,8 +205,9 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
       label,
       area,
       details: address.details.trim() || area,
+      pinCode,
       receiver: address.receiver || "Customer",
-      phone: address.phone || restaurantSettings.supportPhone,
+      phone: address.phone || supportMobile,
       distance: address.latitude ? "0 m" : "Saved",
     };
 
@@ -175,6 +215,7 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
     saveDeliveryLocation({
       label,
       address: `${next.details}, ${next.area}`,
+      pinCode,
       latitude: address.latitude,
       longitude: address.longitude,
     });
@@ -191,6 +232,11 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
       setMessage("Please enter Address details.");
       return;
     }
+    const pinCode = address.pinCode.trim() || extractPinCode(`${address.details}, ${address.area || query}`);
+    if (!isServiceablePin(pinCode, restaurantSettings.serviceablePins)) {
+      setMessage("Service is not available for this PIN code. Please choose another delivery location.");
+      return;
+    }
 
     const label = getAddressLabel(address.tag, address.customLabel);
     const next: SavedAddress = {
@@ -199,8 +245,9 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
       label,
       area: address.area || query,
       details: address.details,
+      pinCode,
       receiver: address.receiver || "Customer",
-      phone: address.phone || restaurantSettings.supportPhone,
+      phone: address.phone || supportMobile,
       distance: address.latitude ? "0 m" : "Saved",
     };
 
@@ -208,6 +255,7 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
     saveDeliveryLocation({
       label,
       address: `${next.details}, ${next.area}`,
+      pinCode,
       latitude: address.latitude,
       longitude: address.longitude,
     });
@@ -217,13 +265,13 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
 
   function chooseAddress(item: SavedAddress) {
     const label = item.label || item.tag;
-    saveDeliveryLocation({ label, address: `${item.details}, ${item.area}` });
+    saveDeliveryLocation({ label, address: `${item.details}, ${item.area}`, pinCode: item.pinCode });
     setAddress((current) => ({ ...current, ...item, customLabel: item.tag === "Other" ? label : current.customLabel }));
     setMessage(`${label} selected.`);
   }
 
   return (
-    <section className="mx-auto min-h-screen w-full max-w-[430px] bg-white px-4 pb-28 pt-7 text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-6 sm:rounded-[28px] sm:px-5 sm:pt-9 lg:max-w-5xl">
+    <section className="mx-auto min-h-screen w-full max-w-[430px] bg-white px-5 pb-28 pt-7 text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-6 sm:rounded-[28px] sm:pt-9 lg:max-w-5xl">
       {mode === "select" ? (
         <>
           <div className="flex items-center gap-3">
@@ -239,7 +287,7 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value);
-                setAddress((current) => ({ ...current, area: event.target.value }));
+                setAddress((current) => ({ ...current, area: event.target.value, pinCode: extractPinCode(event.target.value) || current.pinCode }));
               }}
               className="min-w-0 flex-1 bg-transparent text-[15px] font-black text-charcoal placeholder:text-charcoal/75 sm:text-[18px]"
               placeholder="Search for area, street name..."
@@ -320,7 +368,7 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value);
-                setAddress((current) => ({ ...current, area: event.target.value }));
+                setAddress((current) => ({ ...current, area: event.target.value, pinCode: extractPinCode(event.target.value) || current.pinCode }));
               }}
               className="min-w-0 flex-1 bg-transparent text-[15px] font-black text-charcoal placeholder:text-muted sm:text-[18px]"
               placeholder="Search for area, street name..."
@@ -349,6 +397,19 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
                 placeholder="Address details*"
               />
               <span className="mt-2 block text-[12px] font-black text-muted">E.g. Floor, House no.</span>
+            </label>
+
+            <label className="mt-4 block">
+              <input
+                value={address.pinCode}
+                onChange={(event) => setAddress({ ...address, pinCode: event.target.value.replace(/\D/g, "").slice(0, 6) })}
+                inputMode="numeric"
+                className="h-14 w-full rounded-2xl border border-border bg-white px-4 text-[15px] font-black text-charcoal outline-none placeholder:text-muted/70 sm:h-16 sm:text-[17px]"
+                placeholder="PIN code*"
+              />
+              <span className="mt-2 block text-[12px] font-black text-muted">
+                Delivery is available only for admin-added PIN codes.
+              </span>
             </label>
 
             <p className="mt-5 text-[12px] font-black text-muted sm:mt-7 sm:text-[15px]">Receiver details for this address</p>

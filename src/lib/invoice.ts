@@ -1,21 +1,30 @@
-import { business } from "@/lib/business";
-
-export const sampleInvoice = {
-  invoiceNumber: "WH0001",
-  date: "24/07/2026, 01:10 PM",
-  customerName: "Sanjay",
+export const invoiceTemplate = {
+  invoiceNumber: "No invoice selected",
+  date: "",
+  customerName: "Customer",
   paymentMode: "Cash on Delivery",
-  items: [
-    { name: "Wah Special Chicken Thali", quantity: 1, rate: 229 },
-    { name: "Kolkata Chicken Biryani", quantity: 1, rate: 249 },
-  ],
+  items: [] as { name: string; quantity: number; rate: number }[],
   discount: 0,
-  delivery: 40,
+  delivery: 0,
   packaging: 0,
   gstRate: 5,
 };
 
-export function buildInvoiceTotals(invoice = sampleInvoice) {
+type Gstr1Row = {
+  gstin: string;
+  invoiceNumber: string;
+  date: string;
+  placeOfSupply: string;
+  invoiceValue: number;
+  rate: number;
+  taxableValue: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  cess: number;
+};
+
+export function buildInvoiceTotals(invoice = invoiceTemplate) {
   const subtotal = invoice.items.reduce((total, item) => total + item.quantity * item.rate, 0);
   const taxable = Math.max(subtotal - invoice.discount + invoice.delivery + invoice.packaging, 0);
   const cgst = Math.round((taxable * 2.5) / 100);
@@ -25,22 +34,6 @@ export function buildInvoiceTotals(invoice = sampleInvoice) {
   return { subtotal, taxable, cgst, sgst, total };
 }
 
-export function getGstr1Rows() {
-  const totals = buildInvoiceTotals();
-
-  return [
-    {
-      gstin: business.gstin,
-      invoiceNumber: sampleInvoice.invoiceNumber,
-      date: sampleInvoice.date,
-      placeOfSupply: "19-West Bengal",
-      invoiceValue: totals.total,
-      rate: sampleInvoice.gstRate,
-      taxableValue: totals.taxable,
-      cgst: totals.cgst,
-      sgst: totals.sgst,
-      igst: 0,
-      cess: 0,
-    },
-  ];
+export function getGstr1Rows(): Gstr1Row[] {
+  return [];
 }

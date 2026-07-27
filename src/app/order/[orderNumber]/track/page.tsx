@@ -41,7 +41,7 @@ export default async function TrackPage({
   return (
     <>
       <Header whatsappNumber={restaurantSettings.whatsappNumber} />
-      <main className="mx-auto w-full max-w-[430px] px-4 pb-32 pt-5 sm:max-w-4xl sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-[430px] px-5 pb-32 pt-5 sm:max-w-4xl sm:px-6 lg:px-8">
         <div className="flex items-center justify-between">
           <Link href="/orders" className="grid h-10 w-10 place-items-center rounded-full bg-white text-charcoal shadow-sm ring-1 ring-border" aria-label="Back to orders">
             <ArrowLeft size={20} />

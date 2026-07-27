@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CalendarClock, CreditCard, LocateFixed, MapPin, ShieldCheck, Store } from "lucide-react";
 import { business } from "@/lib/business";
 import { writeStoredCart } from "@/lib/cart-storage";
-import { readCustomerSession } from "@/lib/customer-session";
+import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 import { saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
 import { useStoredCart } from "@/lib/use-stored-cart";
 import type { RestaurantSettings } from "@/lib/types";
@@ -15,18 +15,18 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
   const router = useRouter();
   const paymentMethods = [
     ...(restaurantSettings.codEnabled ? ["Cash on Delivery"] : []),
-    ...(restaurantSettings.onlinePaymentsEnabled ? ["Razorpay test mode", "UPI", "Cards and wallets"] : []),
+    ...(restaurantSettings.onlinePaymentsEnabled ? ["Razorpay", "UPI", "Cards and wallets"] : []),
   ];
-  const cartLines = useStoredCart();
   const deliveryLocation = useDeliveryLocation();
-  const customerSession = readCustomerSession();
+  const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
+  const cartLines = useStoredCart(customerSession?.mobile);
   const [deliveryMode, setDeliveryMode] = useState<"now" | "schedule">("now");
   const [paymentMethod, setPaymentMethod] = useState(paymentMethods[0] ?? "No payment method");
   const [locating, setLocating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [address, setAddress] = useState({
-    name: customerSession?.name ?? "",
-    phone: customerSession?.mobile ?? "",
+    name: "",
+    phone: "",
     area: deliveryLocation.address === "Select delivery location" ? "" : deliveryLocation.address,
     pinCode: "",
     landmark: "",
@@ -44,6 +44,23 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
         : "No payment method is enabled. Please contact support.",
   );
   const mapUrl = address.latitude && address.longitude ? `https://www.google.com/maps?q=${address.latitude},${address.longitude}` : "";
+
+  useEffect(() => {
+    function refreshSession() {
+      const session = readCustomerSession();
+      setCustomerSession(session);
+      if (session) {
+        setAddress((current) => ({
+          ...current,
+          name: session.name,
+          phone: session.mobile,
+        }));
+      }
+    }
+
+    refreshSession();
+    return subscribeCustomerSession(refreshSession);
+  }, []);
 
   async function placeOrder() {
     if (orderingDisabled || !paymentMethods.length || submitting) return;
@@ -78,7 +95,7 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
         return;
       }
 
-      writeStoredCart([]);
+      writeStoredCart([], customerSession?.mobile);
       router.push(`/order/${data.order.orderNumber}/confirmed`);
     } catch {
       setMessage("Order could not be created. Please check your connection and try again.");
@@ -194,7 +211,7 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
                 </span>
               ))}
             </div>
-            <p className="mt-2">Serviceable PINs: {restaurantSettings.serviceablePins.join(", ")}</p>
+            <p className="mt-2">Delivery is currently open for all locations.</p>
           </div>
         </div>
 

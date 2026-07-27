@@ -15,6 +15,7 @@ const orderSchema = z.object({
   customerMobile: z.string().min(8),
   customerName: z.string().min(1),
   couponCode: z.string().trim().optional(),
+  pinCode: z.string().trim().optional(),
   items: z.array(orderItemSchema).min(1),
 });
 
@@ -116,7 +117,6 @@ export async function POST(request: Request) {
       { status: 423 },
     );
   }
-
   const calculated = await calculateServerOrder(data.items, data.couponCode, settings).catch((error) => {
     console.error("Server order validation failed.", error);
     return null;

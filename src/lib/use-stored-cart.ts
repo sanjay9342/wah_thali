@@ -8,10 +8,10 @@ import {
   subscribeToCart,
 } from "./cart-storage";
 
-export function useStoredCart() {
+export function useStoredCart(ownerId?: string | null) {
   const snapshot = useSyncExternalStore(
     subscribeToCart,
-    getCartSnapshot,
+    () => getCartSnapshot(ownerId),
     getServerCartSnapshot,
   );
 

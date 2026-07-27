@@ -1,7 +1,11 @@
-import { products } from "@/lib/data";
 import { SimpleCustomerPage } from "@/components/simple-customer-page";
+import { getProductsFromDb } from "@/lib/db";
 
-export default function WishlistPage() {
+export const dynamic = "force-dynamic";
+
+export default async function WishlistPage() {
+  const products = await getProductsFromDb();
+
   return (
     <SimpleCustomerPage
       title="Wishlist"

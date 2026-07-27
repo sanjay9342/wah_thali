@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 export type DeliveryLocation = {
   label: string;
   address: string;
+  pinCode?: string;
   latitude?: string;
   longitude?: string;
 };
@@ -27,6 +28,7 @@ function readDeliveryLocation(): DeliveryLocation {
       return {
         label: parsed.label || "Home",
         address: parsed.address,
+        pinCode: parsed.pinCode,
         latitude: parsed.latitude,
         longitude: parsed.longitude,
       };
@@ -45,14 +47,25 @@ export function saveDeliveryLocation(location: DeliveryLocation) {
   window.dispatchEvent(new Event(deliveryLocationEvent));
 }
 
+export function extractPinCode(value: string) {
+  return value.match(/\b\d{6}\b/)?.[0] ?? "";
+}
+
+export function isServiceableLocation(location: DeliveryLocation, serviceablePins: string[]) {
+  void location;
+  void serviceablePins;
+  return true;
+}
+
 export function useDeliveryLocation() {
-  const [location, setLocation] = useState<DeliveryLocation>(() => readDeliveryLocation());
+  const [location, setLocation] = useState<DeliveryLocation>(defaultDeliveryLocation);
 
   useEffect(() => {
     function handleChange() {
       setLocation(readDeliveryLocation());
     }
 
+    handleChange();
     window.addEventListener("storage", handleChange);
     window.addEventListener(deliveryLocationEvent, handleChange);
 

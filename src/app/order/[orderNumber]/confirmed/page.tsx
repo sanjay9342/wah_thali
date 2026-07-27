@@ -31,7 +31,7 @@ export default async function ConfirmedPage({
   return (
     <>
       <Header whatsappNumber={restaurantSettings.whatsappNumber} />
-      <main className="mx-auto max-w-4xl px-4 pb-24 pt-8 sm:px-6 lg:px-8">
+      <main className="mx-auto max-w-4xl px-5 pb-24 pt-8 sm:px-6 lg:px-8">
         <section className="surface rounded-2xl p-6 text-center">
           <CheckCircle2 className="mx-auto text-maroon" size={56} />
           <h1 className="mt-4 text-3xl font-black text-maroon">Order confirmed</h1>

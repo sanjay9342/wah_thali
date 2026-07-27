@@ -70,7 +70,7 @@ export async function getProductsFromDb(): Promise<Product[]> {
       },
     });
 
-    return products.length ? products.map(toProduct) : fallbackProducts;
+    return products.map(toProduct);
   } catch (error) {
     console.error("Database product read failed. Falling back to local product data.", error);
     return fallbackProducts;
@@ -120,7 +120,7 @@ export async function getCategoriesFromDb(): Promise<string[]> {
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
 
-    return categories.length ? categories.map((category) => category.name) : [...new Set(fallbackProducts.map((product) => product.category))];
+    return categories.map((category) => category.name);
   } catch (error) {
     console.error("Database category read failed. Falling back to local categories.", error);
     return [...new Set(fallbackProducts.map((product) => product.category))];
@@ -173,16 +173,14 @@ export async function getCouponsFromDb(): Promise<Coupon[]> {
       orderBy: { code: "asc" },
     });
 
-    return coupons.length
-      ? coupons.map((coupon) => ({
-          code: coupon.code,
-          label: coupon.label,
-          type: coupon.type as Coupon["type"],
-          value: coupon.value,
-          minOrder: coupon.minOrder,
-          maxDiscount: coupon.maxDiscount ?? undefined,
-        }))
-      : fallbackCoupons;
+    return coupons.map((coupon) => ({
+      code: coupon.code,
+      label: coupon.label,
+      type: coupon.type as Coupon["type"],
+      value: coupon.value,
+      minOrder: coupon.minOrder,
+      maxDiscount: coupon.maxDiscount ?? undefined,
+    }));
   } catch (error) {
     console.error("Database coupon read failed. Falling back to local coupons.", error);
     return fallbackCoupons;

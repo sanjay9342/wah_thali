@@ -20,14 +20,14 @@ import {
   Search,
   Store,
   Tag,
-  Utensils,
   Phone,
   X,
 } from "lucide-react";
 import { calculateCartTotals, formatRupees, getPricableCartLines } from "@/lib/pricing";
 import { writeStoredCart } from "@/lib/cart-storage";
-import { readCustomerSession, saveCustomerSession, subscribeCustomerSession } from "@/lib/customer-session";
-import { saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
+import { readCustomerSession, saveCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
+import { extractPinCode, isServiceableLocation, saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
+import { addNotification } from "@/lib/notifications";
 import { useStoredCart } from "@/lib/use-stored-cart";
 import type { CartLine, Coupon, Product, RestaurantSettings } from "@/lib/types";
 
@@ -68,18 +68,21 @@ export function CartClient({
   const [showReceiverSheet, setShowReceiverSheet] = useState(false);
   const [showLocationSheet, setShowLocationSheet] = useState(false);
   const [showCookingSheet, setShowCookingSheet] = useState(false);
-  const [customerSession, setCustomerSession] = useState(() => readCustomerSession());
+  const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
+  const supportMobile = restaurantSettings.supportPhone.replace(/\D/g, "").slice(-10);
   const [receiverDraft, setReceiverDraft] = useState(() => ({
-    name: readCustomerSession()?.name || "Sanjay",
-    mobile: readCustomerSession()?.mobile || "9342597116",
+    name: "Customer",
+    mobile: supportMobile,
   }));
   const [locationDraft, setLocationDraft] = useState(() => ({
     area: "",
     details: "",
+    pinCode: "",
     tag: "Home" as "Home" | "Work" | "Other",
   }));
   const appliedAddRef = useRef(false);
-  const lines = useStoredCart();
+  const cartOwnerId = customerSession?.mobile;
+  const lines = useStoredCart(cartOwnerId);
   const deliveryLocation = useDeliveryLocation();
   const validLines = useMemo(() => getPricableCartLines(lines, initialProducts), [initialProducts, lines]);
 
@@ -87,23 +90,30 @@ export function CartClient({
     () => calculateCartTotals(validLines, coupon, initialProducts, initialCoupons, restaurantSettings),
     [initialCoupons, initialProducts, validLines, coupon, restaurantSettings],
   );
+  const serviceable = isServiceableLocation(deliveryLocation, restaurantSettings.serviceablePins);
   const suggestions = initialProducts.filter((product) => !validLines.some((line) => line.productId === product.id)).slice(0, 6);
-  const orderingDisabled = restaurantSettings.storeMode === "CLOSED" || restaurantSettings.storeMode === "PAUSED";
+  const storeOrderingDisabled = restaurantSettings.storeMode === "CLOSED" || restaurantSettings.storeMode === "PAUSED";
   const statusMessage = getStoreStatusMessage(restaurantSettings);
   const appliedCoupon = initialCoupons.find((item) => item.code === coupon);
   const featuredCoupon = initialCoupons[0];
+  const featuredCouponValue = featuredCoupon ? getCouponBenefitText(featuredCoupon) : "";
+  const paymentLabel = restaurantSettings.codEnabled
+    ? "Cash on Delivery"
+    : restaurantSettings.onlinePaymentsEnabled
+      ? "Online payment"
+      : "Payment unavailable";
   const itemSavings = validLines.reduce((total, line) => {
     const product = initialProducts.find((item) => item.id === line.productId);
     if (!product?.originalPrice) return total;
     return total + Math.max(product.originalPrice - product.price, 0) * line.quantity;
   }, 0);
-  const totalSavings = itemSavings + totals.discount + (totals.delivery === 0 && validLines.length ? restaurantSettings.deliveryFee : 0);
-  const receiverName = customerSession?.name || "Sanjay";
-  const receiverMobile = customerSession?.mobile || "9342597116";
+  const totalSavings = itemSavings + totals.discount;
+  const receiverName = customerSession?.name || "Customer";
+  const receiverMobile = customerSession?.mobile || supportMobile;
 
   useEffect(() => {
     if (validLines.length !== lines.length) {
-      writeStoredCart(validLines);
+      writeStoredCart(validLines, cartOwnerId);
       return;
     }
 
@@ -111,7 +121,7 @@ export function CartClient({
       return;
     }
 
-    if (orderingDisabled) {
+    if (storeOrderingDisabled) {
       return;
     }
 
@@ -119,20 +129,27 @@ export function CartClient({
     appliedAddRef.current = true;
 
     const next = buildInitialCart(validLines, addProductId);
-    writeStoredCart(next);
-  }, [addProductId, lines, orderingDisabled, validLines]);
+    writeStoredCart(next, cartOwnerId);
+  }, [addProductId, cartOwnerId, lines, storeOrderingDisabled, validLines]);
 
-  useEffect(() => subscribeCustomerSession(() => setCustomerSession(readCustomerSession())), []);
+  useEffect(() => {
+    function refreshSession() {
+      setCustomerSession(readCustomerSession());
+    }
+
+    refreshSession();
+    return subscribeCustomerSession(refreshSession);
+  }, []);
 
   function updateQuantity(index: number, quantity: number) {
     const next = validLines
       .map((line, lineIndex) => (lineIndex === index ? { ...line, quantity } : line))
       .filter((line) => line.quantity > 0);
-    writeStoredCart(next);
+    writeStoredCart(next, cartOwnerId);
   }
 
   function addSuggestedProduct(product: Product) {
-    if (orderingDisabled) return;
+    if (storeOrderingDisabled) return;
 
     writeStoredCart([
       ...validLines,
@@ -142,7 +159,7 @@ export function CartClient({
         addonIds: [],
         quantity: 1,
       },
-    ]);
+    ], cartOwnerId);
   }
 
   function applyCommonCoupon(code: string) {
@@ -163,6 +180,11 @@ export function CartClient({
   }
 
   function openReceiverSheet() {
+    if (!customerSession?.mobile) {
+      router.push("/login?next=/cart");
+      return;
+    }
+
     setReceiverDraft({
       name: receiverName,
       mobile: receiverMobile,
@@ -176,7 +198,7 @@ export function CartClient({
     saveCustomerSession({
       id: customerSession?.id,
       name,
-      mobile: mobile || restaurantSettings.supportPhone.replace(/\D/g, "").slice(-10),
+      mobile: mobile || supportMobile,
       email: customerSession?.email,
     });
     setCustomerSession(readCustomerSession());
@@ -187,6 +209,7 @@ export function CartClient({
     setLocationDraft({
       area: deliveryLocation.address === "Select delivery location" ? "" : deliveryLocation.address,
       details: "",
+      pinCode: deliveryLocation.pinCode ?? extractPinCode(deliveryLocation.address),
       tag: deliveryLocation.label === "Work" || deliveryLocation.label === "Other" ? deliveryLocation.label : "Home",
     });
     setShowLocationSheet(true);
@@ -195,9 +218,11 @@ export function CartClient({
   function saveLocationDetails() {
     const area = locationDraft.area.trim() || deliveryLocation.address;
     const details = locationDraft.details.trim();
+    const pinCode = locationDraft.pinCode.trim() || extractPinCode(`${details}, ${area}`) || deliveryLocation.pinCode;
     saveDeliveryLocation({
       label: locationDraft.tag,
       address: details ? `${details}, ${area}` : area,
+      pinCode,
       latitude: deliveryLocation.latitude,
       longitude: deliveryLocation.longitude,
     });
@@ -210,9 +235,17 @@ export function CartClient({
   }
 
   async function placeOrder() {
-    if (orderingDisabled || submitting) return;
+    if (storeOrderingDisabled || submitting) return;
 
     if (!validLines.length) {
+      return;
+    }
+    if (!customerSession?.mobile) {
+      router.push("/login?next=/cart");
+      return;
+    }
+    if (!serviceable) {
+      openLocationSheet();
       return;
     }
 
@@ -225,6 +258,8 @@ export function CartClient({
         body: JSON.stringify({
           customerName: receiverName,
           customerMobile: receiverMobile,
+          couponCode: coupon,
+          pinCode: deliveryLocation.pinCode,
           items: validLines,
         }),
       });
@@ -234,12 +269,29 @@ export function CartClient({
         return;
       }
 
-      writeStoredCart([]);
+      writeStoredCart([], cartOwnerId);
+      addNotification(cartOwnerId, {
+        kind: "order",
+        title: "Order placed",
+        body: `Your order ${data.order.orderNumber} was placed successfully. We will update you as it moves ahead.`,
+      });
       router.push(`/order/${data.order.orderNumber}/confirmed`);
     } catch {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (!customerSession?.mobile) {
+    return (
+      <div className="mx-5 mt-10 rounded-[28px] bg-white p-6 text-center shadow-sm ring-1 ring-border">
+        <h1 className="text-2xl font-black text-maroon">Login to view cart</h1>
+        <p className="mt-3 text-sm font-bold leading-6 text-muted">Your cart is saved to your account, so every customer sees only their own dishes.</p>
+        <Link href="/login?next=/cart" className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-2xl bg-maroon px-5 font-black text-white">
+          Login or Sign Up
+        </Link>
+      </div>
+    );
   }
 
   if (validLines.length === 0) {
@@ -265,20 +317,22 @@ export function CartClient({
 
   return (
     <section className="relative mx-auto min-h-screen max-w-[430px] bg-[#f6f7fb] pb-32 text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-6 sm:min-h-0 sm:overflow-hidden sm:rounded-[28px] lg:max-w-5xl">
-      <div className="flex items-center gap-3 px-4 pb-1 pt-4 lg:px-6">
+      <div className="flex items-center gap-3 px-5 pb-1 pt-4 lg:px-6">
         <Link href="/menu" className="grid h-10 w-10 place-items-center rounded-full bg-white text-maroon shadow-sm ring-1 ring-border" aria-label="Back to menu">
           <ChevronLeft size={25} strokeWidth={2.7} />
         </Link>
         <h1 className="text-[22px] font-black leading-tight text-maroon">My Cart</h1>
       </div>
 
-      <div className="mx-4 mt-3 flex items-center gap-2 rounded-[14px] bg-[#e9f2ff] px-3 py-2 text-[13px] font-black text-[#1769c2]">
+      {totalSavings > 0 ? (
+      <div className="mx-5 mt-3 flex items-center gap-2 rounded-[14px] bg-[#e9f2ff] px-3 py-2 text-[13px] font-black text-[#1769c2]">
         <BadgeCheck size={16} className="shrink-0" />
         <span>You saved {formatRupees(totalSavings)} on this order</span>
       </div>
+      ) : null}
 
       {restaurantSettings.storeMode !== "OPEN" ? (
-        <div className="mx-4 mt-4 rounded-2xl border border-red/20 bg-white p-4 text-sm text-maroon">
+        <div className="mx-5 mt-4 rounded-2xl border border-red/20 bg-white p-4 text-sm text-maroon">
           <p className="flex items-center gap-2 font-black">
             <Store size={17} className="text-red" />
             {restaurantSettings.storeMode === "BUSY" ? "Kitchen busy" : restaurantSettings.storeMode === "PAUSED" ? "Ordering paused" : "Restaurant closed"}
@@ -286,8 +340,24 @@ export function CartClient({
           <p className="mt-1 text-xs font-bold text-muted">{statusMessage}</p>
         </div>
       ) : null}
+      {!serviceable ? (
+        <div className="mx-5 mt-4 rounded-2xl border border-maroon/15 bg-white p-4 text-sm text-maroon">
+          <p className="flex items-center gap-2 font-black">
+            <MapPin size={17} />
+            {deliveryLocation.pinCode ? "Service not available" : "Delivery PIN required"}
+          </p>
+          <p className="mt-1 text-xs font-bold text-muted">
+            {deliveryLocation.pinCode
+              ? "This PIN code is not added in Admin Settings. Choose another delivery location."
+              : "Add your delivery PIN code to check if this order can be delivered."}
+          </p>
+          <button onClick={openLocationSheet} className="mt-3 h-10 rounded-xl bg-maroon px-4 text-xs font-black text-white">
+            Choose Location
+          </button>
+        </div>
+      ) : null}
 
-      <div className="mx-4 mt-4 rounded-[18px] bg-white p-3 shadow-[0_8px_24px_rgba(17,24,39,0.05)] ring-1 ring-[#eef1f6]">
+      <div className="mx-5 mt-4 rounded-[18px] bg-white p-3 shadow-[0_8px_24px_rgba(17,24,39,0.05)] ring-1 ring-[#eef1f6]">
         <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-5 lg:space-y-0">
         {validLines.map((line, index) => {
           const product = initialProducts.find((item) => item.id === line.productId);
@@ -368,7 +438,7 @@ export function CartClient({
       </div>
 
       {suggestions.length ? (
-        <div className="mx-4 mt-5 rounded-[24px] bg-white p-4 shadow-sm">
+        <div className="mx-5 mt-5 rounded-[24px] bg-white p-4 shadow-sm">
           <h2 className="text-[15px] font-black uppercase tracking-[0.22em] text-muted">Complete your meal</h2>
           <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
             {suggestions.map((product) => (
@@ -401,7 +471,7 @@ export function CartClient({
         </div>
       ) : null}
 
-      <div className="mx-4 mt-5 overflow-hidden rounded-[24px] bg-white shadow-sm">
+      <div className="mx-5 mt-5 overflow-hidden rounded-[24px] bg-white shadow-sm">
         <h2 className="px-4 pb-3 pt-5 text-[15px] font-black uppercase tracking-[0.22em] text-muted">Savings corner</h2>
         <div className="divide-y divide-border">
           <button
@@ -432,33 +502,26 @@ export function CartClient({
               </button>
             </div>
           ) : null}
-          {totals.delivery === 0 && validLines.length ? (
-            <div className="grid grid-cols-[32px_1fr_auto] items-center gap-3 px-4 py-4">
-              <span className="grid h-8 w-8 place-items-center rounded-lg bg-maroon text-white">
-                <Utensils size={17} />
-              </span>
-              <span className="text-[15px] font-bold text-charcoal">
-                {formatRupees(restaurantSettings.deliveryFee)} saved with free delivery
-              </span>
-              <span className="text-[14px] font-black text-maroon">Applied</span>
-            </div>
-          ) : null}
         </div>
       </div>
 
-      <div className="mx-4 mt-5 rounded-[18px] bg-[#fff5ef] p-4 shadow-sm ring-1 ring-[#ffe1d1]">
+      {featuredCoupon ? (
+      <div className="mx-5 mt-5 rounded-[18px] bg-[#fff5ef] p-4 shadow-sm ring-1 ring-[#ffe1d1]">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-[13px] font-black text-charcoal">Special offer from Wah Thali</p>
-            <p className="mt-2 text-[12px] font-bold text-muted">Free dessert coupon after this order is placed</p>
+            <p className="mt-2 text-[12px] font-bold text-muted">
+              Use {featuredCoupon.code} to save {featuredCouponValue}
+            </p>
           </div>
           <span className="grid h-10 w-10 place-items-center rounded-full bg-white text-maroon shadow-sm">
             <Gift size={22} />
           </span>
         </div>
       </div>
+      ) : null}
 
-      <div className="mx-4 mt-5 overflow-hidden rounded-[18px] bg-white shadow-sm ring-1 ring-[#eef1f6]">
+      <div className="mx-5 mt-5 overflow-hidden rounded-[18px] bg-white shadow-sm ring-1 ring-[#eef1f6]">
         <div className="divide-y divide-[#eef1f6]">
           <CartInfoRow
             icon={<Clock3 size={18} />}
@@ -473,8 +536,8 @@ export function CartClient({
           />
           <CartInfoRow
             icon={<Phone size={18} />}
-            title={`${receiverName}, +91-${receiverMobile}`}
-            body="Update receiver details"
+            title={customerSession?.mobile ? `${receiverName}, +91-${receiverMobile}` : "Login required"}
+            body={customerSession?.mobile ? "Update receiver details" : "Sign in to use your receiver details"}
             onClick={openReceiverSheet}
           />
           <CartInfoRow
@@ -487,7 +550,7 @@ export function CartClient({
         </div>
       </div>
 
-      <div className="mx-4 mt-5 rounded-[18px] bg-[#f6f7fb] px-1 pb-1">
+      <div className="mx-5 mt-5 rounded-[18px] bg-[#f6f7fb] px-1 pb-1">
         <h2 className="text-[13px] font-black uppercase tracking-[0.28em] text-muted">Cancellation Policy</h2>
         <p className="mt-2 text-[12px] font-semibold leading-5 text-muted">
           A 100% cancellation charge will apply. This helps us compensate the restaurant partner for food preparation.
@@ -535,10 +598,12 @@ export function CartClient({
                   <dt className="text-[19px] font-black text-charcoal">Grand Total</dt>
                   <dd className="text-[19px] font-black text-charcoal">{formatRupees(totals.subtotal + totals.delivery + totals.packaging + totals.gst)}</dd>
                 </div>
+                {totals.discount > 0 ? (
                 <div className="flex items-center justify-between gap-3">
                   <dt className="text-[17px] font-black text-[#1769c2]">Limited Time Offer</dt>
                   <dd className="font-black text-[#1769c2]">-{formatRupees(totals.discount)}</dd>
                 </div>
+                ) : null}
                 <div className="flex items-center justify-between gap-3">
                   <dt className="text-[19px] font-black text-charcoal">To pay</dt>
                   <dd className="text-[19px] font-black text-charcoal">{formatRupees(totals.grandTotal)}</dd>
@@ -587,7 +652,7 @@ export function CartClient({
             <Search size={24} className="text-maroon" strokeWidth={3} />
             <input
               value={locationDraft.area}
-              onChange={(event) => setLocationDraft((current) => ({ ...current, area: event.target.value }))}
+              onChange={(event) => setLocationDraft((current) => ({ ...current, area: event.target.value, pinCode: extractPinCode(event.target.value) || current.pinCode }))}
               className="min-w-0 flex-1 bg-transparent text-[16px] font-bold text-charcoal outline-none placeholder:text-muted"
               placeholder="Search for area, street name..."
             />
@@ -610,18 +675,26 @@ export function CartClient({
               <MapPin size={24} className="text-maroon" fill="currentColor" />
               <input
                 value={locationDraft.area}
-                onChange={(event) => setLocationDraft((current) => ({ ...current, area: event.target.value }))}
+                onChange={(event) => setLocationDraft((current) => ({ ...current, area: event.target.value, pinCode: extractPinCode(event.target.value) || current.pinCode }))}
                 className="min-w-0 flex-1 bg-transparent text-[16px] font-black text-charcoal outline-none"
                 placeholder="Area or street"
               />
             </label>
             <input
               value={locationDraft.details}
-              onChange={(event) => setLocationDraft((current) => ({ ...current, details: event.target.value }))}
+              onChange={(event) => setLocationDraft((current) => ({ ...current, details: event.target.value, pinCode: extractPinCode(event.target.value) || current.pinCode }))}
               className="mt-4 h-16 w-full rounded-xl border border-border bg-white px-4 text-[15px] font-bold text-charcoal outline-none"
               placeholder="Address details*"
             />
             <p className="mt-2 text-[12px] font-bold text-muted">E.g. Floor, House no.</p>
+            <input
+              value={locationDraft.pinCode}
+              onChange={(event) => setLocationDraft((current) => ({ ...current, pinCode: event.target.value.replace(/\D/g, "").slice(0, 6) }))}
+              inputMode="numeric"
+              className="mt-4 h-14 w-full rounded-xl border border-border bg-white px-4 text-[15px] font-black text-charcoal outline-none"
+              placeholder="PIN code*"
+            />
+            <p className="mt-2 text-[12px] font-bold text-muted">Delivery is currently open for all locations.</p>
             <p className="mt-5 text-[14px] font-black text-muted">Save address as</p>
             <div className="mt-3 flex gap-2">
               {[
@@ -659,11 +732,27 @@ export function CartClient({
         <div className="mx-auto grid max-w-[430px] grid-cols-[1fr_1.45fr] gap-3 lg:max-w-4xl">
           <div className="min-w-0">
             <p className="text-[12px] font-black uppercase tracking-[0.18em] text-muted">Pay using</p>
-            <p className="mt-1 truncate text-[17px] font-bold text-charcoal">Cash / UPI</p>
+            <p className="mt-1 truncate text-[17px] font-bold text-charcoal">{paymentLabel}</p>
           </div>
-          {orderingDisabled ? (
+          {storeOrderingDisabled ? (
             <button disabled className="h-16 cursor-not-allowed rounded-2xl bg-muted/30 text-[18px] font-black text-muted">
               Closed
+            </button>
+          ) : !serviceable ? (
+            <button
+              type="button"
+              onClick={openLocationSheet}
+              className="flex h-16 items-center justify-center rounded-2xl bg-maroon text-[18px] font-black text-white shadow-[0_10px_24px_rgba(141,0,33,0.28)]"
+            >
+              Choose Location
+            </button>
+          ) : !customerSession?.mobile ? (
+            <button
+              type="button"
+              onClick={() => router.push("/login?next=/cart")}
+              className="flex h-16 items-center justify-center rounded-2xl bg-maroon text-[18px] font-black text-white shadow-[0_10px_24px_rgba(141,0,33,0.28)]"
+            >
+              Login to Pay
             </button>
           ) : (
             <button
@@ -789,4 +878,9 @@ function getStoreStatusMessage(settings: RestaurantSettings) {
   if (settings.storeMode === "PAUSED") return settings.pausedMessage;
   if (settings.storeMode === "CLOSED") return settings.closedMessage;
   return "Restaurant is accepting orders.";
+}
+
+function getCouponBenefitText(coupon: Coupon) {
+  if (coupon.type === "FIXED") return formatRupees(coupon.value);
+  return coupon.maxDiscount ? `${coupon.value}% up to ${formatRupees(coupon.maxDiscount)}` : `${coupon.value}%`;
 }

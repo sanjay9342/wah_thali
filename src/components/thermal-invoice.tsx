@@ -1,8 +1,8 @@
 import { business } from "@/lib/business";
-import { buildInvoiceTotals, sampleInvoice } from "@/lib/invoice";
+import { buildInvoiceTotals, invoiceTemplate } from "@/lib/invoice";
 
 export function ThermalInvoice({ compact = false }: { compact?: boolean }) {
-  const totals = buildInvoiceTotals(sampleInvoice);
+  const totals = buildInvoiceTotals(invoiceTemplate);
 
   return (
     <section className={`mx-auto bg-white text-charcoal shadow-sm ring-1 ring-border ${compact ? "max-w-[320px] p-4" : "max-w-sm p-5"}`}>
@@ -17,11 +17,11 @@ export function ThermalInvoice({ compact = false }: { compact?: boolean }) {
 
       <div className="mt-4 border-y border-dashed border-charcoal/40 py-2 font-mono text-[12px]">
         <div className="flex justify-between gap-3">
-          <span>Bill No: {sampleInvoice.invoiceNumber}</span>
-          <span>{sampleInvoice.date}</span>
+          <span>Bill No: {invoiceTemplate.invoiceNumber}</span>
+          <span>{invoiceTemplate.date || "Date pending"}</span>
         </div>
-        <p className="mt-1">Customer: {sampleInvoice.customerName}</p>
-        <p>Payment Mode: {sampleInvoice.paymentMode}</p>
+        <p className="mt-1">Customer: {invoiceTemplate.customerName}</p>
+        <p>Payment Mode: {invoiceTemplate.paymentMode}</p>
       </div>
 
       <table className="mt-2 w-full border-b border-dashed border-charcoal/40 font-mono text-[11px]">
@@ -34,7 +34,7 @@ export function ThermalInvoice({ compact = false }: { compact?: boolean }) {
           </tr>
         </thead>
         <tbody>
-          {sampleInvoice.items.map((item) => (
+          {invoiceTemplate.items.map((item) => (
             <tr key={item.name}>
               <td className="py-1 pr-2">{item.name}</td>
               <td className="py-1 text-center">{item.quantity}</td>
@@ -52,15 +52,15 @@ export function ThermalInvoice({ compact = false }: { compact?: boolean }) {
         </div>
         <div className="flex justify-between">
           <dt>(-) Discount</dt>
-          <dd>{sampleInvoice.discount.toFixed(2)}</dd>
+          <dd>{invoiceTemplate.discount.toFixed(2)}</dd>
         </div>
         <div className="flex justify-between">
           <dt>Delivery</dt>
-          <dd>{sampleInvoice.delivery.toFixed(2)}</dd>
+          <dd>{invoiceTemplate.delivery.toFixed(2)}</dd>
         </div>
         <div className="flex justify-between">
           <dt>Packaging</dt>
-          <dd>{sampleInvoice.packaging.toFixed(2)}</dd>
+          <dd>{invoiceTemplate.packaging.toFixed(2)}</dd>
         </div>
         <div className="flex justify-between">
           <dt>CGST @ 2.50%</dt>

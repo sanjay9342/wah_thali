@@ -5,11 +5,23 @@ import Image from "next/image";
 import Link from "next/link";
 import { useStoredCart } from "@/lib/use-stored-cart";
 import { useDeliveryLocation } from "@/lib/delivery-location";
+import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
+import { useEffect, useState } from "react";
 
 export function Header({ showContact = true }: { showContact?: boolean; whatsappNumber?: string }) {
   const deliveryLocation = useDeliveryLocation();
-  const cart = useStoredCart();
+  const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
+  const cart = useStoredCart(customerSession?.mobile);
   const cartCount = cart.reduce((total, line) => total + line.quantity, 0);
+
+  useEffect(() => {
+    function refreshSession() {
+      setCustomerSession(readCustomerSession());
+    }
+
+    refreshSession();
+    return subscribeCustomerSession(refreshSession);
+  }, []);
 
   return (
     <header className="sticky top-0 z-50 border-b border-[#f1e7e4] bg-white/96 backdrop-blur">
