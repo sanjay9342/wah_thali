@@ -49,25 +49,25 @@ export function Header({ showContact = true }: { showContact?: boolean; whatsapp
         ) : null}
       </div>
 
-      <div className="grid h-[58px] grid-cols-[1fr_auto_auto] items-center gap-2 px-3 lg:hidden">
+      <div className="grid h-[66px] grid-cols-[1fr_auto_auto] items-center gap-2.5 px-4 lg:hidden">
         <Link href="/address" className="flex min-w-0 items-center gap-2">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#fff4f5] text-red">
-            <MapPin size={16} />
+          <span className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-[15px] bg-[#f5f6f8] text-[#374151]">
+            <MapPin size={21} strokeWidth={2.5} />
           </span>
           <span className="min-w-0">
-            <span className="block text-[8px] font-black uppercase tracking-wide text-muted">Delivering to</span>
-            <span className="block truncate text-[11px] font-black leading-tight text-charcoal">{deliveryLocation.address}</span>
+            <span className="block text-[10px] font-black uppercase tracking-wide text-[#a0a6b0]">Delivering to</span>
+            <span className="block truncate text-[14px] font-black leading-tight text-charcoal">{deliveryLocation.address}</span>
           </span>
-          <ChevronDown size={12} />
+          <ChevronDown size={14} className="text-[#6b7280]" />
         </Link>
 
-        <button className="relative grid h-9 w-9 place-items-center" aria-label="Notifications">
-          <Bell size={21} />
-          <span className="absolute right-2 top-1.5 h-2 w-2 rounded-full bg-red" />
+        <button className="relative grid h-9 w-9 place-items-center text-[#374151]" aria-label="Notifications">
+          <Bell size={25} strokeWidth={2.2} />
+          <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-[#ff2446]" />
         </button>
-        <Link href="/cart" className="relative grid h-9 w-9 place-items-center" aria-label="Cart">
-          <ShoppingCart size={23} />
-          {cartCount ? <span className="absolute right-0 top-0 rounded-full bg-red px-1.5 text-[9px] font-black text-white">{cartCount}</span> : null}
+        <Link href="/cart" className="relative grid h-9 w-9 place-items-center text-[#374151]" aria-label="Cart">
+          <ShoppingCart size={29} strokeWidth={2.3} />
+          {cartCount ? <span className="absolute -right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
         </Link>
       </div>
     </header>

@@ -777,6 +777,17 @@ export function MenuExperience({
               </section>
             ))}
           </div>
+          <section className="pb-10 pt-10 text-center">
+            <h2 className="text-[32px] font-black leading-[0.92] text-[#9aa1ad]">
+              Live
+              <span className="block">it up!</span>
+            </h2>
+            <p className="mt-3 flex items-center justify-center gap-1 text-[9px] font-black text-[#a7adba]">
+              <span>Crafted with</span>
+              <Heart size={11} className="fill-[#ff2446] text-[#ff2446]" />
+              <span>in Kolkata, India</span>
+            </p>
+          </section>
         </section>
       ) : null}
 
@@ -987,7 +998,7 @@ export function MenuExperience({
 
           <section className="mt-5 lg:mt-8">
             <div className="flex justify-center gap-3 overflow-x-auto pb-3 lg:justify-between lg:overflow-visible">
-              {categoryItems.slice(0, 4).map((category) => (
+              {categoryItems.slice(0, 5).map((category) => (
                 <button
                   key={category}
                   onClick={() => {
