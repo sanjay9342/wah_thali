@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { BellRing, CheckCircle2, Clock, MessageCircle, Printer, RefreshCw, Truck, XCircle } from "lucide-react";
+import { BellRing, CheckCircle2, Clock, MessageCircle, Printer, RefreshCw, XCircle } from "lucide-react";
 import Link from "next/link";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 import { formatRupees } from "@/lib/pricing";
@@ -9,11 +9,39 @@ import { canTransitionOrder } from "@/lib/state-machines";
 
 const liveStatuses: OrderStatus[] = ["NEW", "CONFIRMED", "PREPARING", "PACKED", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"];
 const nextStatuses: OrderStatus[] = ["CONFIRMED", "PREPARING", "PACKED", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY", "DELIVERED"];
+const declineReasons = [
+  "Item unavailable",
+  "Kitchen closed for today",
+  "Delivery not available for this location",
+  "Too many orders right now",
+  "Payment or address issue",
+];
 
-export function AdminOrdersClient({ initialOrders }: { initialOrders: AdminOrder[] }) {
+const statusCopy: Record<OrderStatus, { label: string; customer: string }> = {
+  NEW: { label: "New", customer: "We received your order." },
+  CONFIRMED: { label: "Accepted", customer: "Good news, your order has been accepted." },
+  PREPARING: { label: "Preparing", customer: "Your food is being prepared fresh." },
+  PACKED: { label: "Prepared", customer: "Your food is prepared and packed." },
+  READY_FOR_PICKUP: { label: "Ready", customer: "Your order is ready for pickup." },
+  OUT_FOR_DELIVERY: { label: "Dispatched", customer: "Your order is on the way." },
+  DELIVERED: { label: "Delivered", customer: "Your order has been delivered. Please rate your food." },
+  CANCELLED: { label: "Declined", customer: "Your order was declined by the restaurant." },
+};
+
+export function AdminOrdersClient({
+  initialOrders,
+  newOrderSoundEnabled = true,
+  requireDeclineReason = true,
+}: {
+  initialOrders: AdminOrder[];
+  newOrderSoundEnabled?: boolean;
+  requireDeclineReason?: boolean;
+}) {
   const [orders, setOrders] = useState(initialOrders);
   const [declineOrder, setDeclineOrder] = useState<AdminOrder | null>(null);
   const [reason, setReason] = useState("");
+  const [etaByOrder, setEtaByOrder] = useState<Record<string, string>>({});
+  const [locationByOrder, setLocationByOrder] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -25,17 +53,18 @@ export function AdminOrdersClient({ initialOrders }: { initialOrders: AdminOrder
     const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextClass) return;
     const audio = new AudioContextClass();
-    for (const [index, frequency] of [880, 988, 1175].entries()) {
+    for (const [index, frequency] of [784, 988, 1175, 988, 1319].entries()) {
       const oscillator = audio.createOscillator();
       const gain = audio.createGain();
+      oscillator.type = index % 2 ? "triangle" : "sine";
       oscillator.frequency.value = frequency;
       oscillator.connect(gain);
       gain.connect(audio.destination);
-      gain.gain.setValueAtTime(0.0001, audio.currentTime + index * 0.16);
-      gain.gain.exponentialRampToValueAtTime(0.2, audio.currentTime + index * 0.16 + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + index * 0.16 + 0.13);
-      oscillator.start(audio.currentTime + index * 0.16);
-      oscillator.stop(audio.currentTime + index * 0.16 + 0.14);
+      gain.gain.setValueAtTime(0.0001, audio.currentTime + index * 0.13);
+      gain.gain.exponentialRampToValueAtTime(0.24, audio.currentTime + index * 0.13 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + index * 0.13 + 0.11);
+      oscillator.start(audio.currentTime + index * 0.13);
+      oscillator.stop(audio.currentTime + index * 0.13 + 0.12);
     }
   }, []);
 
@@ -72,9 +101,9 @@ export function AdminOrdersClient({ initialOrders }: { initialOrders: AdminOrder
     setOrders(nextOrders);
     knownOrders.current = new Set(nextOrders.map((order) => order.orderNumber));
     setLastSyncedAt(new Date());
-    if (hasNewOrder) await playNewOrderSound();
+    if (hasNewOrder && newOrderSoundEnabled) await playNewOrderSound();
     return true;
-  }, [playNewOrderSound]);
+  }, [newOrderSoundEnabled, playNewOrderSound]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -86,10 +115,13 @@ export function AdminOrdersClient({ initialOrders }: { initialOrders: AdminOrder
   function updateOrder(order: AdminOrder, status: OrderStatus, note?: string) {
     startTransition(async () => {
       setMessage("");
+      const eta = etaByOrder[order.orderNumber]?.trim();
+      const location = locationByOrder[order.orderNumber]?.trim();
+      const staffNote = [note, eta ? `ETA: ${eta} min` : "", location ? `Location: ${location}` : ""].filter(Boolean).join(" | ");
       const response = await fetch(`/api/orders/${order.orderNumber}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, note }),
+        body: JSON.stringify({ status, note: staffNote }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -99,7 +131,7 @@ export function AdminOrdersClient({ initialOrders }: { initialOrders: AdminOrder
       await refresh(true);
       setDeclineOrder(null);
       setReason("");
-      setMessage(status === "CANCELLED" ? "Order declined and stock restored." : `Order moved to ${status.replaceAll("_", " ")}.`);
+      setMessage(status === "CANCELLED" ? "Order declined, stock restored, and customer tracking shows the reason." : `Order moved to ${statusCopy[status].label}.`);
     });
   }
 
@@ -160,7 +192,7 @@ export function AdminOrdersClient({ initialOrders }: { initialOrders: AdminOrder
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-xl font-black text-maroon">{order.orderNumber}</h2>
-                    <span className="rounded-lg bg-cream px-3 py-1 text-xs font-black text-charcoal">{order.status.replaceAll("_", " ")}</span>
+                    <span className="rounded-lg bg-cream px-3 py-1 text-xs font-black text-charcoal">{statusCopy[order.status].label}</span>
                   </div>
                   <p className="mt-1 font-black text-charcoal">{order.customerName} - {order.customerMobile}</p>
                   <p className="mt-1 text-sm font-semibold text-muted">{order.itemSummary || "Items unavailable"} - {formatRupees(order.amount)}</p>
@@ -174,13 +206,32 @@ export function AdminOrdersClient({ initialOrders }: { initialOrders: AdminOrder
                   <button onClick={() => window.print()} className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm font-black">
                     <Printer size={16} /> KOT
                   </button>
-                  <a href={`https://wa.me/91${order.customerMobile}?text=${encodeURIComponent(`Hi ${order.customerName}, your Wah Thali order ${order.orderNumber} is ${order.status.replaceAll("_", " ")}.`)}`} className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm font-black">
+                  <a href={`https://wa.me/91${order.customerMobile}?text=${encodeURIComponent(buildCustomerMessage(order, order.status))}`} className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm font-black">
                     <MessageCircle size={16} /> Message
                   </a>
-                  <button className="inline-flex h-10 items-center gap-2 rounded-lg bg-red px-3 text-sm font-black text-white">
-                    <Truck size={16} /> Assign rider
-                  </button>
                 </div>
+              </div>
+              <div className="mt-4 grid gap-3 rounded-xl border border-border bg-cream p-3 sm:grid-cols-2">
+                <label className="grid gap-2 text-xs font-black uppercase tracking-wide text-muted">
+                  Order timing
+                  <input
+                    type="number"
+                    min={1}
+                    value={etaByOrder[order.orderNumber] ?? ""}
+                    onChange={(event) => setEtaByOrder((current) => ({ ...current, [order.orderNumber]: event.target.value }))}
+                    className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-black normal-case tracking-normal text-charcoal"
+                    placeholder="ETA minutes"
+                  />
+                </label>
+                <label className="grid gap-2 text-xs font-black uppercase tracking-wide text-muted">
+                  Delivery location / rider note
+                  <input
+                    value={locationByOrder[order.orderNumber] ?? ""}
+                    onChange={(event) => setLocationByOrder((current) => ({ ...current, [order.orderNumber]: event.target.value }))}
+                    className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-black normal-case tracking-normal text-charcoal"
+                    placeholder="Rider, area, or map note"
+                  />
+                </label>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 {order.status === "NEW" ? (
@@ -193,16 +244,19 @@ export function AdminOrdersClient({ initialOrders }: { initialOrders: AdminOrder
                     </button>
                   </>
                 ) : null}
-                {nextStatuses.map((next) => (
-                  <button
-                    key={next}
-                    disabled={isPending || !liveStatuses.includes(order.status)}
-                    onClick={() => updateOrder(order, next)}
-                    className={`rounded-lg px-3 py-2 text-xs font-black ${canTransitionOrder(order.status, next) ? "bg-maroon text-white" : "bg-cream text-muted"}`}
-                  >
-                    {next.replaceAll("_", " ")}
-                  </button>
-                ))}
+                {nextStatuses.map((next) => {
+                  const canMove = canTransitionOrder(order.status, next);
+                  return (
+                    <button
+                      key={next}
+                      disabled={isPending || !liveStatuses.includes(order.status) || !canMove}
+                      onClick={() => updateOrder(order, next)}
+                      className={`rounded-lg px-3 py-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-60 ${canMove ? "bg-maroon text-white" : "bg-cream text-muted"}`}
+                    >
+                      {statusCopy[next].label}
+                    </button>
+                  );
+                })}
               </div>
             </article>
           )) : (
@@ -220,15 +274,31 @@ export function AdminOrdersClient({ initialOrders }: { initialOrders: AdminOrder
             <h2 className="text-xl font-black text-maroon">Decline {declineOrder.orderNumber}</h2>
             <label className="mt-4 grid gap-2 text-sm font-black text-charcoal">
               Reason
-              <textarea value={reason} onChange={(event) => setReason(event.target.value)} className="min-h-28 rounded-lg border border-border bg-cream p-3" placeholder="Item unavailable, kitchen closed, delivery not possible..." />
+              <select value={reason} onChange={(event) => setReason(event.target.value)} className="h-11 rounded-lg border border-border bg-cream px-3">
+                <option value="">Select reason</option>
+                {declineReasons.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
             </label>
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setDeclineOrder(null)} className="h-10 rounded-lg border border-border px-4 font-black">Cancel</button>
-              <button disabled={isPending || !reason.trim()} onClick={() => updateOrder(declineOrder, "CANCELLED", reason)} className="h-10 rounded-lg bg-red px-4 font-black text-white disabled:opacity-60">Decline order</button>
+              <button
+                disabled={isPending || (requireDeclineReason && !reason.trim())}
+                onClick={() => updateOrder(declineOrder, "CANCELLED", reason.trim() || "Order declined by restaurant.")}
+                className="h-10 rounded-lg bg-red px-4 font-black text-white disabled:opacity-60"
+              >
+                Decline order
+              </button>
             </div>
           </div>
         </div>
       ) : null}
     </main>
   );
+}
+
+function buildCustomerMessage(order: AdminOrder, status: OrderStatus) {
+  const latestNote = order.timeline.at(-1)?.note;
+  const ratingText = status === "DELIVERED" ? " Thank you for ordering from Wah Thali. Please give your rating for the food, it helps us serve you better." : "";
+  const reasonText = status === "CANCELLED" && latestNote ? ` Reason: ${latestNote}` : "";
+  return `Hi ${order.customerName}, ${statusCopy[status].customer} Order ${order.orderNumber}: ${statusCopy[status].label}.${reasonText}${ratingText}`;
 }

@@ -3,6 +3,8 @@
 import { Gift, Home, PackageCheck, Search, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 
 const items = [
   { href: "/", icon: Home, label: "Home", match: (path: string) => path === "/" },
@@ -15,6 +17,16 @@ const items = [
 export function MobileNav() {
   const pathname = usePathname();
   const isHome = pathname === "/";
+  const [session, setSession] = useState<CustomerSession | null>(null);
+
+  useEffect(() => {
+    function refreshSession() {
+      setSession(readCustomerSession());
+    }
+
+    refreshSession();
+    return subscribeCustomerSession(refreshSession);
+  }, []);
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-3 lg:hidden" aria-label="Primary navigation">
@@ -25,11 +37,12 @@ export function MobileNav() {
       >
         {items.map(({ href, icon: Icon, label, match }) => {
           const active = match(pathname);
+          const resolvedHref = label === "Profile" && !session ? "/login?next=/account" : href;
 
           return (
             <Link
               key={href}
-              href={href}
+              href={resolvedHref}
               className={`grid min-w-0 place-items-center gap-0.5 text-[9px] font-black ${active ? "text-red" : "text-muted"}`}
               aria-current={active ? "page" : undefined}
             >

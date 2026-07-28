@@ -138,7 +138,7 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
                 </div>
               ) : null}
               <label className="inline-flex h-11 cursor-pointer items-center justify-center rounded-lg bg-maroon px-4 text-sm font-black text-white">
-                Upload image
+                Upload using your device
                 <input
                   type="file"
                   accept="image/*"
@@ -190,7 +190,7 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
                     <div className="flex flex-wrap gap-2">
                       <span className="rounded-lg bg-cream px-3 py-2 text-xs font-black text-muted">{category._count?.products ?? 0} products</span>
                       <label className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-maroon px-3 text-xs font-black text-white">
-                        Upload image
+                        Upload using your device
                         <input
                           type="file"
                           accept="image/*"

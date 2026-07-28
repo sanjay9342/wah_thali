@@ -9,6 +9,12 @@ const customerSchema = z.object({
   email: z.string().email().optional(),
 });
 
+function toPublicCustomer<Customer extends { passwordHash?: string | null }>(customer: Customer) {
+  const publicCustomer = { ...customer };
+  delete publicCustomer.passwordHash;
+  return publicCustomer;
+}
+
 export async function GET() {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ customers: [], configured: false });
@@ -19,7 +25,7 @@ export async function GET() {
     include: { loyalty: true, orders: { orderBy: { createdAt: "desc" }, take: 5 } },
   });
 
-  return NextResponse.json({ customers, configured: true });
+  return NextResponse.json({ customers: customers.map(toPublicCustomer), configured: true });
 }
 
 export async function POST(request: Request) {
@@ -48,5 +54,5 @@ export async function POST(request: Request) {
     summary: `Saved customer ${customer.name}`,
   });
 
-  return NextResponse.json({ customer }, { status: 201 });
+  return NextResponse.json({ customer: toPublicCustomer(customer) }, { status: 201 });
 }

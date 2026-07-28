@@ -90,6 +90,8 @@ export type Coupon = {
   value: number;
   minOrder: number;
   maxDiscount?: number;
+  startsAt?: string;
+  endsAt?: string;
 };
 
 export type BusinessSettings = {

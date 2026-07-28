@@ -60,6 +60,7 @@ export async function getProductsFromDb(): Promise<Product[]> {
 
   try {
     const products = await prisma.product.findMany({
+      where: { category: { visible: true } },
       orderBy: { name: "asc" },
       include: {
         category: true,
@@ -180,6 +181,8 @@ export async function getCouponsFromDb(): Promise<Coupon[]> {
       value: coupon.value,
       minOrder: coupon.minOrder,
       maxDiscount: coupon.maxDiscount ?? undefined,
+      startsAt: coupon.startsAt.toISOString(),
+      endsAt: coupon.endsAt.toISOString(),
     }));
   } catch (error) {
     console.error("Database coupon read failed. Falling back to local coupons.", error);

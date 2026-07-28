@@ -97,6 +97,7 @@ model Customer {
   name        String
   mobile      String       @unique
   email       String?      @unique
+  passwordHash String?
   birthday    DateTime?
   anniversary DateTime?
   tags        CustomerTagAssignment[]
@@ -395,6 +396,19 @@ model WhatsAppMessage {
 
   @@index([phone])
   @@index([status])
+}
+
+model CustomerOtp {
+  id         String    @id @default(cuid())
+  mobile     String
+  purpose    String
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([mobile, purpose, expiresAt])
 }
 
 model AutomationRule {

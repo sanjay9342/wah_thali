@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
-  ArrowRight,
   BadgeCheck,
   BadgePercent,
   Bell,
@@ -23,7 +22,10 @@ import {
   SlidersHorizontal,
   Star,
   Store,
+  ThumbsUp,
   TimerReset,
+  TrendingDown,
+  TrendingUp,
   Truck,
   X,
   Zap,
@@ -44,6 +46,12 @@ import type { CartLine, CategoryOfferMap, HomeSlide, Product, RestaurantSettings
 function getQuantity(lines: CartLine[], productId: string) {
   return lines
     .filter((line) => line.productId === productId)
+    .reduce((total, line) => total + line.quantity, 0);
+}
+
+function getVariantQuantity(lines: CartLine[], productId: string, variantId: string) {
+  return lines
+    .filter((line) => line.productId === productId && line.variantId === variantId)
     .reduce((total, line) => total + line.quantity, 0);
 }
 
@@ -76,7 +84,7 @@ function QuantityControl({
 
   if (quantity > 0) {
     return (
-      <div className={`${wide ? "w-[132px] shrink-0 sm:w-[144px]" : "w-[72px] sm:w-[86px]"} grid h-8 grid-cols-3 overflow-hidden rounded-[8px] bg-red text-white shadow-[0_9px_20px_rgba(141,0,33,0.18)] sm:h-9`}>
+      <div className={`${wide ? "w-[132px] shrink-0 sm:w-[144px]" : "w-[66px] sm:w-[86px]"} grid h-8 grid-cols-3 overflow-hidden rounded-[8px] bg-red text-white shadow-[0_9px_20px_rgba(141,0,33,0.18)] sm:h-9`}>
         <button className="grid place-items-center" onClick={onDecrease} aria-label="Decrease quantity">
           <Minus size={wide ? 13 : 11} strokeWidth={3} />
         </button>
@@ -91,7 +99,7 @@ function QuantityControl({
   return (
     <button
       onClick={onAdd}
-      className={`${wide ? "min-w-[132px] shrink-0 px-7" : "px-4"} h-8 rounded-[8px] bg-red text-[11px] font-black text-white shadow-[0_9px_20px_rgba(141,0,33,0.18)] sm:h-9 sm:px-5 sm:text-sm`}
+      className={`${wide ? "min-w-[132px] shrink-0 px-7" : "px-3"} h-8 rounded-[8px] bg-red text-[11px] font-black text-white shadow-[0_9px_20px_rgba(141,0,33,0.18)] sm:h-9 sm:px-5 sm:text-sm`}
     >
       Add
     </button>
@@ -157,7 +165,7 @@ function DietMark({ type, compact = false }: { type: Product["dietaryType"]; com
 }
 
 type DietFilter = "ALL" | "VEG" | "NON_VEG";
-type PriceSort = "NONE" | "LOW_HIGH" | "HIGH_LOW";
+type PriceSort = "NONE" | "RATING_HIGH" | "LOW_HIGH" | "HIGH_LOW";
 
 function matchesDietFilter(product: Product, filter: DietFilter) {
   if (filter === "ALL") return true;
@@ -167,7 +175,12 @@ function matchesDietFilter(product: Product, filter: DietFilter) {
 
 function sortProductsByPrice(products: Product[], sort: PriceSort) {
   if (sort === "NONE") return products;
+  if (sort === "RATING_HIGH") return [...products].sort((left, right) => right.rating - left.rating);
   return [...products].sort((left, right) => sort === "LOW_HIGH" ? left.price - right.price : right.price - left.price);
+}
+
+function needsDishDetail(product: Product) {
+  return product.addons.length > 0 || product.variants.length > 1;
 }
 
 function DietFilterToggle({ value, onChange }: { value: DietFilter; onChange: (value: DietFilter) => void }) {
@@ -193,27 +206,110 @@ function DietFilterToggle({ value, onChange }: { value: DietFilter; onChange: (v
   );
 }
 
-function PriceSortToggle({ value, onChange }: { value: PriceSort; onChange: (value: PriceSort) => void }) {
-  const items: Array<{ value: PriceSort; label: string }> = [
-    { value: "NONE", label: "Default" },
-    { value: "LOW_HIGH", label: "Low to high" },
-    { value: "HIGH_LOW", label: "High to low" },
+function SortFilterSheet({
+  dietFilter,
+  priceSort,
+  onDietChange,
+  onSortChange,
+  onReset,
+  onClose,
+}: {
+  dietFilter: DietFilter;
+  priceSort: PriceSort;
+  onDietChange: (value: DietFilter) => void;
+  onSortChange: (value: PriceSort) => void;
+  onReset: () => void;
+  onClose: () => void;
+}) {
+  const sortOptions: Array<{ value: PriceSort; label: string; icon: typeof Star }> = [
+    { value: "NONE", label: "Popularity (Default)", icon: Star },
+    { value: "RATING_HIGH", label: "Customer Rating", icon: ThumbsUp },
+    { value: "LOW_HIGH", label: "Price: Low to High", icon: TrendingUp },
+    { value: "HIGH_LOW", label: "Price: High to Low", icon: TrendingDown },
   ];
 
+  const vegOnly = dietFilter === "VEG";
+
   return (
-    <div className="flex justify-center gap-1.5">
-      {items.map((item) => (
-        <button
-          key={item.value}
-          type="button"
-          onClick={() => onChange(item.value)}
-          className={`h-7 rounded-full px-3 text-[10px] font-black transition-colors ${
-            value === item.value ? "bg-maroon text-white" : "bg-white text-[#68707c] ring-1 ring-[#e8edf3]"
-          }`}
-        >
-          {item.label}
-        </button>
-      ))}
+    <div className="fixed inset-0 z-[75] flex items-end bg-charcoal/55 backdrop-blur-[2px]" onClick={onClose}>
+      <section
+        className="w-full rounded-t-[28px] bg-white px-5 pb-[calc(env(safe-area-inset-bottom)+22px)] pt-5 shadow-[0_-18px_48px_rgba(17,24,39,0.25)] sm:mx-auto sm:mb-6 sm:max-w-lg sm:rounded-[28px]"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sort-filter-title"
+      >
+        <div className="flex items-center justify-between gap-4 border-b border-[#eef1f6] pb-5">
+          <h2 id="sort-filter-title" className="foodie-display text-[30px] leading-none text-charcoal sm:font-sans sm:text-xl sm:font-black">
+            Sort & Filter
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid h-11 w-11 place-items-center rounded-full bg-[#f4f5f7] text-[#5f6875]"
+            aria-label="Close filters"
+          >
+            <X size={24} strokeWidth={2.5} />
+          </button>
+        </div>
+
+        <div className="py-5">
+          <p className="text-[12px] font-black uppercase tracking-[0.12em] text-[#a0a6b0]">Dietary Preference</p>
+          <div className="mt-4 flex items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <DietMark type="VEG" />
+              <span className="min-w-0">
+                <span className="block text-[15px] font-black leading-5 text-charcoal">Veg Only</span>
+                <span className="mt-0.5 block text-[11px] font-bold text-muted">Show vegetarian dishes only</span>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onDietChange(vegOnly ? "ALL" : "VEG")}
+              className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${vegOnly ? "bg-maroon" : "bg-[#e2e4e8]"}`}
+              aria-pressed={vegOnly}
+              aria-label="Toggle veg only"
+            >
+              <span className={`absolute top-1 grid h-6 w-6 place-items-center rounded-full bg-white shadow-sm transition-transform ${vegOnly ? "translate-x-7" : "translate-x-1"}`} />
+            </button>
+          </div>
+        </div>
+
+        <div className="pb-5">
+          <p className="text-[12px] font-black uppercase tracking-[0.12em] text-[#a0a6b0]">Sort By</p>
+          <div className="mt-3 grid gap-2.5">
+            {sortOptions.map((option) => {
+              const Icon = option.icon;
+              const active = priceSort === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => onSortChange(option.value)}
+                  className={`grid min-h-[58px] grid-cols-[34px_1fr_26px] items-center gap-3 rounded-[16px] border bg-white px-4 text-left transition-colors ${
+                    active ? "border-maroon text-maroon shadow-[0_8px_18px_rgba(141,0,33,0.08)]" : "border-[#eef1f6] text-[#9aa1ad] shadow-[0_5px_14px_rgba(17,24,39,0.035)]"
+                  }`}
+                >
+                  <Icon size={20} strokeWidth={2.2} />
+                  <span className={`text-[14px] font-black leading-5 ${active ? "text-charcoal" : "text-[#2f3642]"}`}>{option.label}</span>
+                  <span className={`grid h-6 w-6 place-items-center rounded-full border-2 ${active ? "border-maroon" : "border-[#d7dbe2]"}`}>
+                    {active ? <span className="h-3 w-3 rounded-full bg-maroon" /> : null}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-[1fr_1.2fr] gap-3 border-t border-[#eef1f6] pt-5">
+          <button type="button" onClick={onReset} className="h-13 rounded-[15px] bg-[#f3f4f6] text-[14px] font-black text-charcoal">
+            Reset
+          </button>
+          <button type="button" onClick={onClose} className="h-13 rounded-[15px] bg-maroon text-[14px] font-black text-white shadow-[0_12px_24px_rgba(141,0,33,0.22)]">
+            Apply Filters
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -240,8 +336,8 @@ function ProductCard({
   orderingDisabled: boolean;
 }) {
   return (
-    <article className="min-w-[104px] overflow-hidden rounded-[14px] border border-[#f0e8e2] bg-white shadow-[0_10px_22px_rgba(34,31,32,0.055)] sm:min-w-0 sm:rounded-[22px] sm:shadow-[0_14px_34px_rgba(34,31,32,0.07)]">
-      <div className="relative aspect-[1.42/1] w-full overflow-hidden bg-[#f6f1ed] sm:aspect-[1.23/1]">
+    <article className="min-w-[104px] overflow-hidden rounded-[20px] border border-[#f0e8e2] bg-white shadow-[0_10px_22px_rgba(34,31,32,0.055)] sm:min-w-0 sm:rounded-[26px] sm:shadow-[0_14px_34px_rgba(34,31,32,0.07)]">
+      <div className="relative aspect-[1.58/1] w-full overflow-hidden bg-[#f6f1ed] sm:aspect-[1.42/1]">
         <button className="block h-full w-full text-left" onClick={onOpen} aria-label={`View details for ${product.name}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="eager" />
@@ -255,7 +351,7 @@ function ProductCard({
         </button>
       </div>
 
-      <div className="p-2 sm:p-4">
+      <div className="p-2.5 sm:p-4">
         <div className="flex items-start justify-between gap-2">
           <button className="min-w-0 text-left" onClick={onOpen}>
             <span className="flex min-w-0 items-center justify-between gap-1.5">
@@ -266,7 +362,7 @@ function ProductCard({
           </button>
         </div>
 
-        <div className="mt-2 flex flex-wrap items-center gap-1 text-[8px] font-bold text-muted sm:mt-3 sm:gap-2 sm:text-[11px]">
+        <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[8px] font-bold text-muted sm:mt-2.5 sm:gap-2 sm:text-[11px]">
           <span className="inline-flex items-center gap-0.5 rounded-[5px] bg-[#fff3f5] px-1 py-0.5 font-black text-red sm:gap-1 sm:px-2 sm:py-1">
             <Star size={8} className="fill-red sm:h-[11px] sm:w-[11px]" />
             {product.rating}
@@ -274,9 +370,9 @@ function ProductCard({
           <span>{product.prepTimeMinutes}-{product.prepTimeMinutes + 8} min</span>
         </div>
 
-        {offer ? <p className="mt-2 line-clamp-1 text-[8px] font-black text-maroon sm:mt-3 sm:text-[11px]">{offer}</p> : null}
+        {offer ? <p className="mt-1.5 line-clamp-1 text-[8px] font-black text-maroon sm:mt-2.5 sm:text-[11px]">{offer}</p> : null}
 
-        <div className={`${offer ? "mt-3 sm:mt-4" : "mt-2 sm:mt-3"} flex items-center justify-between gap-1.5 sm:gap-3`}>
+        <div className={`${offer ? "mt-2.5 sm:mt-3" : "mt-2 sm:mt-2.5"} flex items-center justify-between gap-1.5 sm:gap-3`}>
           <span className="text-[10px] font-black text-charcoal sm:text-base">{formatRupees(product.price)}</span>
           <QuantityControl quantity={quantity} onAdd={onAdd} onDecrease={onDecrease} disabled={orderingDisabled} />
         </div>
@@ -307,8 +403,8 @@ function FoodieProductCard({
   orderingDisabled: boolean;
 }) {
   return (
-    <article className="flex h-full min-w-0 flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_8px_18px_rgba(34,31,32,0.055)] ring-1 ring-[#eef1f6]">
-      <div className="relative aspect-[1.32/1] overflow-hidden bg-[#f3f5f8]">
+    <article className="flex h-full min-w-0 flex-col overflow-hidden rounded-[20px] bg-white shadow-[0_8px_18px_rgba(34,31,32,0.055)] ring-1 ring-[#eef1f6]">
+      <div className="relative aspect-[1.55/1] overflow-hidden bg-[#f3f5f8]">
         <button className="block h-full w-full text-left" onClick={onOpen} aria-label={`View details for ${product.name}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="eager" />
@@ -322,7 +418,7 @@ function FoodieProductCard({
         </button>
       </div>
 
-      <div className="flex flex-1 flex-col px-3 pb-2.5 pt-2.5">
+      <div className="flex flex-1 flex-col px-3 pb-2 pt-2.5">
         <button className="block w-full text-left" onClick={onOpen}>
           <span className="flex min-w-0 items-center justify-between gap-1.5">
             <h3 className="line-clamp-1 min-w-0 text-[14px] font-black leading-tight text-[#111827]">{product.name}</h3>
@@ -330,7 +426,7 @@ function FoodieProductCard({
           </span>
           <p className="mt-1 line-clamp-1 text-[10px] font-black uppercase tracking-wide text-[#a0a6b0]">{foodieCategoryLabel(product.category)}</p>
         </button>
-        <div className="mt-2 flex items-center gap-2 text-[10px] font-extrabold text-[#5f6875]">
+        <div className="mt-1.5 flex items-center gap-2 text-[10px] font-extrabold text-[#5f6875]">
           <span className="inline-flex items-center gap-1 rounded-lg bg-[#fff6ed] px-1.5 py-0.5 font-black text-[#ff6b00]">
             <Star size={10} className="fill-[#ff6b00]" />
             {product.rating}
@@ -339,14 +435,14 @@ function FoodieProductCard({
           <span>{product.prepTimeMinutes}-{product.prepTimeMinutes + 5} min</span>
         </div>
         {offer ? (
-          <div className="mt-2 border-t border-[#eef1f6] pt-2">
+          <div className="mt-1.5 border-t border-[#eef1f6] pt-1.5">
             <p className="flex items-center gap-1.5 text-[10px] font-black text-[#078b52]">
               <span className="text-lg">?</span>
               {offer}
             </p>
           </div>
         ) : null}
-        <div className="mt-auto flex items-center justify-between gap-2 pt-2.5">
+        <div className="mt-auto flex items-center justify-between gap-2 pt-2">
           <span className="text-[13px] font-black text-[#111827]">{formatRupees(product.price)}</span>
           <QuantityControl quantity={quantity} onAdd={onAdd} onDecrease={onDecrease} disabled={orderingDisabled} />
         </div>
@@ -356,20 +452,33 @@ function FoodieProductCard({
 }
 function DishDetailSheet({
   product,
-  quantity,
+  getQuantityForVariant,
   onAdd,
   onDecrease,
   onClose,
+  onSelectProduct,
   orderingDisabled,
+  offer,
+  relatedProducts,
+  freeDeliveryThreshold,
 }: {
   product: Product;
-  quantity: number;
-  onAdd: (addonIds?: string[]) => void;
-  onDecrease: () => void;
+  getQuantityForVariant: (variantId: string) => number;
+  onAdd: (variantId: string, addonIds?: string[]) => void;
+  onDecrease: (variantId: string) => void;
   onClose: () => void;
+  onSelectProduct: (product: Product) => void;
   orderingDisabled: boolean;
+  offer?: string;
+  relatedProducts: Product[];
+  freeDeliveryThreshold?: number;
 }) {
+  const defaultVariantId = product.variants[0]?.id ?? "regular";
+  const variants = product.variants.length ? product.variants : [{ id: defaultVariantId, name: "Regular", price: 0 }];
+  const [selectedVariantId, setSelectedVariantId] = useState(defaultVariantId);
   const [addonQuantities, setAddonQuantities] = useState<Record<string, number>>({});
+  const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) ?? variants[0];
+  const selectedQuantity = getQuantityForVariant(selectedVariant.id);
   const selectedAddonIds = useMemo(
     () =>
       product.addons.flatMap((addon) =>
@@ -378,6 +487,11 @@ function DishDetailSheet({
     [addonQuantities, product.addons],
   );
   const addonTotal = product.addons.reduce((total, addon) => total + addon.price * (addonQuantities[addon.id] ?? 0), 0);
+  const selectedPrice = product.price + selectedVariant.price;
+  const totalPrice = selectedPrice + addonTotal;
+  const discountPercent = product.originalPrice
+    ? Math.max(Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100), 0)
+    : 0;
 
   function addAddon(addonId: string) {
     setAddonQuantities((current) => ({
@@ -399,57 +513,113 @@ function DishDetailSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-charcoal/55 backdrop-blur-[2px]" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-stretch justify-center bg-[#f7f8fc]" onClick={onClose}>
       <section
-        className="max-h-[86vh] w-full max-w-xl overflow-hidden rounded-t-[30px] bg-white shadow-[0_-18px_46px_rgba(34,31,32,0.28)] sm:mb-6 sm:rounded-[30px]"
+        className="flex h-[100dvh] max-h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden bg-[#f7f8fc] shadow-[0_18px_60px_rgba(34,31,32,0.08)]"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="dish-detail-title"
       >
-        <div className="relative h-[34vh] min-h-[240px] bg-[#f6f1ed]">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
-          <button
-            className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full bg-white text-charcoal shadow-lg"
-            onClick={onClose}
-            aria-label="Close dish details"
-          >
-            <X size={20} strokeWidth={3} />
-          </button>
-        </div>
-
-        <div className="px-5 pb-[calc(env(safe-area-inset-bottom)+28px)] pt-5">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
+        <div className="min-h-0 flex-1 overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+92px)]">
+          <div className="relative h-[242px] bg-[#f6f1ed]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-b from-charcoal/24 via-transparent to-charcoal/10" />
+            <button
+              className="absolute left-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white/92 text-charcoal shadow-lg"
+              onClick={onClose}
+              aria-label="Close dish details"
+            >
+              <ArrowLeft size={21} strokeWidth={3} />
+            </button>
+            <span className="absolute bottom-4 left-4">
               <DietMark type={product.dietaryType} />
-              <h2 id="dish-detail-title" className="mt-3 text-2xl font-black leading-tight text-charcoal">
+            </span>
+            {discountPercent > 0 ? (
+              <span className="absolute left-0 top-[52%] rounded-r-full bg-[#fff2f4] px-3 py-1.5 text-[10px] font-black text-maroon">
+                {discountPercent}% OFF
+              </span>
+            ) : null}
+          </div>
+
+          <div className="px-5 pt-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted">{product.category}</p>
+            <h2 id="dish-detail-title" className="mt-1.5 text-[25px] font-black leading-tight text-charcoal">
                 {product.name}
-              </h2>
-              <p className="mt-2 text-sm font-semibold leading-6 text-muted">{product.description}</p>
-              <p className="mt-4 text-xl font-black text-charcoal">{formatRupees(product.price + addonTotal)}</p>
+            </h2>
+            <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11px] font-black text-muted">
+              <span className="inline-flex items-center gap-1">
+                <TimerReset size={14} /> {product.prepTimeMinutes}-{product.prepTimeMinutes + 5} min
+              </span>
+              <span className="text-[#d8dce3]">•</span>
+              <span className="inline-flex items-center gap-1">
+                <BadgeCheck size={14} className="text-maroon" /> {product.rating}
+              </span>
             </div>
-            <DetailQuantityControl quantity={quantity} onAdd={() => onAdd(selectedAddonIds)} onDecrease={onDecrease} disabled={orderingDisabled} />
+            <div className="mt-4 flex flex-wrap items-end gap-2.5">
+              <span className="text-[26px] font-black leading-none text-charcoal">{formatRupees(totalPrice)}</span>
+              {product.originalPrice ? <span className="text-sm font-bold text-muted line-through">{formatRupees(product.originalPrice + selectedVariant.price)}</span> : null}
+              {discountPercent > 0 ? <span className="pb-0.5 text-xs font-black text-maroon">{discountPercent}% off</span> : null}
+            </div>
+          
+
+          {offer ? (
+            <div className="mt-4 grid grid-cols-[28px_1fr_auto] items-center gap-3 rounded-[14px] border border-[#f0d7dd] bg-[#fff4f5] px-3.5 py-2.5 text-maroon">
+              <BadgeCheck size={19} className="fill-maroon text-maroon" />
+              <span className="text-[11px] font-black uppercase tracking-wide">{offer}</span>
+              <span className="text-[13px] font-black">{formatRupees(Math.max(Math.round(totalPrice * 0.8), 0))}</span>
+            </div>
+          ) : null}
+
+          <div className="mt-5">
+            <h3 className="text-[13px] font-black text-charcoal">Select Size</h3>
+            <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-3">
+              {variants.map((variant, index) => {
+                const active = variant.id === selectedVariant.id;
+                const variantPrice = product.price + variant.price;
+                return (
+                  <button
+                    key={variant.id}
+                    type="button"
+                    onClick={() => setSelectedVariantId(variant.id)}
+                    className={`min-h-[108px] rounded-[16px] border-2 bg-white p-2.5 text-center shadow-[0_10px_20px_rgba(17,24,39,0.05)] transition-colors ${
+                      active ? "border-maroon text-maroon" : "border-[#eef1f6] text-muted"
+                    }`}
+                  >
+                    <span className={`mx-auto grid h-5 w-5 place-items-center rounded-full ${active ? "bg-maroon text-white" : "bg-[#f2f4f7] text-transparent"}`}>
+                      <BadgeCheck size={13} strokeWidth={3} />
+                    </span>
+                    <span className="mt-2 block text-[12px] font-black">{variant.name}</span>
+                    <span className="mt-1 block text-[11px] font-black text-muted">{index === 0 ? "1" : index === 1 ? "2" : String(index + 1)}</span>
+                    <span className="mt-1.5 block text-[12px] font-black">{formatRupees(variantPrice)}</span>
+                    {product.originalPrice ? <span className="mt-1 block text-[10px] font-bold text-muted line-through">{formatRupees(product.originalPrice + variant.price)}</span> : null}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {product.addons.length ? (
-            <div className="mt-5 rounded-2xl bg-[#fff8f9] p-4">
-              <h3 className="text-[13px] font-black text-charcoal">Add-ons</h3>
-              <p className="mt-1 text-[11px] font-semibold leading-4 text-muted">Add extras to this meal before adding it to cart.</p>
-              <div className="mt-3 grid gap-2">
+            <div className="mt-5 overflow-hidden rounded-[16px] bg-white shadow-[0_10px_24px_rgba(17,24,39,0.05)] ring-1 ring-[#eef1f6]">
+              <div className="flex items-center gap-2 border-b border-[#eef1f6] px-4 py-3">
+                <Plus size={18} className="text-maroon" strokeWidth={3} />
+                <h3 className="text-[14px] font-black text-charcoal">Add Extras</h3>
+              </div>
+              <div className="divide-y divide-[#eef1f6]">
                 {product.addons.map((addon) => {
                   const addonQuantity = addonQuantities[addon.id] ?? 0;
                   return (
                     <div
                       key={addon.id}
-                      className="grid min-h-11 grid-cols-[1fr_auto] items-center gap-3 rounded-xl border border-[#eee6e2] bg-white px-3 py-2"
+                      className="grid min-h-[52px] grid-cols-[1fr_auto] items-center gap-3 px-4 py-2.5"
                     >
                       <span className="min-w-0">
-                        <span className="block truncate text-[12px] font-black text-charcoal">{addon.name}</span>
-                        <span className="mt-0.5 block text-[11px] font-black text-charcoal">{formatRupees(addon.price)}</span>
+                        <span className="block truncate text-[13px] font-black text-charcoal">{addon.name}</span>
+                        <span className="mt-0.5 block text-[11px] font-black text-maroon">+{formatRupees(addon.price)}</span>
                       </span>
                       {addonQuantity > 0 ? (
-                        <span className="grid h-8 w-[74px] grid-cols-3 overflow-hidden rounded-[8px] bg-red text-white shadow-[0_9px_20px_rgba(141,0,33,0.16)]">
+                        <span className="grid h-9 w-[82px] grid-cols-3 overflow-hidden rounded-[10px] bg-red text-white shadow-[0_9px_20px_rgba(141,0,33,0.16)]">
                           <button type="button" className="grid place-items-center" onClick={() => decreaseAddon(addon.id)} aria-label={`Remove ${addon.name}`}>
                             <Minus size={11} strokeWidth={3} />
                           </button>
@@ -461,7 +631,7 @@ function DishDetailSheet({
                       ) : (
                         <button
                           type="button"
-                          className="h-8 rounded-[8px] bg-red px-4 text-[11px] font-black text-white shadow-[0_9px_20px_rgba(141,0,33,0.16)]"
+                          className="h-9 rounded-[10px] bg-red px-4 text-[11px] font-black text-white shadow-[0_9px_20px_rgba(141,0,33,0.16)]"
                           onClick={() => addAddon(addon.id)}
                         >
                           Add
@@ -473,6 +643,88 @@ function DishDetailSheet({
               </div>
             </div>
           ) : null}
+
+          <div className="mt-5 rounded-[16px] bg-white p-4 shadow-[0_10px_24px_rgba(17,24,39,0.05)] ring-1 ring-[#eef1f6]">
+            <h3 className="text-[14px] font-black text-charcoal">About this dish</h3>
+            <p className="mt-2 text-[13px] font-semibold leading-5 text-muted">{product.description}</p>
+          </div>
+
+          <div className="mt-4 overflow-hidden rounded-[16px] bg-white shadow-[0_10px_24px_rgba(17,24,39,0.05)] ring-1 ring-[#eef1f6]">
+            <h3 className="border-b border-[#eef1f6] px-4 py-3 text-[14px] font-black text-charcoal">Product Info</h3>
+            <div className="divide-y divide-[#eef1f6]">
+              <div className="grid grid-cols-[1fr_auto] px-4 py-3 text-[12px] font-black">
+                <span className="inline-flex items-center gap-2 text-muted"><TimerReset size={16} /> Prep Time</span>
+                <span className="text-charcoal">{product.prepTimeMinutes}-{product.prepTimeMinutes + 5} min</span>
+              </div>
+              <div className="grid grid-cols-[1fr_auto] px-4 py-3 text-[12px] font-black">
+                <span className="text-muted">Serves</span>
+                <span className="text-charcoal">{selectedVariant.name}</span>
+              </div>
+            </div>
+          </div>
+
+          {freeDeliveryThreshold ? (
+            <div className="mt-4 flex items-center gap-3 rounded-[14px] border border-[#f0d7dd] bg-[#fff4f5] px-4 py-3 text-maroon">
+              <Truck size={20} strokeWidth={2.6} />
+              <span className="text-[13px] font-black">Free delivery on orders above {formatRupees(freeDeliveryThreshold)}</span>
+            </div>
+          ) : null}
+
+          {relatedProducts.length ? (
+            <div className="mt-6">
+              <div className="mb-4 flex items-center justify-between gap-4">
+                <h3 className="text-[18px] font-black text-charcoal">You May Also Like</h3>
+                <button type="button" className="inline-flex items-center gap-1 text-[12px] font-black text-maroon">
+                  View All <ChevronRight size={15} />
+                </button>
+              </div>
+              <div className="flex snap-x gap-3 overflow-x-auto pb-2">
+                {relatedProducts.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onSelectProduct(item)}
+                    className="w-[154px] shrink-0 snap-start overflow-hidden rounded-[14px] bg-white text-left shadow-[0_8px_18px_rgba(34,31,32,0.055)] ring-1 ring-[#eef1f6]"
+                  >
+                    <span className="relative block aspect-[1.35/1] bg-[#f3f5f8]">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
+                    </span>
+                    <span className="block p-3">
+                      <span className="line-clamp-1 text-[14px] font-black text-charcoal">{item.name}</span>
+                      <span className="mt-1 line-clamp-1 text-[10px] font-black uppercase text-muted">{foodieCategoryLabel(item.category)}</span>
+                      <span className="mt-2 inline-flex items-center gap-1 rounded-lg bg-[#fff4f5] px-1.5 py-0.5 text-[10px] font-black text-maroon">
+                        <Star size={10} className="fill-maroon" /> {item.rating}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          </div>
+        </div>
+
+        <div className="shrink-0 border-t border-[#eef1f6] bg-white px-5 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3">
+          <div className={`grid gap-3 ${selectedQuantity > 0 ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-[minmax(0,1fr)_58px]"}`}>
+            <button
+              type="button"
+              onClick={() => onAdd(selectedVariant.id, selectedAddonIds)}
+              disabled={orderingDisabled}
+              className="grid h-13 grid-cols-[30px_1fr_auto] items-center gap-2 rounded-[15px] bg-maroon px-4 text-white shadow-[0_12px_28px_rgba(141,0,33,0.25)] disabled:bg-muted/40"
+            >
+              <ShoppingCart size={20} strokeWidth={3} />
+              <span className="text-left text-[13px] font-black">{selectedQuantity ? "ADD MORE" : "ADD TO CART"}</span>
+              <span className="text-[13px] font-black">{formatRupees(totalPrice)}</span>
+            </button>
+            {selectedQuantity > 0 ? (
+              <DetailQuantityControl quantity={selectedQuantity} onAdd={() => onAdd(selectedVariant.id, selectedAddonIds)} onDecrease={() => onDecrease(selectedVariant.id)} disabled={orderingDisabled} />
+            ) : (
+              <button type="button" className="grid h-13 place-items-center rounded-[15px] border border-[#e0e3ea] bg-white text-muted" aria-label="Save dish">
+                <Heart size={24} />
+              </button>
+            )}
+          </div>
         </div>
       </section>
     </div>
@@ -523,8 +775,10 @@ export function MenuExperience({
   const { items: notifications, unreadCount } = useNotifications(cartOwnerId);
   const validCart = useMemo(() => getPricableCartLines(cart, products), [cart, products]);
   const storeMode = restaurantSettings?.storeMode ?? "OPEN";
+  const outsideOrderingHours = restaurantSettings ? isOutsideOrderingHours(restaurantSettings) : false;
+  const storeClosed = storeMode === "CLOSED" || storeMode === "PAUSED" || outsideOrderingHours;
   const serviceable = isServiceableLocation(deliveryLocation, restaurantSettings?.serviceablePins ?? []);
-  const orderingDisabled = storeMode === "CLOSED" || storeMode === "PAUSED" || !serviceable;
+  const orderingDisabled = storeClosed || !serviceable;
   const statusMessage = getStoreStatusMessage(restaurantSettings);
 
   const visibleProducts = useMemo(() => {
@@ -602,13 +856,12 @@ export function MenuExperience({
     writeStoredCart(next, cartOwnerId);
   }
 
-  function addProduct(product: Product, addonIds: string[] = []) {
+  function addProduct(product: Product, variantId = product.variants[0]?.id ?? "regular", addonIds: string[] = []) {
     if (orderingDisabled) return;
     if (!cartOwnerId) {
       router.push(`/login?next=${encodeURIComponent(pathname)}`);
       return;
     }
-    const variantId = product.variants[0]?.id ?? "regular";
     const sortedAddonIds = [...addonIds].sort();
     const existingIndex = validCart.findIndex((line) =>
       line.productId === product.id &&
@@ -624,10 +877,15 @@ export function MenuExperience({
     persist([...validCart, { productId: product.id, variantId, addonIds: sortedAddonIds, quantity: 1 }]);
   }
 
-  function decreaseProduct(product: Product) {
+  function decreaseProduct(product: Product, variantId?: string) {
+    const targetIndex = validCart.findIndex((line) =>
+      line.productId === product.id && (!variantId || line.variantId === variantId),
+    );
+    if (targetIndex < 0) return;
+
     persist(
       validCart
-        .map((line) => line.productId === product.id ? { ...line, quantity: line.quantity - 1 } : line)
+        .map((line, index) => index === targetIndex ? { ...line, quantity: line.quantity - 1 } : line)
         .filter((line) => line.quantity > 0),
     );
   }
@@ -680,6 +938,46 @@ export function MenuExperience({
   const isSearchPage = pathname === "/menu";
   const showCartBar = cartCount > 0 && hiddenCartCount !== cartCount;
 
+  if (storeClosed) {
+    return (
+      <main className="min-h-screen bg-white pb-24 text-charcoal">
+        <header className="sticky top-0 z-50 border-b border-[#f1e7e4] bg-white/96 backdrop-blur">
+          <div className="mx-auto hidden h-[104px] max-w-[1250px] items-center gap-6 px-0 lg:flex">
+            <Link href="/" className="relative h-16 w-[164px] overflow-hidden border-r border-[#f1e7e4] pr-6" aria-label="Wah Thali home">
+              <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill priority sizes="164px" className="object-contain" />
+            </Link>
+          </div>
+          <div className="grid h-[66px] grid-cols-[1fr_auto_auto] items-center gap-2.5 px-5 lg:hidden">
+            <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" width={144} height={56} priority className="h-[56px] w-[144px] object-contain" />
+          </div>
+        </header>
+
+        <section className="mx-auto flex min-h-[calc(100vh-150px)] max-w-xl flex-col items-center justify-center px-8 pb-28 text-center lg:min-h-[calc(100vh-104px)]">
+          <div className="grid h-24 w-24 place-items-center rounded-full bg-[#fff4f5] text-maroon">
+            <Store size={48} strokeWidth={2.6} />
+          </div>
+          <p className="mt-7 text-xs font-black uppercase tracking-[0.24em] text-red">Wah Thali is offline</p>
+          <h1 className="mt-2 text-[30px] font-black leading-tight text-charcoal">Store is closed right now</h1>
+          <p className="mt-4 max-w-[420px] text-[17px] font-semibold leading-7 text-muted">
+            Please wait, we will start accepting orders during our opening hours.
+          </p>
+          <div className="mt-6 w-full rounded-[24px] border border-red/15 bg-[#fff8f9] p-5 text-left text-maroon">
+            <p className="text-sm font-black uppercase tracking-wide">Opening hours</p>
+            <p className="mt-2 text-2xl font-black">{restaurantSettings?.openingHours ?? "Opening hours will be updated soon"}</p>
+            <p className="mt-2 text-sm font-bold">
+              {outsideOrderingHours ? `Last orders close ${restaurantSettings?.lastOrderBufferMinutes ?? 30} minutes before closing.` : statusMessage}
+            </p>
+          </div>
+          <Link href="/support" className="mt-7 inline-flex h-13 min-w-[220px] items-center justify-center rounded-2xl bg-maroon px-7 text-[16px] font-black text-white shadow-[0_14px_26px_rgba(141,0,33,0.2)]">
+            Contact support
+          </Link>
+        </section>
+
+        <MobileNav />
+      </main>
+    );
+  }
+
   if (!serviceable) {
     return (
       <main className="min-h-screen bg-white pb-24 text-charcoal">
@@ -715,35 +1013,37 @@ export function MenuExperience({
             </Link>
           </div>
 
-          <div className="grid h-[66px] grid-cols-[1fr_auto_auto] items-center gap-2.5 px-5 lg:hidden">
-            <Link href="/address" className="flex min-w-0 items-center gap-2">
-              <span className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-[15px] bg-[#f5f6f8] text-[#374151]">
-                <MapPin size={21} strokeWidth={2.5} />
+          <div className="grid h-[64px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-5 lg:hidden">
+            <Link href="/address" className="inline-flex min-w-0 max-w-[190px] justify-self-start items-center gap-1">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[15px] bg-[#f5f6f8] text-[#68707c]">
+                <MapPin size={18} strokeWidth={2.5} />
               </span>
               <span className="min-w-0">
-                <span className="block text-[10px] font-black uppercase tracking-wide text-[#a0a6b0]">Delivering to</span>
-                <span className="block truncate text-[14px] font-black leading-tight text-charcoal">{deliveryLocation.address}</span>
+                <span className="block text-[8px] font-black uppercase tracking-wide text-[#a0a6b0]">Delivering to</span>
+                <span className="inline-flex max-w-[122px] items-center gap-0.5 align-top">
+                  <span className="min-w-0 truncate text-[12px] font-black leading-tight text-charcoal">{deliveryLocation.address}</span>
+                  <ChevronDown size={11} className="shrink-0 translate-y-[1px] text-[#6b7280]" />
+                </span>
               </span>
-              <ChevronDown size={14} className="text-[#6b7280]" />
             </Link>
             <button
-              className="relative grid h-9 w-9 place-items-center text-[#374151]"
+              className="relative grid h-8 w-8 place-items-center text-[#374151]"
               onClick={() => {
                 setActivePopup("notifications");
                 markNotificationsRead(cartOwnerId);
               }}
               aria-label="Notifications"
             >
-              <Bell size={25} strokeWidth={2.2} />
+              <Bell size={21} strokeWidth={2.3} />
               {unreadCount ? (
-                <span className="absolute -right-0.5 top-0 grid h-4 min-w-4 place-items-center rounded-full bg-maroon px-1 text-[9px] font-black text-white">
+                <span className="absolute -right-0.5 top-0 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-maroon px-1 text-[8px] font-black text-white">
                   {unreadCount}
                 </span>
               ) : null}
             </button>
-            <Link href="/cart" className="relative grid h-9 w-9 place-items-center text-[#374151]" aria-label="Cart">
-              <ShoppingCart size={29} strokeWidth={2.3} />
-              {cartCount ? <span className="absolute -right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
+            <Link href="/cart" className="relative grid h-8 w-8 place-items-center text-[#374151]" aria-label="Cart">
+              <ShoppingCart size={24} strokeWidth={2.4} />
+              {cartCount ? <span className="absolute -right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[8px] font-black text-white">{cartCount}</span> : null}
             </Link>
           </div>
         </header>
@@ -803,69 +1103,67 @@ export function MenuExperience({
           </Link>
         </div>
 
-        <div className={`${mobileMenuView === "category" || isSearchPage ? "hidden" : "grid"} h-[66px] grid-cols-[1fr_auto_auto] items-center gap-2.5 px-5 lg:hidden`}>
-          <Link href="/address" className="flex min-w-0 items-center gap-2">
-            <span className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-[15px] bg-[#f5f6f8] text-[#374151]">
-              <MapPin size={21} strokeWidth={2.5} />
+        <div className={`${mobileMenuView === "category" || isSearchPage ? "hidden" : "grid"} min-h-[78px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-5 pt-1 lg:hidden`}>
+          <Link href="/address" className="inline-flex min-w-0 max-w-[190px] justify-self-start items-center gap-1">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[15px] bg-[#f5f6f8] text-[#68707c]">
+              <MapPin size={18} strokeWidth={2.5} />
             </span>
             <span className="min-w-0">
-              <span className="block text-[10px] font-black uppercase tracking-wide text-[#a0a6b0]">Delivering to</span>
-              <span className="block truncate text-[14px] font-black leading-tight text-charcoal">{deliveryLocation.address}</span>
+              <span className="block text-[8px] font-black uppercase tracking-wide text-[#a0a6b0]">Delivering to</span>
+              <span className="inline-flex max-w-[122px] items-center gap-0.5 align-top">
+                <span className="min-w-0 truncate text-[12px] font-black leading-tight text-charcoal">{deliveryLocation.address}</span>
+                <ChevronDown size={11} className="shrink-0 translate-y-[1px] text-[#6b7280]" />
+              </span>
             </span>
-            <ChevronDown size={14} className="text-[#6b7280]" />
           </Link>
 
           <button
-            className="relative grid h-9 w-9 place-items-center text-[#374151]"
+            className="relative grid h-8 w-8 place-items-center text-[#374151]"
             onClick={() => {
               setActivePopup("notifications");
               markNotificationsRead(cartOwnerId);
             }}
             aria-label="Notifications"
           >
-            <Bell size={25} strokeWidth={2.2} />
+            <Bell size={21} strokeWidth={2.3} />
             {unreadCount ? (
-              <span className="absolute -right-0.5 top-0 grid h-4 min-w-4 place-items-center rounded-full bg-maroon px-1 text-[9px] font-black text-white">
+              <span className="absolute -right-0.5 top-0 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-maroon px-1 text-[8px] font-black text-white">
                 {unreadCount}
               </span>
             ) : null}
           </button>
-          <Link href="/cart" className="relative grid h-9 w-9 place-items-center text-[#374151]" aria-label="Cart">
-            <ShoppingCart size={29} strokeWidth={2.3} />
-            {cartCount ? <span className="absolute -right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
+          <Link href="/cart" className="relative grid h-8 w-8 place-items-center text-[#374151]" aria-label="Cart">
+            <ShoppingCart size={24} strokeWidth={2.4} />
+            {cartCount ? <span className="absolute -right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[8px] font-black text-white">{cartCount}</span> : null}
           </Link>
         </div>
       </header>
 
       {isSearchPage ? (
         <section className="min-h-screen bg-[#f7f8fc] px-6 pb-24 pt-1 lg:hidden">
-          <Link href="/" className="mb-1 inline-grid h-8 w-8 place-items-center rounded-full bg-white text-maroon shadow-[0_8px_20px_rgba(17,24,39,0.06)] ring-1 ring-[#e8edf3]" aria-label="Back to home">
-            <ArrowLeft size={19} strokeWidth={3} />
-          </Link>
           <div className="rounded-[26px] bg-[#d8f7e9] px-6 py-6 shadow-[0_12px_30px_rgba(17,24,39,0.04)]">
             <h1 className="max-w-[250px] text-[25px] font-black leading-[1.35] text-[#111827]">
               What are you
               <span className="block">looking for today?</span>
             </h1>
-            <label className="mt-7 grid h-[62px] grid-cols-[50px_1fr_54px] items-center rounded-full border-[3px] border-maroon/55 bg-white px-3 shadow-[0_8px_20px_rgba(17,24,39,0.06)]">
-              <Search size={28} className="mx-auto text-maroon" strokeWidth={3} />
+            <label className="mt-6 grid h-12 grid-cols-[42px_1fr_58px] items-center rounded-[16px] border border-[#eef1f6] bg-white px-2 shadow-[0_6px_16px_rgba(17,24,39,0.05)]">
+              <Search size={21} className="mx-auto text-[#68707c]" strokeWidth={2.4} />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                className="min-w-0 bg-transparent text-[20px] font-semibold text-[#111827] outline-none placeholder:text-[#a8adb7]"
+                className="min-w-0 bg-transparent text-[13px] font-semibold text-[#111827] outline-none placeholder:text-[#a8adb7]"
                 placeholder="Search fresh dishes"
               />
-              <button type="button" className="grid h-[50px] w-[50px] place-items-center rounded-full bg-maroon text-white" aria-label="Search">
-                <ArrowRight size={28} strokeWidth={3} className="translate-y-[1px]" />
+              <button
+                type="button"
+                onClick={() => setActivePopup("filters")}
+                className="grid h-full min-w-[52px] place-items-center border-l border-[#eef1f6] px-1 text-[#68707c]"
+                aria-label="Open filters"
+              >
+                <SlidersHorizontal size={18} strokeWidth={2.5} />
+                <span className="-mt-1 text-[7px] font-black leading-none">Filter</span>
               </button>
             </label>
-          </div>
-
-          <div className="sticky top-0 z-30 -mx-6 mt-4 bg-[#f7f8fc]/95 px-6 py-2 backdrop-blur">
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <DietFilterToggle value={dietFilter} onChange={setDietFilter} />
-              <PriceSortToggle value={priceSort} onChange={setPriceSort} />
-            </div>
           </div>
 
           <div className="mt-4 grid gap-8">
@@ -873,7 +1171,7 @@ export function MenuExperience({
               <section key={group.category}>
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-[22px] font-black text-[#111827]">{shortCategoryName(group.category)}</h2>
-                  <span className="text-[14px] font-black text-[#ff6b00]">{group.items.length} {group.items.length === 1 ? "item" : "items"}</span>
+                  <span className="text-[14px] font-black text-maroon">{group.items.length} {group.items.length === 1 ? "item" : "items"}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {group.items.map((product) => (
@@ -883,7 +1181,7 @@ export function MenuExperience({
                       offer={getProductOffer(product, categoryOffers)}
                       quantity={getQuantity(validCart, product.id)}
                       saved={savedProductIds.includes(product.id)}
-                      onAdd={() => product.addons.length ? setSelectedProduct(product) : addProduct(product)}
+                      onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
                       onDecrease={() => decreaseProduct(product)}
                       onOpen={() => setSelectedProduct(product)}
                       onToggleSave={() => toggleSaved(product)}
@@ -978,7 +1276,7 @@ export function MenuExperience({
                   offer={getProductOffer(product, categoryOffers)}
                   quantity={getQuantity(validCart, product.id)}
                   saved={savedProductIds.includes(product.id)}
-                  onAdd={() => product.addons.length ? setSelectedProduct(product) : addProduct(product)}
+                  onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
                   onDecrease={() => decreaseProduct(product)}
                   onOpen={() => setSelectedProduct(product)}
                   onToggleSave={() => toggleSaved(product)}
@@ -990,7 +1288,7 @@ export function MenuExperience({
         </section>
       ) : null}
 
-      <div className={`${mobileMenuView === "home" && !isSearchPage ? "grid" : "hidden lg:grid"} mx-auto max-w-[1250px] gap-6 px-4 pt-3 sm:px-6 lg:grid-cols-[224px_minmax(0,1fr)] lg:px-0 lg:pt-6`}>
+      <div className={`${mobileMenuView === "home" && !isSearchPage ? "grid" : "hidden lg:grid"} mx-auto w-full max-w-[1180px] gap-6 px-5 pt-3 sm:px-6 lg:grid-cols-[210px_minmax(0,1fr)] lg:pt-6 xl:px-0`}>
         <aside className="sticky top-[128px] hidden h-[520px] overflow-hidden rounded-2xl border border-[#f1e7e4] bg-white p-4 shadow-[0_14px_40px_rgba(34,31,32,0.04)] lg:block">
           <div className="mb-4 flex items-center gap-2 border-b border-[#f1e7e4] pb-4 text-sm font-black uppercase tracking-wide text-muted">
             <BookOpen size={18} />
@@ -1021,7 +1319,7 @@ export function MenuExperience({
 
         <div className="min-w-0">
           {isHomePage ? (
-            <section className="relative mb-4 h-[166px] overflow-hidden rounded-[20px] bg-red shadow-[0_10px_24px_rgba(34,31,32,0.08)] lg:hidden">
+            <section className="relative mb-5 h-[166px] overflow-hidden rounded-[20px] bg-red shadow-[0_10px_24px_rgba(34,31,32,0.08)] lg:hidden">
               <Image
                 src={promoSlides[activeSlide]?.image || "/wah-thali-meal-cutout-v2.png"}
                 alt={promoSlides[activeSlide]?.title || "Wah Thali offer"}
@@ -1057,44 +1355,57 @@ export function MenuExperience({
             </section>
           ) : null}
 
-          <section className="relative isolate hidden overflow-hidden rounded-[24px] bg-red shadow-[0_16px_36px_rgba(141,0,33,0.18)] lg:block lg:rounded-[22px]">
-            <div className="grid min-h-[172px] grid-cols-[1fr_42%] items-center gap-1 px-5 py-5 sm:min-h-[230px] sm:px-8 lg:h-[286px] lg:grid-cols-[44%_56%] lg:px-11 lg:py-0">
-              <div className="relative z-10 text-white">
+          <section className="relative isolate hidden overflow-hidden rounded-[22px] bg-red shadow-[0_16px_36px_rgba(141,0,33,0.18)] lg:block">
+            <Image
+              src={promoSlides[activeSlide]?.image || "/wah-thali-meal-cutout-v2.png"}
+              alt={promoSlides[activeSlide]?.title || "Wah Thali offer"}
+              fill
+              priority
+              unoptimized
+              sizes="(max-width: 1279px) 760px, 1000px"
+              className="object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-red via-red/90 to-red/20" />
+            <div className="relative grid h-[286px] grid-cols-[minmax(0,45%)_minmax(0,55%)] items-center gap-6 px-11">
+              <div className="relative z-10 min-w-0 text-white">
                 <p className="text-xs font-black uppercase tracking-[0.22em] text-white/75">Wah Thali offer</p>
-                <h1 className="mt-2 max-w-[500px] text-[34px] font-black leading-[1.12] sm:text-6xl lg:text-[48px]">
-                  Delicious food
-                  <span className="block">at your doorstep</span>
+                <h1 className="mt-2 line-clamp-2 max-w-[500px] text-[48px] font-black leading-[1.08]">
+                  {promoSlides[activeSlide]?.title || "Delicious food at your doorstep"}
                 </h1>
-                <p className="mt-4 text-lg font-semibold text-white/85 lg:text-2xl">Meals from {formatRupees(99)}</p>
-                <div className="mt-5 inline-flex h-12 items-center rounded-xl bg-white px-6 text-sm font-black text-red sm:text-base">
-                  Order now
+                <p className="mt-4 line-clamp-2 max-w-[440px] text-2xl font-semibold text-white/85">
+                  {promoSlides[activeSlide]?.body || `Meals from ${formatRupees(99)}`}
+                </p>
+                <div className="mt-5 inline-flex h-12 max-w-full items-center rounded-xl bg-white px-6 text-base font-black text-red">
+                  {promoSlides[activeSlide]?.code || "Order now"}
                 </div>
               </div>
-              <div className="relative h-full min-h-[138px] sm:min-h-[210px] lg:min-h-0">
-                <Image
-                  src="/wah-thali-meal-cutout-v2.png"
-                  alt="Wah Thali meal offer"
-                  fill
-                  priority
-                  sizes="(max-width: 1023px) 42vw, 560px"
-                  className="scale-110 object-contain object-center drop-shadow-[0_24px_28px_rgba(34,31,32,0.32)]"
-                />
+              <div className="relative h-full min-w-0" />
+              <div className="absolute bottom-5 left-11 flex gap-2">
+                {promoSlides.map((slide, index) => (
+                  <button
+                    key={slide.id}
+                    type="button"
+                    onClick={() => setActiveSlide(index)}
+                    className={`h-2 rounded-full transition-all ${index === activeSlide ? "w-7 bg-white" : "w-2 bg-white/60"}`}
+                    aria-label={`Show ${slide.title}`}
+                  />
+                ))}
               </div>
             </div>
           </section>
 
-          <section className={`${isHomePage ? "hidden lg:block" : "block"} mt-5 rounded-2xl border border-[#f1e7e4] bg-white p-3 shadow-[0_12px_34px_rgba(34,31,32,0.06)] lg:mt-8`}>
-            <label className="grid h-12 grid-cols-[42px_1fr_72px] items-center sm:h-14">
-              <Search size={22} className="mx-auto text-muted" />
+          <section className={`${isHomePage ? "block" : "block"} mt-5 rounded-[16px] border border-[#eef1f6] bg-white px-2 py-1.5 shadow-[0_8px_22px_rgba(34,31,32,0.05)] lg:mt-8`}>
+            <label className="grid h-11 grid-cols-[42px_1fr_58px] items-center lg:h-12 lg:grid-cols-[42px_1fr_66px]">
+              <Search size={20} className="mx-auto text-[#68707c]" />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                className="min-w-0 bg-transparent text-sm font-semibold text-charcoal placeholder:text-muted"
-                placeholder="Search for restaurants, cuisines or dishes..."
+                className="min-w-0 bg-transparent text-[12px] font-semibold text-charcoal outline-none placeholder:text-muted lg:text-sm"
+                placeholder="Search dishes or cuisines"
               />
-              <button type="button" onClick={() => setActivePopup("filters")} className="flex h-full items-center justify-center gap-2 border-l border-[#f1e7e4] text-xs font-black text-charcoal">
-                <SlidersHorizontal size={18} />
-                <span className="hidden sm:inline">Filters</span>
+              <button type="button" onClick={() => setActivePopup("filters")} className="flex h-full flex-col items-center justify-center gap-0.5 border-l border-[#eef1f6] text-[8px] font-black text-[#68707c] lg:flex-row lg:gap-1.5 lg:text-[10px]">
+                <SlidersHorizontal size={18} className="lg:size-[17px]" />
+                <span>Filter</span>
               </button>
             </label>
           </section>
@@ -1113,8 +1424,8 @@ export function MenuExperience({
             </section>
           ) : null}
 
-          <section className="mt-6 lg:mt-8">
-            <div className="flex justify-center gap-3 overflow-x-auto pb-3 lg:justify-between lg:overflow-visible">
+          <section className="mt-5 lg:mt-8">
+            <div className="flex justify-between gap-2 overflow-x-auto pb-3 lg:justify-between lg:overflow-visible">
               {categoryItems.slice(0, 5).map((category) => (
                 <button
                   key={category}
@@ -1125,9 +1436,9 @@ export function MenuExperience({
                       setMobileMenuView("category");
                     }
                   }}
-                  className="grid min-w-[54px] place-items-center gap-1.5 text-center"
+                  className="grid min-w-[48px] place-items-center gap-2 text-center"
                 >
-                  <span className={`grid h-14 w-14 place-items-center overflow-hidden rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] sm:h-20 sm:w-20 lg:h-24 lg:w-24 ${
+                  <span className={`grid h-[52px] w-[52px] place-items-center overflow-hidden rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] sm:h-20 sm:w-20 lg:h-24 lg:w-24 ${
                     activeCategory === category ? "border-red bg-red text-white" : "border-[#f1e7e4] bg-white text-charcoal"
                   }`}>
                     {category === "All" ? (
@@ -1137,7 +1448,7 @@ export function MenuExperience({
                       <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[72%] w-[72%] rounded-full object-cover" loading="eager" />
                     )}
                   </span>
-                  <span className={`max-w-[62px] truncate text-[11px] font-black sm:max-w-20 sm:text-sm ${activeCategory === category ? "text-red" : "text-charcoal"}`}>
+                  <span className={`max-w-[54px] truncate text-[10px] font-black sm:max-w-20 sm:text-sm ${activeCategory === category ? "text-red" : "text-charcoal"}`}>
                     {shortCategoryName(category)}
                   </span>
                 </button>
@@ -1145,46 +1456,47 @@ export function MenuExperience({
               <button
                 type="button"
                 onClick={() => setMobileMenuView("categories")}
-                className="grid min-w-[54px] place-items-center gap-1.5 text-center"
+                className="grid min-w-[48px] place-items-center gap-2 text-center"
               >
-                <span className="grid h-14 w-14 place-items-center rounded-full border border-[#f1e7e4] bg-[#f8fafc] text-charcoal shadow-[0_8px_22px_rgba(34,31,32,0.06)] sm:h-20 sm:w-20 lg:h-24 lg:w-24">
+                <span className="grid h-[52px] w-[52px] place-items-center rounded-full border border-[#f1e7e4] bg-[#f8fafc] text-charcoal shadow-[0_8px_22px_rgba(34,31,32,0.06)] sm:h-20 sm:w-20 lg:h-24 lg:w-24">
                   <Grid3X3 size={21} />
                 </span>
-                <span className="max-w-[62px] truncate text-[11px] font-black text-charcoal sm:max-w-20 sm:text-sm">More</span>
+                <span className="max-w-[54px] truncate text-[10px] font-black text-charcoal sm:max-w-20 sm:text-sm">More</span>
               </button>
             </div>
           </section>
 
-          <section id="menu-items" className="mt-6 pb-16 lg:pb-8">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="foodie-display text-[31px] leading-none text-charcoal lg:font-sans lg:text-3xl lg:font-black">Popular Dishes</h2>
-              <button onClick={() => setActiveCategory("All")} className="inline-flex items-center gap-1 text-[13px] font-black text-maroon lg:text-sm">
-                View all <ChevronRight size={13} />
+          <section id="menu-items" className="mt-6 border-t-[5px] border-[#c8c8c8] pt-7 pb-16 lg:border-t-0 lg:pt-0 lg:pb-8">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="foodie-display text-[30px] leading-none text-charcoal lg:font-sans lg:text-[26px] lg:font-black">Popular Dishes</h2>
+              <button onClick={() => setActiveCategory("All")} className="inline-flex items-center gap-1 text-[11px] font-black text-maroon lg:text-xs">
+                View all <ChevronRight size={11} />
               </button>
             </div>
-            <div className="mb-4 flex justify-center lg:justify-start">
+            <div className="mb-4 hidden justify-center lg:flex lg:justify-start">
               <DietFilterToggle value={dietFilter} onChange={setDietFilter} />
             </div>
 
             {popularProducts.length ? (
               <>
-              <div className="grid grid-cols-2 gap-3 pb-3 lg:hidden">
+              <div className="flex snap-x gap-3.5 overflow-x-auto pb-5 lg:hidden">
                 {popularProducts.slice(0, 6).map((product) => (
-                  <FoodieProductCard
-                    key={product.id}
-                    product={product}
-                    offer={getProductOffer(product, categoryOffers)}
-                    quantity={getQuantity(validCart, product.id)}
-                    saved={savedProductIds.includes(product.id)}
-                    onAdd={() => product.addons.length ? setSelectedProduct(product) : addProduct(product)}
-                    onDecrease={() => decreaseProduct(product)}
-                    onOpen={() => setSelectedProduct(product)}
-                    onToggleSave={() => toggleSaved(product)}
-                    orderingDisabled={orderingDisabled}
-                  />
+                  <div key={product.id} className="w-[clamp(140px,42vw,178px)] shrink-0 snap-start">
+                    <FoodieProductCard
+                      product={product}
+                      offer={getProductOffer(product, categoryOffers)}
+                      quantity={getQuantity(validCart, product.id)}
+                      saved={savedProductIds.includes(product.id)}
+                      onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
+                      onDecrease={() => decreaseProduct(product)}
+                      onOpen={() => setSelectedProduct(product)}
+                      onToggleSave={() => toggleSaved(product)}
+                      orderingDisabled={orderingDisabled}
+                    />
+                  </div>
                 ))}
               </div>
-              <div className="hidden gap-4 pb-3 lg:grid lg:grid-cols-3">
+              <div className="hidden gap-4 pb-3 lg:grid lg:grid-cols-[repeat(auto-fit,minmax(230px,1fr))]">
                 {popularProducts.slice(0, 9).map((product) => (
                   <ProductCard
                     key={product.id}
@@ -1192,7 +1504,7 @@ export function MenuExperience({
                     offer={getProductOffer(product, categoryOffers)}
                     quantity={getQuantity(validCart, product.id)}
                     saved={savedProductIds.includes(product.id)}
-                    onAdd={() => product.addons.length ? setSelectedProduct(product) : addProduct(product)}
+                    onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
                     onDecrease={() => decreaseProduct(product)}
                     onOpen={() => setSelectedProduct(product)}
                     onToggleSave={() => toggleSaved(product)}
@@ -1329,28 +1641,45 @@ export function MenuExperience({
 
       {selectedProduct ? (
         <DishDetailSheet
+          key={selectedProduct.id}
           product={selectedProduct}
-          quantity={getQuantity(validCart, selectedProduct.id)}
-          onAdd={(addonIds) => addProduct(selectedProduct, addonIds)}
-          onDecrease={() => decreaseProduct(selectedProduct)}
+          getQuantityForVariant={(variantId) => getVariantQuantity(validCart, selectedProduct.id, variantId)}
+          onAdd={(variantId, addonIds) => addProduct(selectedProduct, variantId, addonIds)}
+          onDecrease={(variantId) => decreaseProduct(selectedProduct, variantId)}
           onClose={() => setSelectedProduct(null)}
+          onSelectProduct={setSelectedProduct}
           orderingDisabled={orderingDisabled}
+          offer={getProductOffer(selectedProduct, categoryOffers)}
+          freeDeliveryThreshold={restaurantSettings?.freeDeliveryThreshold}
+          relatedProducts={products
+            .filter((product) => product.id !== selectedProduct.id && product.available && product.category === selectedProduct.category)
+            .slice(0, 4)}
         />
       ) : null}
 
-      {activePopup ? (
+      {activePopup === "filters" ? (
+        <SortFilterSheet
+          dietFilter={dietFilter}
+          priceSort={priceSort}
+          onDietChange={setDietFilter}
+          onSortChange={setPriceSort}
+          onReset={() => {
+            setDietFilter("ALL");
+            setPriceSort("NONE");
+          }}
+          onClose={() => setActivePopup(null)}
+        />
+      ) : activePopup ? (
         <div className="fixed inset-0 z-[70] bg-charcoal/30 px-4 py-5 backdrop-blur-[2px]" onClick={() => setActivePopup(null)}>
           <div
             className={`ml-auto w-full bg-white p-4 shadow-2xl ring-1 ring-border ${
-              activePopup === "notifications"
-                ? "mt-[70px] max-w-[315px] rounded-[24px]"
-                : "mx-auto mt-16 max-w-md rounded-[28px]"
+              activePopup === "notifications" ? "mt-[70px] max-w-[315px] rounded-[24px]" : "mx-auto mt-16 max-w-md rounded-[28px]"
             }`}
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-black text-maroon">
-                {activePopup === "notifications" ? "Notifications" : activePopup === "filters" ? "Filters" : "Wah Thali"}
+                {activePopup === "notifications" ? "Notifications" : "Wah Thali"}
               </h2>
               <div className="flex items-center gap-2">
                 {activePopup === "notifications" && notifications.length ? (
@@ -1388,14 +1717,6 @@ export function MenuExperience({
                     <p className="mt-1 text-[11px] font-bold leading-4 text-muted">Account and order updates will appear here.</p>
                   </div>
                 )}
-              </div>
-            ) : activePopup === "filters" ? (
-              <div className="mt-4 grid gap-3">
-                {["All", "VEG", "NON_VEG"].map((item) => (
-                  <button key={item} className="rounded-2xl border border-border bg-white p-4 text-left text-sm font-black text-charcoal">
-                    {item === "All" ? "All dishes" : item === "VEG" ? "Veg only" : "Non-veg only"}
-                  </button>
-                ))}
               </div>
             ) : (
               <div className="mt-4 grid gap-3">
@@ -1471,4 +1792,48 @@ function getStoreStatusMessage(settings?: RestaurantSettings) {
   if (settings.storeMode === "PAUSED") return settings.pausedMessage;
   if (settings.storeMode === "CLOSED") return settings.closedMessage;
   return "Restaurant is accepting orders.";
+}
+
+function isOutsideOrderingHours(settings: RestaurantSettings) {
+  const range = settings.openingHours.split(/\s*-\s*/);
+  const openingMinutes = range[0] ? parseTimeToMinutes(range[0]) : null;
+  const closingMinutes = range[1] ? parseTimeToMinutes(range[1]) : null;
+  if (openingMinutes === null || closingMinutes === null) return false;
+
+  const nowMinutes = getKolkataMinutes();
+  const lastOrderMinutes = normalizeMinutes(closingMinutes - settings.lastOrderBufferMinutes);
+  if (openingMinutes < closingMinutes) {
+    return nowMinutes < openingMinutes || nowMinutes >= lastOrderMinutes;
+  }
+
+  return nowMinutes >= lastOrderMinutes && nowMinutes < openingMinutes;
+}
+
+function getKolkataMinutes() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+  return hour * 60 + minute;
+}
+
+function parseTimeToMinutes(value: string) {
+  const match = value.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+  if (!match) return null;
+
+  let hour = Number(match[1]);
+  const minute = Number(match[2] ?? 0);
+  const meridiem = match[3]?.toUpperCase();
+  if (meridiem === "PM" && hour < 12) hour += 12;
+  if (meridiem === "AM" && hour === 12) hour = 0;
+  if (hour > 23 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+function normalizeMinutes(value: number) {
+  return ((value % 1440) + 1440) % 1440;
 }

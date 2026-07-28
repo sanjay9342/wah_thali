@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { logActivity } from "@/lib/db";
+import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { canTransitionOrder } from "@/lib/state-machines";
 
@@ -43,7 +43,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ or
     return NextResponse.json({ error: "Invalid order update", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  if (parsed.data.status === "CANCELLED" && !parsed.data.note?.trim()) {
+  const settings = await getRestaurantSettingsFromDb();
+
+  if (settings.requireDeclineReason && parsed.data.status === "CANCELLED" && !parsed.data.note?.trim()) {
     return NextResponse.json({ error: "Decline reason is required." }, { status: 400 });
   }
 
@@ -74,7 +76,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ or
           create: {
             fromStatus: existing.status,
             toStatus: parsed.data.status,
-            note: parsed.data.note,
+            note: parsed.data.note?.trim() || (parsed.data.status === "CANCELLED" ? "Order declined by restaurant." : undefined),
           },
         },
       },

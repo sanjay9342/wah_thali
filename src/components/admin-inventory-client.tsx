@@ -23,6 +23,7 @@ type ProductForm = {
   offer: string;
   bestseller: boolean;
   available: boolean;
+  variants: { id?: string; name: string; price: string }[];
   addons: { id?: string; name: string; price: string }[];
 };
 
@@ -42,6 +43,7 @@ const emptyForm: ProductForm = {
   offer: "",
   bestseller: false,
   available: true,
+  variants: [{ name: "Regular", price: "0" }],
   addons: [],
 };
 
@@ -145,6 +147,9 @@ export function AdminInventoryClient({
         offer: form.offer || null,
         bestseller: form.bestseller,
         available: form.available,
+        variants: form.variants
+          .filter((variant) => variant.name.trim())
+          .map((variant) => ({ id: variant.id, name: variant.name.trim(), price: Number(variant.price || 0), available: true })),
         addons: form.addons
           .filter((addon) => addon.name.trim())
           .map((addon) => ({ id: addon.id, name: addon.name.trim(), price: Number(addon.price || 0), available: true })),
@@ -369,7 +374,7 @@ export function AdminInventoryClient({
 }
 
 function safeAdminImage(src: string) {
-  return src.startsWith("/") ? src : "/wah-thali-meal-cutout-v2.png";
+  return src || "/wah-thali-meal-cutout-v2.png";
 }
 
 function toProductForm(product: AdminProduct): ProductForm {
@@ -378,7 +383,7 @@ function toProductForm(product: AdminProduct): ProductForm {
     name: product.name,
     category: product.category,
     description: product.description,
-    image: product.image.startsWith("/") ? "" : product.image,
+    image: product.image,
     dietaryType: product.dietaryType,
     spiceLevel: product.spiceLevel,
     price: String(product.price),
@@ -390,6 +395,13 @@ function toProductForm(product: AdminProduct): ProductForm {
     offer: product.offer ?? "",
     bestseller: Boolean(product.bestseller),
     available: product.available,
+    variants: product.variants.length
+      ? product.variants.map((variant) => ({
+          id: variant.id,
+          name: variant.name,
+          price: String(variant.price),
+        }))
+      : [{ name: "Regular", price: "0" }],
     addons: product.addons.map((addon) => ({
       id: addon.id,
       name: addon.name,
@@ -423,6 +435,12 @@ function ProductModal({
     });
   }
 
+  function updateVariant(index: number, patch: Partial<ProductForm["variants"][number]>) {
+    update({
+      variants: form.variants.map((variant, variantIndex) => (variantIndex === index ? { ...variant, ...patch } : variant)),
+    });
+  }
+
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-charcoal/45 p-4">
       <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
@@ -432,11 +450,11 @@ function ProductModal({
             <X size={18} />
           </button>
         </div>
-        <div className="grid gap-4 p-5 sm:grid-cols-2">
+        <div className="grid gap-4 p-5 sm:grid-cols-2 sm:items-start">
           <Field label="Name" value={form.name} onChange={(value) => update({ name: value })} />
-          <label className="grid gap-2 text-sm font-black text-maroon">
+          <label className="grid min-w-0 gap-2 text-sm font-black text-maroon">
             Category
-            <select value={form.category} onChange={(event) => update({ category: event.target.value })} className="h-11 rounded-lg border border-border bg-cream px-3 text-charcoal">
+            <select value={form.category} onChange={(event) => update({ category: event.target.value })} className="h-11 w-full min-w-0 rounded-lg border border-border bg-cream px-3 text-charcoal">
               <option value="" disabled>Select category</option>
               {categories.map((category) => <option key={category} value={category}>{category}</option>)}
             </select>
@@ -448,23 +466,66 @@ function ProductModal({
           <Field label="Stock" type="number" value={form.stock} onChange={(value) => update({ stock: value })} />
           <Field label="Reorder" type="number" value={form.reorderAt} onChange={(value) => update({ reorderAt: value })} />
           <Field label="Margin %" type="number" value={form.margin} onChange={(value) => update({ margin: value })} />
-          <label className="grid gap-2 text-sm font-black text-maroon">
+          <label className="grid min-w-0 gap-2 text-sm font-black text-maroon">
             Dietary
-            <select value={form.dietaryType} onChange={(event) => update({ dietaryType: event.target.value as ProductForm["dietaryType"] })} className="h-11 rounded-lg border border-border bg-cream px-3 text-charcoal">
+            <select value={form.dietaryType} onChange={(event) => update({ dietaryType: event.target.value as ProductForm["dietaryType"] })} className="h-11 w-full min-w-0 rounded-lg border border-border bg-cream px-3 text-charcoal">
               <option value="VEG">VEG</option>
               <option value="NON_VEG">NON VEG</option>
               <option value="JAIN">JAIN</option>
             </select>
           </label>
-          <label className="grid gap-2 text-sm font-black text-maroon">
+          <label className="grid min-w-0 gap-2 text-sm font-black text-maroon">
             Spice
-            <select value={form.spiceLevel} onChange={(event) => update({ spiceLevel: event.target.value as ProductForm["spiceLevel"] })} className="h-11 rounded-lg border border-border bg-cream px-3 text-charcoal">
+            <select value={form.spiceLevel} onChange={(event) => update({ spiceLevel: event.target.value as ProductForm["spiceLevel"] })} className="h-11 w-full min-w-0 rounded-lg border border-border bg-cream px-3 text-charcoal">
               <option value="Mild">Mild</option>
               <option value="Medium">Medium</option>
               <option value="Hot">Hot</option>
             </select>
           </label>
           <Field label="Dish offer (overrides category offer)" value={form.offer} onChange={(value) => update({ offer: value })} />
+          <div className="grid gap-3 rounded-xl border border-border bg-cream p-3 sm:col-span-2">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-black text-maroon">Variations</p>
+                <p className="text-xs font-bold text-muted">Shown as size/options after customers click a dish. Price is added to base price.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => update({ variants: [...form.variants, { name: "", price: "0" }] })}
+                className="h-9 rounded-lg bg-maroon px-3 text-xs font-black text-white"
+              >
+                Add variation
+              </button>
+            </div>
+            <div className="grid gap-2">
+              {form.variants.map((variant, index) => (
+                <div key={variant.id ?? index} className="grid gap-2 sm:grid-cols-[1fr_140px_auto]">
+                  <input
+                    value={variant.name}
+                    onChange={(event) => updateVariant(index, { name: event.target.value })}
+                    className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-bold text-charcoal"
+                    placeholder="Variation name, e.g. Regular"
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    value={variant.price}
+                    onChange={(event) => updateVariant(index, { price: event.target.value })}
+                    className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-bold text-charcoal"
+                    placeholder="Extra price"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => update({ variants: form.variants.filter((_, variantIndex) => variantIndex !== index) })}
+                    disabled={form.variants.length === 1}
+                    className="h-10 rounded-lg border border-border px-3 text-xs font-black text-red disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
           <div className="grid gap-3 rounded-xl border border-border bg-cream p-3 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -560,19 +621,19 @@ function ImageField({
   }
 
   return (
-    <div className="grid gap-2 text-sm font-black text-maroon">
+      <div className="grid min-w-0 gap-2 text-sm font-black text-maroon">
       <span>{label}</span>
-      <div className="grid gap-2 rounded-lg border border-border bg-cream p-3">
+      <div className="grid min-w-0 gap-2 overflow-hidden rounded-lg border border-border bg-cream p-3">
         {value ? (
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={safeAdminImage(value)} alt="" className="h-16 w-16 rounded-lg object-cover" />
+            <img src={safeAdminImage(value)} alt="" className="h-16 w-16 shrink-0 rounded-lg object-cover" />
             <span className="min-w-0 truncate text-xs font-bold text-muted">{value}</span>
           </div>
         ) : null}
-        <input value={value} onChange={(event) => onChange(event.target.value)} className="h-10 rounded-lg border border-border bg-white px-3 text-charcoal" placeholder="Paste image URL" />
+        <input value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full min-w-0 rounded-lg border border-border bg-white px-3 text-charcoal" placeholder="Paste image URL" />
         <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-lg bg-maroon px-3 text-sm font-black text-white">
-          Upload from laptop
+          Upload using your device
           <input type="file" accept="image/*" className="hidden" onChange={(event) => handleFile(event.target.files?.[0])} />
         </label>
         {error ? <p className="text-xs font-bold text-red">{error}</p> : null}
@@ -595,9 +656,9 @@ function Field({
   list?: string;
 }) {
   return (
-    <label className="grid gap-2 text-sm font-black text-maroon">
+    <label className="grid min-w-0 gap-2 text-sm font-black text-maroon">
       {label}
-      <input type={type} list={list} value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-lg border border-border bg-cream px-3 text-charcoal" />
+      <input type={type} list={list} value={value} onChange={(event) => onChange(event.target.value)} className="h-11 w-full min-w-0 rounded-lg border border-border bg-cream px-3 text-charcoal" />
     </label>
   );
 }

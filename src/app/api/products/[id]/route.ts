@@ -3,11 +3,15 @@ import { z } from "zod";
 import { logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
+const imagePathSchema = z.string().trim().refine((value) => value.startsWith("/") || z.url().safeParse(value).success, {
+  message: "Image must be a public path or URL.",
+});
+
 const updateProductSchema = z.object({
   name: z.string().min(1).optional(),
   description: z.string().min(1).optional(),
   category: z.string().min(1).optional(),
-  image: z.string().url().nullable().optional(),
+  image: imagePathSchema.nullable().optional(),
   price: z.coerce.number().int().nonnegative().optional(),
   originalPrice: z.coerce.number().int().nonnegative().nullable().optional(),
   dietaryType: z.string().optional(),
@@ -20,6 +24,12 @@ const updateProductSchema = z.object({
   reorderAt: z.coerce.number().int().nonnegative().optional(),
   margin: z.coerce.number().int().min(0).max(100).optional(),
   addons: z.array(z.object({
+    id: z.string().optional(),
+    name: z.string().min(1),
+    price: z.coerce.number().int().nonnegative(),
+    available: z.boolean().default(true),
+  })).optional(),
+  variants: z.array(z.object({
     id: z.string().optional(),
     name: z.string().min(1),
     price: z.coerce.number().int().nonnegative(),
@@ -38,7 +48,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Invalid product update", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { category, image, prepTimeMinutes, stock, reorderAt, margin, addons, ...productUpdate } = parsed.data;
+  const { category, image, prepTimeMinutes, stock, reorderAt, margin, addons, variants, ...productUpdate } = parsed.data;
+  const variantRows = variants !== undefined
+    ? variants.length
+      ? variants
+      : [{ name: "Regular", price: 0, available: true }]
+    : undefined;
   const product = await prisma.product.update({
     where: { id },
     data: {
@@ -67,6 +82,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                 name: addon.name,
                 price: addon.price,
                 available: addon.available,
+              })),
+            }
+          : undefined,
+      variants:
+        variantRows !== undefined
+          ? {
+              deleteMany: {},
+              create: variantRows.map((variant) => ({
+                name: variant.name,
+                price: variant.price,
+                available: variant.available,
               })),
             }
           : undefined,

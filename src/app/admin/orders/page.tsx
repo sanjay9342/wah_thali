@@ -1,10 +1,16 @@
 import { AdminOrdersClient } from "@/components/admin-orders-client";
-import { getAdminOrdersFromDb } from "@/lib/db";
+import { getAdminOrdersFromDb, getRestaurantSettingsFromDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminOrdersPage() {
-  const orders = await getAdminOrdersFromDb();
+  const [orders, settings] = await Promise.all([getAdminOrdersFromDb(), getRestaurantSettingsFromDb()]);
 
-  return <AdminOrdersClient initialOrders={orders} />;
+  return (
+    <AdminOrdersClient
+      initialOrders={orders}
+      newOrderSoundEnabled={settings.newOrderSoundEnabled}
+      requireDeclineReason={settings.requireDeclineReason}
+    />
+  );
 }

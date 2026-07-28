@@ -3,6 +3,10 @@ import { z } from "zod";
 import { getAdminProductsFromDb, logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
+const imagePathSchema = z.string().trim().refine((value) => value.startsWith("/") || z.url().safeParse(value).success, {
+  message: "Image must be a public path or URL.",
+});
+
 const productSchema = z.object({
   category: z.string().min(1),
   name: z.string().min(1),
@@ -10,7 +14,7 @@ const productSchema = z.object({
   description: z.string().min(1),
   price: z.coerce.number().int().nonnegative(),
   originalPrice: z.coerce.number().int().nonnegative().nullable().optional(),
-  image: z.string().url().optional(),
+  image: imagePathSchema.optional(),
   dietaryType: z.string().default("VEG"),
   available: z.boolean().default(true),
   prepTimeMinutes: z.coerce.number().int().positive().default(25),
@@ -25,6 +29,11 @@ const productSchema = z.object({
     price: z.coerce.number().int().nonnegative(),
     available: z.boolean().default(true),
   })).default([]),
+  variants: z.array(z.object({
+    name: z.string().min(1),
+    price: z.coerce.number().int().nonnegative(),
+    available: z.boolean().default(true),
+  })).default([{ name: "Regular", price: 0, available: true }]),
 });
 
 export async function GET() {
@@ -42,8 +51,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid product payload", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { category, image, prepTimeMinutes, stock, reorderAt, margin, addons, ...product } = parsed.data;
+  const { category, image, prepTimeMinutes, stock, reorderAt, margin, addons, variants, ...product } = parsed.data;
   const slug = product.slug ?? slugify(product.name);
+  const variantRows = variants.length ? variants : [{ name: "Regular", price: 0, available: true }];
   const saved = await prisma.product.create({
     data: {
       ...product,
@@ -56,7 +66,7 @@ export async function POST(request: Request) {
         },
       },
       images: image ? { create: { url: image, alt: product.name, sortOrder: 0 } } : undefined,
-      variants: { create: { name: "Regular", price: 0 } },
+      variants: { create: variantRows },
       addons: addons.length ? { create: addons } : undefined,
       inventory: { create: { stock, reorderAt, margin } },
     },

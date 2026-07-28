@@ -1,5 +1,6 @@
-import { BadgeIndianRupee, Gift, MessageCircle, Phone, Plus, Search, Star, UserRoundCheck } from "lucide-react";
+import { BadgeIndianRupee, Gift, Plus, Star, UserRoundCheck } from "lucide-react";
 import Link from "next/link";
+import { AdminCustomersClient } from "@/components/admin-customers-client";
 import { getAdminCustomersFromDb, getBusinessSettingsFromDb } from "@/lib/db";
 import { formatRupees } from "@/lib/pricing";
 
@@ -45,55 +46,14 @@ export default async function AdminCustomersPage() {
           ))}
         </section>
 
-        <section className="mt-6 grid gap-5 lg:grid-cols-[280px_1fr]">
-          <aside className="surface rounded-2xl p-5">
-            <label className="flex h-11 items-center gap-2 rounded-lg border border-border bg-cream px-3">
-              <Search size={17} className="text-muted" />
-              <input className="min-w-0 flex-1 bg-transparent text-sm font-semibold" placeholder="Search customer" />
-            </label>
-            <div className="mt-4 grid gap-2">
-              {["All customers", "VIP", "New", "Repeat buyers"].map((segment, index) => (
-                <button key={segment} className={`rounded-lg px-3 py-2 text-left text-sm font-black ${index === 0 ? "bg-maroon text-white" : "bg-cream text-charcoal"}`}>
-                  {segment}
-                </button>
-              ))}
-            </div>
-          </aside>
-
-          <div className="grid gap-4">
-            {customers.length ? customers.map((customer) => (
-              <article key={customer.id} className="surface rounded-2xl p-5">
-                <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
-                  <div>
-                    <p className="text-sm font-bold text-muted">{customer.mobile}</p>
-                    <h2 className="text-xl font-black text-maroon">{customer.name}</h2>
-                    <p className="mt-2 text-sm font-bold text-muted">
-                      {customer.tier} - {customer.orders} orders - LTV {formatRupees(customer.ltv)}
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-black">
-                      <span className="rounded-lg bg-cream px-3 py-2">Points {customer.points}</span>
-                      <span className="rounded-lg bg-cream px-3 py-2">Last order {customer.lastOrder ? new Date(customer.lastOrder).toLocaleDateString("en-IN") : "No orders"}</span>
-                      {customer.email ? <span className="rounded-lg bg-cream px-3 py-2">{customer.email}</span> : null}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-start gap-2 lg:justify-end">
-                    <a href={`tel:${customer.mobile || settings.supportPhone}`} className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm font-black">
-                      <Phone size={16} /> Call
-                    </a>
-                    <a href={`https://wa.me/91${customer.mobile}?text=${encodeURIComponent(`Hi ${customer.name}, this is Wah Thali.`)}`} className="inline-flex h-10 items-center gap-2 rounded-lg bg-maroon px-3 text-sm font-black text-white">
-                      <MessageCircle size={16} /> WhatsApp
-                    </a>
-                  </div>
-                </div>
-              </article>
-            )) : (
-              <div className="surface rounded-2xl p-8 text-center">
-                <h2 className="text-xl font-black text-maroon">No live customers yet</h2>
-                <p className="mt-2 text-sm font-semibold text-muted">Customers will appear after signup, saved addresses, or checkout orders.</p>
-              </div>
-            )}
+        {customers.length ? (
+          <AdminCustomersClient customers={customers} supportPhone={settings.supportPhone} />
+        ) : (
+          <div className="surface mt-6 rounded-2xl p-8 text-center">
+            <h2 className="text-xl font-black text-maroon">No live customers yet</h2>
+            <p className="mt-2 text-sm font-semibold text-muted">Customers will appear after signup, saved addresses, or checkout orders.</p>
           </div>
-        </section>
+        )}
       </div>
     </main>
   );

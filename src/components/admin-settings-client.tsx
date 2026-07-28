@@ -213,6 +213,22 @@ export function AdminSettingsClient({
                 <option value="CLOSED">Closed</option>
               </select>
             </label>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setAdvanced({ ...advanced, storeMode: "OPEN", storeStatusReason: "" })}
+                className="h-10 rounded-lg bg-maroon px-3 text-sm font-black text-white"
+              >
+                Store available now
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdvanced({ ...advanced, storeMode: "CLOSED", storeStatusReason: "Store is closed right now. Please wait for opening hours." })}
+                className="h-10 rounded-lg border border-border bg-cream px-3 text-sm font-black text-maroon"
+              >
+                Close store now
+              </button>
+            </div>
             <Input label="Customer status reason" value={advanced.storeStatusReason} onChange={(value) => setAdvanced({ ...advanced, storeStatusReason: value })} />
             <Textarea label="Busy message" value={advanced.busyMessage} onChange={(value) => setAdvanced({ ...advanced, busyMessage: value })} />
             <Textarea label="Paused message" value={advanced.pausedMessage} onChange={(value) => setAdvanced({ ...advanced, pausedMessage: value })} />
@@ -277,9 +293,9 @@ export function AdminSettingsClient({
               </button>
             </div>
           </div>
-          <div className="mt-5 grid gap-4 lg:grid-cols-3">
+          <div className="mt-5 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
             {slides.map((slide, index) => (
-              <div key={slide.id} className="flex min-h-[660px] flex-col rounded-xl border border-border bg-cream p-4">
+              <div key={slide.id} className="flex min-w-0 flex-col rounded-xl border border-border bg-cream p-4">
                 <div className="grid gap-3">
                   <Input label="Eyebrow" value={slide.eyebrow} onChange={(value) => updateSlide(index, { eyebrow: value })} />
                   <Input label="Title" value={slide.title} onChange={(value) => updateSlide(index, { title: value })} />
@@ -298,12 +314,12 @@ export function AdminSettingsClient({
                 <div className="mt-3 grid gap-2 text-sm font-bold text-charcoal">
                   <span>Image</span>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={safeImage(slide.image)} alt="" className="h-24 w-full rounded-lg object-cover" />
-                  <input value={slide.image} onChange={(event) => updateSlide(index, { image: event.target.value })} className="h-11 rounded-lg border border-border bg-white px-3" placeholder="Paste image URL or /public path" />
+                  <img src={safeImage(slide.image)} alt="" className="h-36 w-full rounded-lg object-cover xl:h-40" />
+                  <input value={slide.image} onChange={(event) => updateSlide(index, { image: event.target.value })} className="h-11 min-w-0 rounded-lg border border-border bg-white px-3 text-sm" placeholder="Paste image URL or /public path" />
                 </div>
                 <div className="mt-auto grid gap-2 pt-4">
                   <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-lg bg-maroon px-3 text-sm font-black text-white">
-                    Upload from laptop
+                    Upload using your device
                     <input
                       type="file"
                       accept="image/*"
@@ -319,7 +335,7 @@ export function AdminSettingsClient({
                       }}
                     />
                   </label>
-                  <div className="grid grid-cols-[1fr_auto] gap-2">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                     <Toggle label="Active" checked={slide.active} onChange={(value) => updateSlide(index, { active: value })} />
                     <button type="button" onClick={() => deleteSlide(index)} className="grid h-11 w-12 place-items-center rounded-lg border border-border bg-white text-red" aria-label={`Delete ${slide.title}`}>
                       <Trash2 size={18} />
@@ -369,8 +385,8 @@ function Textarea({ label, value, onChange }: { label: string; value: string; on
 
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
   return (
-    <button type="button" onClick={() => onChange(!checked)} className={`flex h-11 items-center justify-between rounded-lg px-3 text-left text-sm font-black ${checked ? "bg-maroon text-white" : "border border-border bg-cream text-maroon"}`}>
-      <span>{label}</span>
+    <button type="button" onClick={() => onChange(!checked)} className={`flex min-h-11 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm font-black ${checked ? "bg-maroon text-white" : "border border-border bg-cream text-maroon"}`}>
+      <span className="min-w-0">{label}</span>
       <span>{checked ? "On" : "Off"}</span>
     </button>
   );

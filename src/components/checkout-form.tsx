@@ -85,6 +85,7 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
         body: JSON.stringify({
           customerName: address.name.trim(),
           customerMobile: address.phone.trim(),
+          pinCode: address.pinCode.trim(),
           items: cartLines,
         }),
       });

@@ -12,13 +12,13 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { AdminDashboardProductsClient } from "@/components/admin-dashboard-products-client";
-import { getAdminDashboardMetrics, getProductsFromDb } from "@/lib/db";
+import { getAdminDashboardMetrics, getAdminProductsFromDb } from "@/lib/db";
 import { formatRupees } from "@/lib/pricing";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
-  const [products, metrics] = await Promise.all([getProductsFromDb(), getAdminDashboardMetrics()]);
+  const [products, metrics] = await Promise.all([getAdminProductsFromDb(), getAdminDashboardMetrics()]);
   const operations = [
     ["Open orders", String(metrics.openOrders), "Need restaurant action"],
     ["Unavailable items", String(metrics.unavailableItems), "Hidden from menu"],

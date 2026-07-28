@@ -9,7 +9,6 @@ import {
   Heart,
   HelpCircle,
   Home,
-  LogIn,
   LogOut,
   MapPin,
   PackageCheck,
@@ -18,8 +17,8 @@ import {
   UserRound,
   WalletCards,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { clearCustomerSession, readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 
 type CustomerAddress = {
@@ -60,7 +59,9 @@ const accountRows = [
 ];
 
 export function AccountClient() {
+  const router = useRouter();
   const [session, setSession] = useState<CustomerSession | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
   const [profile, setProfile] = useState<CustomerProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -68,6 +69,7 @@ export function AccountClient() {
   useEffect(() => {
     function refreshSession() {
       setSession(readCustomerSession());
+      setSessionReady(true);
     }
 
     refreshSession();
@@ -75,6 +77,13 @@ export function AccountClient() {
   }, []);
 
   useEffect(() => {
+    if (sessionReady && !session?.mobile) {
+      router.replace("/login?next=/account");
+    }
+  }, [router, session, sessionReady]);
+
+  useEffect(() => {
+    if (!sessionReady) return;
     let cancelled = false;
 
     async function loadProfile() {
@@ -104,7 +113,7 @@ export function AccountClient() {
     return () => {
       cancelled = true;
     };
-  }, [session]);
+  }, [session, sessionReady]);
 
   const displayName = profile?.name || session?.name || "Guest";
   const displayMobile = profile?.mobile || session?.mobile || "";
@@ -114,30 +123,8 @@ export function AccountClient() {
   const tier = profile?.loyalty?.tier || "Starter";
   const points = profile?.loyalty?.points ?? 0;
 
-  if (!session) {
-    return (
-      <main className="mx-auto w-full max-w-[430px] px-5 pb-28 pt-5 sm:max-w-5xl sm:px-6 lg:px-8">
-        <section className="overflow-hidden rounded-[28px] bg-white text-center shadow-[0_14px_34px_rgba(34,31,32,0.08)] ring-1 ring-border">
-          <div className="relative h-44 bg-maroon">
-            <Image src="/wah-thali-meal-cutout-v2.png" alt="" fill sizes="430px" className="object-cover opacity-90" />
-            <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-white" />
-            <div className="absolute left-1/2 top-5 grid h-16 w-32 -translate-x-1/2 place-items-center rounded-2xl bg-white shadow-lg">
-              <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" width={112} height={50} className="h-auto w-28" />
-            </div>
-          </div>
-          <div className="px-5 pb-6">
-            <div className="mx-auto -mt-2 grid h-20 w-20 place-items-center rounded-full bg-[#fff4f5] text-maroon">
-              <UserRound size={34} />
-            </div>
-            <h1 className="mt-4 text-2xl font-black text-charcoal">Login to your profile</h1>
-            <p className="mt-2 text-sm font-bold leading-6 text-muted">Save addresses, see your orders, and keep your phone number ready for delivery details.</p>
-            <Link href="/login?next=/account" className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-maroon font-black text-white">
-              <LogIn size={18} /> Login or sign up
-            </Link>
-          </div>
-        </section>
-      </main>
-    );
+  if (!sessionReady || !session) {
+    return <main className="min-h-screen bg-white" />;
   }
 
   return (
