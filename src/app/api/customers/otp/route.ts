@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeMobile } from "@/lib/customer-auth";
-import { createCustomerOtp } from "@/lib/customer-otp";
+import { consumeCustomerOtp, createCustomerOtp } from "@/lib/customer-otp";
 import { logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
+import { getWhatsAppOtpConfigStatus, sendWhatsAppOtp } from "@/lib/whatsapp";
 
 const otpSchema = z.object({
   mobile: z.string().min(8),
@@ -26,13 +27,43 @@ export async function POST(request: Request) {
   }
 
   if (parsed.data.purpose === "signin") {
-    const customer = await prisma.customer.findUnique({ where: { mobile } });
+    const customer = await prisma.customer.findUnique({ where: { mobile }, select: { id: true } });
     if (!customer) {
       return NextResponse.json({ error: "No account found for this WhatsApp number. Please create an account." }, { status: 404 });
     }
   }
 
   const otp = await createCustomerOtp(mobile, parsed.data.purpose);
+  const whatsAppConfig = getWhatsAppOtpConfigStatus();
+  const canSkipSend = process.env.NODE_ENV !== "production" && !whatsAppConfig.configured;
+  let messageId: string | undefined;
+
+  if (!canSkipSend) {
+    const sendResult = await sendWhatsAppOtp(mobile, otp.code);
+    if (!sendResult.ok) {
+      await consumeCustomerOtp(otp.id);
+      console.error("WhatsApp OTP send failed.", {
+        status: sendResult.status,
+        message: sendResult.message,
+      });
+      return NextResponse.json({ error: "Could not send WhatsApp OTP. Please try again." }, { status: 502 });
+    }
+    messageId = sendResult.messageId;
+  }
+
+  if (messageId) {
+    await prisma.whatsAppMessage.upsert({
+      where: { messageId },
+      create: {
+        messageId,
+        phone: mobile,
+        direction: "OUTBOUND",
+        body: `OTP for ${parsed.data.purpose}`,
+        status: "SENT",
+      },
+      update: { status: "SENT" },
+    });
+  }
 
   await logActivity({
     type: "CUSTOMER_OTP_CREATED",
@@ -43,8 +74,9 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({
-    message: "WhatsApp OTP sent. It expires in 5 minutes.",
+    message: canSkipSend
+      ? "WhatsApp OTP created in development mode. Configure Meta env values to send it."
+      : "WhatsApp OTP sent. It expires in 5 minutes.",
     devOtp: process.env.NODE_ENV === "production" ? undefined : otp.code,
   });
 }
-

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import type { ReactNode } from "react";
 import { BellRing, Clock3, CreditCard, ImagePlus, Save, Settings2, Store, Trash2, Truck } from "lucide-react";
-import Link from "next/link";
+import { AdminSectionNav } from "@/components/admin-section-nav";
 import type { BusinessSettings, HomeSlide } from "@/lib/types";
 
 type AdvancedSettings = {
@@ -192,13 +192,12 @@ export function AdminSettingsClient({
             <p className="mt-1 text-sm font-semibold text-muted">Restaurant modes, order rules, kitchen timing, delivery, payments, and homepage promotions.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href="/admin" className="inline-flex h-11 items-center rounded-lg border border-border px-4 font-black">Dashboard</Link>
-            <Link href="/admin/categories" className="inline-flex h-11 items-center rounded-lg border border-border px-4 font-black">Categories</Link>
             <button onClick={saveSettings} disabled={isPending} className="inline-flex h-11 items-center gap-2 rounded-lg bg-red px-4 font-black text-white disabled:opacity-60">
               <Save size={18} /> Save settings
             </button>
           </div>
         </div>
+        <AdminSectionNav />
 
         {message ? <p className="mt-4 rounded-lg border border-border bg-cream px-4 py-3 text-sm font-black text-maroon">{message}</p> : null}
 

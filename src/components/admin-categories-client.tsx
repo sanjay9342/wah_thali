@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { CheckCircle2, EyeOff, ImagePlus, Plus, Trash2 } from "lucide-react";
-import Link from "next/link";
+import { AdminSectionNav } from "@/components/admin-section-nav";
 
 type AdminCategory = {
   id: string;
@@ -113,11 +113,8 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
             <h1 className="text-3xl font-black text-maroon">Menu categories</h1>
             <p className="mt-1 text-sm font-semibold text-muted">Create customer-facing categories, upload images, and control availability.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/admin" className="inline-flex h-11 items-center rounded-lg border border-border px-4 font-black">Dashboard</Link>
-            <Link href="/admin/inventory" className="inline-flex h-11 items-center rounded-lg bg-maroon px-4 font-black text-white">Inventory</Link>
-          </div>
         </div>
+        <AdminSectionNav />
 
         {message ? <p className="mt-4 rounded-lg border border-border bg-cream px-4 py-3 text-sm font-black text-maroon">{message}</p> : null}
 

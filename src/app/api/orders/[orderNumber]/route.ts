@@ -26,7 +26,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ord
   const { orderNumber } = await params;
   const order = await prisma.order.findUnique({
     where: { orderNumber },
-    include: { customer: true, items: true, payments: true, timeline: { orderBy: { createdAt: "asc" } } },
+    include: {
+      customer: { select: { id: true, name: true, mobile: true, email: true } },
+      items: true,
+      payments: true,
+      timeline: { orderBy: { createdAt: "asc" } },
+    },
   });
 
   return NextResponse.json({ order, configured: true }, { status: order ? 200 : 404 });
@@ -80,7 +85,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ or
           },
         },
       },
-      include: { customer: true, items: true, timeline: { orderBy: { createdAt: "asc" } } },
+      include: {
+        customer: { select: { id: true, name: true, mobile: true, email: true } },
+        items: true,
+        timeline: { orderBy: { createdAt: "asc" } },
+      },
     });
   });
 

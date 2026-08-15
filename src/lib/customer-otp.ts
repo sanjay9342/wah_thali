@@ -30,6 +30,13 @@ export async function createCustomerOtp(mobile: string, purpose: CustomerOtpPurp
   return { id: otp.id, code, expiresAt };
 }
 
+export async function consumeCustomerOtp(id: string) {
+  await prisma.customerOtp.update({
+    where: { id },
+    data: { consumedAt: new Date() },
+  });
+}
+
 export async function verifyCustomerOtp(mobile: string, purpose: CustomerOtpPurpose, code: string) {
   const otp = await prisma.customerOtp.findFirst({
     where: {

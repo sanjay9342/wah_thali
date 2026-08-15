@@ -4,12 +4,15 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  ArrowRight,
   BadgeCheck,
+  BookOpen,
   BriefcaseBusiness,
   ChevronLeft,
   ChevronRight,
   Clock3,
   Gift,
+  Grid2X2,
   Home,
   LocateFixed,
   MapPin,
@@ -21,6 +24,7 @@ import {
   Store,
   Tag,
   Phone,
+  Trash2,
   X,
 } from "lucide-react";
 import { calculateCartTotals, formatRupees, getPricableCartLines } from "@/lib/pricing";
@@ -30,6 +34,32 @@ import { extractPinCode, isServiceableLocation, saveDeliveryLocation, useDeliver
 import { addNotification } from "@/lib/notifications";
 import { useStoredCart } from "@/lib/use-stored-cart";
 import type { CartLine, Coupon, Product, RestaurantSettings } from "@/lib/types";
+
+type PaymentMethod = "COD" | "RAZORPAY";
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: RazorpayCheckoutOptions) => { open: () => void };
+  }
+}
+
+type RazorpayCheckoutOptions = {
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  order_id: string;
+  prefill: { name: string; contact: string };
+  notes: { orderNumber: string };
+  theme: { color: string };
+  handler: (response: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) => void;
+  modal: { ondismiss: () => void };
+};
 
 function buildInitialCart(baseCart: CartLine[], addProductId?: string) {
   const base = baseCart;
@@ -69,6 +99,10 @@ export function CartClient({
   const [showLocationSheet, setShowLocationSheet] = useState(false);
   const [showCookingSheet, setShowCookingSheet] = useState(false);
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
+  const [checkoutMessage, setCheckoutMessage] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
+    restaurantSettings.onlinePaymentsEnabled ? "RAZORPAY" : "COD",
+  );
   const supportMobile = restaurantSettings.supportPhone.replace(/\D/g, "").slice(-10);
   const [receiverDraft, setReceiverDraft] = useState(() => ({
     name: "Customer",
@@ -97,17 +131,39 @@ export function CartClient({
   const appliedCoupon = initialCoupons.find((item) => item.code === coupon);
   const featuredCoupon = initialCoupons[0];
   const featuredCouponValue = featuredCoupon ? getCouponBenefitText(featuredCoupon) : "";
-  const paymentLabel = restaurantSettings.codEnabled
-    ? "Cash on Delivery"
-    : restaurantSettings.onlinePaymentsEnabled
-      ? "Online payment"
-      : "Payment unavailable";
+  const paymentOptions: PaymentMethod[] = [
+    ...(restaurantSettings.onlinePaymentsEnabled ? ["RAZORPAY" as const] : []),
+    ...(restaurantSettings.codEnabled ? ["COD" as const] : []),
+  ];
+  const selectedPaymentMethod = paymentOptions.includes(paymentMethod) ? paymentMethod : paymentOptions[0];
+  const paymentLabel = selectedPaymentMethod === "RAZORPAY"
+    ? "Razorpay"
+    : selectedPaymentMethod === "COD" ? "Cash on Delivery" : "Payment unavailable";
   const itemSavings = validLines.reduce((total, line) => {
     const product = initialProducts.find((item) => item.id === line.productId);
     if (!product?.originalPrice) return total;
     return total + Math.max(product.originalPrice - product.price, 0) * line.quantity;
   }, 0);
   const totalSavings = itemSavings + totals.discount;
+  const cartItemCount = validLines.reduce((total, line) => total + line.quantity, 0);
+  const categoryItems = useMemo(() => {
+    const categories = Array.from(new Set(initialProducts.map((product) => product.category).filter(Boolean))).slice(0, 8);
+    return [
+      {
+        name: "All",
+        count: initialProducts.length,
+        image: "",
+      },
+      ...categories.map((category) => {
+        const products = initialProducts.filter((product) => product.category === category);
+        return {
+          name: category,
+          count: products.length,
+          image: products[0]?.image ?? "",
+        };
+      }),
+    ];
+  }, [initialProducts]);
   const receiverName = customerSession?.name || "Customer";
   const receiverMobile = customerSession?.mobile || supportMobile;
 
@@ -234,9 +290,110 @@ export function CartClient({
     setShowCookingSheet(false);
   }
 
+  async function loadRazorpayCheckout() {
+    if (window.Razorpay) return true;
+
+    return new Promise<boolean>((resolve) => {
+      const existing = document.querySelector<HTMLScriptElement>("script[src='https://checkout.razorpay.com/v1/checkout.js']");
+      if (existing) {
+        existing.addEventListener("load", () => resolve(true), { once: true });
+        existing.addEventListener("error", () => resolve(false), { once: true });
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.async = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  }
+
+  async function verifyRazorpayPayment(input: {
+    orderNumber: string;
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) {
+    const response = await fetch("/api/payments/razorpay", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.verified) {
+      throw new Error(data.error || "Payment verification failed.");
+    }
+  }
+
+  async function openRazorpayCheckout(input: {
+    keyId: string;
+    orderId: string;
+    amount: number;
+    currency: string;
+    orderNumber: string;
+  }) {
+    const loaded = await loadRazorpayCheckout();
+    if (!loaded || !window.Razorpay) {
+      throw new Error("Razorpay Checkout could not be loaded.");
+    }
+
+    const checkout = new window.Razorpay({
+      key: input.keyId,
+      amount: input.amount,
+      currency: input.currency,
+      name: "Wah Thali",
+      description: `Order ${input.orderNumber}`,
+      order_id: input.orderId,
+      prefill: {
+        name: receiverName,
+        contact: receiverMobile,
+      },
+      notes: {
+        orderNumber: input.orderNumber,
+      },
+      theme: {
+        color: "#8d0021",
+      },
+      handler: async (response) => {
+        setSubmitting(true);
+        setCheckoutMessage("Verifying payment...");
+        try {
+          await verifyRazorpayPayment({
+            orderNumber: input.orderNumber,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+          });
+          writeStoredCart([], cartOwnerId);
+          addNotification(cartOwnerId, {
+            kind: "order",
+            title: "Payment received",
+            body: `Your order ${input.orderNumber} is confirmed. We will update you as it moves ahead.`,
+          });
+          router.push(`/order/${input.orderNumber}/confirmed`);
+        } catch (error) {
+          setCheckoutMessage(error instanceof Error ? error.message : "Payment verification failed.");
+        } finally {
+          setSubmitting(false);
+        }
+      },
+      modal: {
+        ondismiss: () => {
+          setSubmitting(false);
+          setCheckoutMessage("Payment was not completed. Your order is waiting for payment.");
+        },
+      },
+    });
+
+    checkout.open();
+  }
+
   async function placeOrder() {
     if (storeOrderingDisabled || submitting) return;
 
+    setCheckoutMessage("");
     if (!validLines.length) {
       return;
     }
@@ -248,8 +405,13 @@ export function CartClient({
       openLocationSheet();
       return;
     }
+    if (!selectedPaymentMethod) {
+      setCheckoutMessage("No payment method is available right now.");
+      return;
+    }
 
     setSubmitting(true);
+    setCheckoutMessage(selectedPaymentMethod === "RAZORPAY" ? "Starting secure payment..." : "Creating your order...");
 
     try {
       const response = await fetch("/api/orders", {
@@ -260,12 +422,30 @@ export function CartClient({
           customerMobile: receiverMobile,
           couponCode: coupon,
           pinCode: deliveryLocation.pinCode,
+          paymentMethod: selectedPaymentMethod,
           items: validLines,
         }),
       });
       const data = await response.json();
 
       if (!response.ok) {
+        setCheckoutMessage(data.error || "Order could not be created.");
+        return;
+      }
+
+      if (selectedPaymentMethod === "RAZORPAY") {
+        if (!data.razorpay) {
+          setCheckoutMessage("Razorpay could not be started for this order.");
+          return;
+        }
+
+        await openRazorpayCheckout({
+          keyId: data.razorpay.keyId,
+          orderId: data.razorpay.orderId,
+          amount: data.razorpay.amount,
+          currency: data.razorpay.currency,
+          orderNumber: data.order.orderNumber,
+        });
         return;
       }
 
@@ -276,9 +456,10 @@ export function CartClient({
         body: `Your order ${data.order.orderNumber} was placed successfully. We will update you as it moves ahead.`,
       });
       router.push(`/order/${data.order.orderNumber}/confirmed`);
-    } catch {
+    } catch (error) {
+      setCheckoutMessage(error instanceof Error ? error.message : "Checkout could not be completed.");
     } finally {
-      setSubmitting(false);
+      if (selectedPaymentMethod !== "RAZORPAY") setSubmitting(false);
     }
   }
 
@@ -316,7 +497,243 @@ export function CartClient({
   }
 
   return (
-    <section className="relative mx-auto min-h-screen max-w-[430px] bg-[#f6f7fb] pb-32 text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-6 sm:min-h-0 sm:overflow-hidden sm:rounded-[28px] lg:max-w-5xl">
+    <section className="relative mx-auto min-h-screen max-w-[430px] bg-[#f6f7fb] pb-32 text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-6 sm:min-h-0 sm:overflow-hidden sm:rounded-[28px] lg:max-w-none lg:overflow-visible lg:rounded-none lg:bg-white lg:pb-0 lg:shadow-none">
+      <div className="mx-auto hidden max-w-[1248px] grid-cols-[230px_minmax(0,1fr)_360px] gap-8 px-6 py-9 lg:grid">
+        <aside className="sticky top-[88px] h-[calc(100vh-108px)] overflow-hidden rounded-[22px] border border-[#f1e7e4] bg-white shadow-[0_18px_44px_rgba(34,31,32,0.06)]">
+          <div className="border-b border-[#f1e7e4] px-5 py-5">
+            <p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-muted">
+              <BookOpen size={17} className="text-maroon" /> Categories
+            </p>
+          </div>
+          <div className="h-full space-y-2 overflow-y-auto px-3 py-4">
+            {categoryItems.map((category, index) => (
+              <Link
+                key={category.name}
+                href={category.name === "All" ? "/menu" : `/?category=${encodeURIComponent(category.name)}`}
+                className={`grid grid-cols-[42px_1fr] items-center gap-3 rounded-2xl px-3 py-3 text-left transition ${
+                  index === 0 ? "bg-maroon text-white shadow-[0_10px_22px_rgba(141,0,33,0.18)]" : "text-charcoal hover:bg-[#fff4f5] hover:text-maroon"
+                }`}
+              >
+                <span className={`grid h-10 w-10 place-items-center overflow-hidden rounded-full ${index === 0 ? "bg-white/15" : "bg-[#fff4f5] ring-1 ring-[#f1e7e4]"}`}>
+                  {index === 0 ? (
+                    <Grid2X2 size={19} />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={category.image || "/wah-thali-meal-cutout-v2.png"}
+                      alt=""
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      onError={(event) => {
+                        event.currentTarget.src = "/wah-thali-meal-cutout-v2.png";
+                      }}
+                    />
+                  )}
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-black">{category.name}</span>
+                  <span className={`mt-0.5 block text-[11px] font-bold ${index === 0 ? "text-white/75" : "text-muted"}`}>{category.count} items</span>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </aside>
+
+        <div className="min-w-0">
+          <div className="mb-6 flex items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-maroon">Wah Thali Cart</p>
+              <h1 className="mt-2 text-[32px] font-black leading-none text-charcoal">Your Basket</h1>
+            </div>
+            <span className="rounded-full bg-[#fff4f5] px-4 py-2 text-sm font-black text-maroon">
+              {cartItemCount} {cartItemCount === 1 ? "Item" : "Items"}
+            </span>
+          </div>
+
+          <div className="space-y-4">
+            {validLines.map((line, index) => {
+              const product = initialProducts.find((item) => item.id === line.productId);
+              if (!product) return null;
+              const variant = product.variants.find((item) => item.id === line.variantId);
+              const addons = line.addonIds
+                .map((addonId) => product.addons.find((item) => item.id === addonId)?.name)
+                .filter(Boolean);
+              const unitPrice = product.price + (variant?.price ?? 0);
+              const lineTotal = unitPrice * line.quantity;
+              const originalTotal = product.originalPrice ? product.originalPrice * line.quantity : undefined;
+
+              return (
+                <article key={`${line.productId}-${index}`} className="grid grid-cols-[132px_minmax(0,1fr)_150px] items-center gap-6 rounded-[18px] border border-[#f1e7e4] bg-white p-5 shadow-[0_14px_34px_rgba(34,31,32,0.05)]">
+                  <div className="relative h-[108px] overflow-hidden rounded-[14px] bg-cream">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={product.image || "/wah-thali-meal-cutout-v2.png"}
+                      alt={product.name}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      onError={(event) => {
+                        event.currentTarget.src = "/wah-thali-meal-cutout-v2.png";
+                      }}
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border bg-white ${
+                          product.dietaryType === "NON_VEG" ? "border-red" : "border-maroon"
+                        }`}
+                      >
+                        <span className={`h-2 w-2 rounded-full ${product.dietaryType === "NON_VEG" ? "bg-red" : "bg-maroon"}`} />
+                      </span>
+                      <p className="truncate text-[12px] font-black uppercase tracking-[0.14em] text-muted">{product.category}</p>
+                    </div>
+                    <h2 className="mt-2 line-clamp-1 text-[22px] font-black text-charcoal">{product.name}</h2>
+                    <p className="mt-1 text-sm font-black text-muted">{variant?.name || "Regular"}</p>
+                    {addons.length ? <p className="mt-1 line-clamp-1 text-xs font-bold text-muted">With {addons.join(", ")}</p> : null}
+                    <div className="mt-5 flex items-center gap-2">
+                      {originalTotal ? <span className="text-sm font-bold text-muted line-through">{formatRupees(originalTotal)}</span> : null}
+                      <span className="text-lg font-black text-maroon">{formatRupees(lineTotal)}</span>
+                    </div>
+                  </div>
+                  <div className="grid justify-items-end gap-5">
+                    <button onClick={() => updateQuantity(index, 0)} className="grid h-9 w-9 place-items-center rounded-xl bg-[#fff4f5] text-red" aria-label={`Remove ${product.name}`}>
+                      <Trash2 size={17} />
+                    </button>
+                    <div className="grid h-11 w-[132px] grid-cols-3 overflow-hidden rounded-full bg-white text-maroon shadow-sm ring-1 ring-maroon/20">
+                      <button onClick={() => updateQuantity(index, line.quantity - 1)} className="grid place-items-center" aria-label={`Decrease ${product.name}`}>
+                        <Minus size={15} />
+                      </button>
+                      <span className="grid place-items-center text-base font-black">{line.quantity}</span>
+                      <button onClick={() => updateQuantity(index, line.quantity + 1)} className="grid place-items-center bg-[#fff4f5]" aria-label={`Increase ${product.name}`}>
+                        <Plus size={17} />
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          {suggestions.length ? (
+            <section className="mt-8">
+              <h2 className="text-2xl font-black text-charcoal">Before you checkout</h2>
+              <div className="mt-4 grid grid-cols-3 gap-4">
+                {suggestions.slice(0, 3).map((product) => (
+                  <article key={product.id} className="rounded-[18px] border border-[#f1e7e4] bg-[#fff8f9] p-4 shadow-sm">
+                    <div className="h-[116px] overflow-hidden rounded-[14px] bg-cream">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={product.image || "/wah-thali-meal-cutout-v2.png"}
+                        alt={product.name}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                        onError={(event) => {
+                          event.currentTarget.src = "/wah-thali-meal-cutout-v2.png";
+                        }}
+                      />
+                    </div>
+                    <h3 className="mt-3 line-clamp-1 text-base font-black text-charcoal">{product.name}</h3>
+                    <p className="mt-2 text-lg font-black text-maroon">{formatRupees(product.price)}</p>
+                    <button
+                      onClick={() => addSuggestedProduct(product)}
+                      className="mt-4 h-10 w-full rounded-xl bg-maroon text-sm font-black text-white shadow-[0_10px_22px_rgba(141,0,33,0.16)]"
+                    >
+                      Add
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </div>
+
+        <aside className="sticky top-[88px] h-max">
+          <div className="rounded-[22px] bg-[#f5f6fb] p-6 shadow-[0_18px_44px_rgba(34,31,32,0.08)] ring-1 ring-[#edf0f5]">
+            <h2 className="text-[24px] font-black text-charcoal">Bill Summary</h2>
+            <dl className="mt-6 space-y-5 text-[17px]">
+              <div className="flex items-center justify-between gap-4">
+                <dt className="font-bold text-[#1f2937]">Item Total</dt>
+                <dd className="font-black text-charcoal">{formatRupees(totals.subtotal)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <dt className="font-bold text-[#1f2937]">Delivery Fee</dt>
+                <dd className="font-black text-charcoal">{formatRupees(totals.delivery)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <dt className="font-bold text-[#1f2937]">GST</dt>
+                <dd className="font-black text-charcoal">{formatRupees(totals.gst)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-4 rounded-2xl bg-[#e7f6ee] px-4 py-3 text-maroon">
+                <dt className="flex items-center gap-2 font-black"><Tag size={18} /> Discount Applied</dt>
+                <dd className="font-black">-{formatRupees(totals.discount)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-4 border-t border-[#dfe3ea] pt-5">
+                <dt className="text-xl font-black text-charcoal">To Pay</dt>
+                <dd className="text-[30px] font-black text-charcoal">{formatRupees(totals.grandTotal)}</dd>
+              </div>
+            </dl>
+            {totalSavings > 0 ? (
+              <div className="mt-5 rounded-2xl border border-maroon/20 bg-white px-4 py-3 text-center text-sm font-black text-maroon shadow-sm">
+                Your Savings {formatRupees(totalSavings)}
+              </div>
+            ) : null}
+            {paymentOptions.length ? (
+              <div className="mt-5 grid grid-cols-2 gap-2">
+                {paymentOptions.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setPaymentMethod(option)}
+                    className={`h-11 rounded-xl text-sm font-black ring-1 ${
+                      selectedPaymentMethod === option
+                        ? "bg-maroon text-white ring-maroon"
+                        : "bg-white text-charcoal ring-border"
+                    }`}
+                  >
+                    {option === "RAZORPAY" ? "Razorpay" : "COD"}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {checkoutMessage ? (
+              <p className="mt-4 rounded-xl bg-white px-3 py-2 text-center text-xs font-black leading-5 text-muted" aria-live="polite">
+                {checkoutMessage}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="mt-4 rounded-[22px] bg-white p-6 shadow-[0_18px_44px_rgba(34,31,32,0.08)] ring-1 ring-[#edf0f5]">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-muted">Total Payable</p>
+              <p className="text-[30px] font-black text-maroon">{formatRupees(totals.grandTotal)}</p>
+            </div>
+            {storeOrderingDisabled ? (
+              <button disabled className="mt-6 h-14 w-full cursor-not-allowed rounded-2xl bg-muted/30 text-lg font-black text-muted">
+                Closed
+              </button>
+            ) : !serviceable ? (
+              <button type="button" onClick={openLocationSheet} className="mt-6 h-14 w-full rounded-2xl bg-maroon text-lg font-black text-white">
+                Choose Location
+              </button>
+            ) : paymentOptions.length ? (
+              <button
+                type="button"
+                onClick={placeOrder}
+                disabled={submitting}
+                className="mt-6 inline-flex h-14 w-full items-center justify-center gap-3 rounded-2xl bg-maroon text-lg font-black text-white shadow-[0_12px_24px_rgba(141,0,33,0.22)] disabled:opacity-60"
+              >
+                {submitting ? "Placing..." : "Place Order"} <ArrowRight size={22} />
+              </button>
+            ) : (
+              <button disabled className="mt-6 h-14 w-full cursor-not-allowed rounded-2xl bg-muted/30 text-lg font-black text-muted">
+                Payment unavailable
+              </button>
+            )}
+          </div>
+        </aside>
+      </div>
+
+      <div className="lg:hidden">
       <div className="flex items-center gap-3 px-5 pb-1 pt-4 lg:px-6">
         <Link href="/menu" className="grid h-10 w-10 place-items-center rounded-full bg-white text-maroon shadow-sm ring-1 ring-border" aria-label="Back to menu">
           <ChevronLeft size={25} strokeWidth={2.7} />
@@ -556,6 +973,28 @@ export function CartClient({
           A 100% cancellation charge will apply. This helps us compensate the restaurant partner for food preparation.
         </p>
       </div>
+      {paymentOptions.length > 1 ? (
+        <div className="mx-5 mt-5 grid grid-cols-2 gap-2 rounded-[18px] bg-white p-2 shadow-sm ring-1 ring-[#eef1f6]">
+          {paymentOptions.map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setPaymentMethod(option)}
+              className={`h-11 rounded-xl text-[14px] font-black ${
+                selectedPaymentMethod === option ? "bg-maroon text-white" : "bg-[#f6f7fb] text-charcoal"
+              }`}
+            >
+              {option === "RAZORPAY" ? "Razorpay" : "COD"}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {checkoutMessage ? (
+        <p className="mx-5 mt-4 rounded-2xl bg-white p-3 text-center text-xs font-black leading-5 text-muted shadow-sm ring-1 ring-border" aria-live="polite">
+          {checkoutMessage}
+        </p>
+      ) : null}
+      </div>
 
       {showBillSummary ? (
         <div className="fixed inset-0 z-[70] flex items-end bg-charcoal/60" onClick={() => setShowBillSummary(false)}>
@@ -728,7 +1167,7 @@ export function CartClient({
         />
       ) : null}
 
-      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-white px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 shadow-[0_-12px_30px_rgba(34,31,32,0.12)] sm:absolute sm:left-1/2 sm:max-w-[430px] sm:-translate-x-1/2 sm:rounded-t-2xl lg:max-w-5xl">
+      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-white px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 shadow-[0_-12px_30px_rgba(34,31,32,0.12)] sm:absolute sm:left-1/2 sm:max-w-[430px] sm:-translate-x-1/2 sm:rounded-t-2xl lg:hidden">
         <div className="mx-auto grid max-w-[430px] grid-cols-[1fr_1.45fr] gap-3 lg:max-w-4xl">
           <div className="min-w-0">
             <p className="text-[12px] font-black uppercase tracking-[0.18em] text-muted">Pay using</p>
@@ -754,7 +1193,7 @@ export function CartClient({
             >
               Login to Pay
             </button>
-          ) : (
+          ) : paymentOptions.length ? (
             <button
               type="button"
               onClick={placeOrder}
@@ -762,6 +1201,10 @@ export function CartClient({
               className="flex h-16 items-center justify-center rounded-2xl bg-maroon text-[20px] font-black text-white shadow-[0_10px_24px_rgba(141,0,33,0.28)] disabled:opacity-60"
             >
               {submitting ? "Placing..." : `Place Order ${formatRupees(totals.grandTotal)}`}
+            </button>
+          ) : (
+            <button disabled className="h-16 cursor-not-allowed rounded-2xl bg-muted/30 text-[16px] font-black text-muted">
+              Payment unavailable
             </button>
           )}
         </div>

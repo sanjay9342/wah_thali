@@ -1,5 +1,6 @@
 import { BadgeIndianRupee, Gift, Plus, Star, UserRoundCheck } from "lucide-react";
 import Link from "next/link";
+import { AdminSectionNav } from "@/components/admin-section-nav";
 import { AdminCustomersClient } from "@/components/admin-customers-client";
 import { getAdminCustomersFromDb, getBusinessSettingsFromDb } from "@/lib/db";
 import { formatRupees } from "@/lib/pricing";
@@ -29,6 +30,7 @@ export default async function AdminCustomersPage() {
             </Link>
           </div>
         </div>
+        <AdminSectionNav />
 
         <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[

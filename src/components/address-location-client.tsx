@@ -1,27 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   BriefcaseBusiness,
-  Camera,
   ChevronRight,
+  Clock3,
   Home,
   LocateFixed,
   MapPin,
   MoreHorizontal,
+  Pencil,
   Phone,
   Plus,
   Search,
-  Save,
-  Share2,
+  Trash2,
 } from "lucide-react";
 import { extractPinCode, saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
-import { readCustomerSession } from "@/lib/customer-session";
+import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 import type { RestaurantSettings } from "@/lib/types";
 
 type AddressTag = "Home" | "Work" | "Other";
+type ScreenMode = "select" | "add";
 
 type SavedAddress = {
   id: string;
@@ -33,17 +34,34 @@ type SavedAddress = {
   receiver: string;
   phone: string;
   distance: string;
+  latitude?: string;
+  longitude?: string;
+};
+
+type SearchResult = {
+  id: string;
+  title: string;
+  subtitle: string;
+  pinCode: string;
+  latitude: string;
+  longitude: string;
+};
+
+type PinPosition = {
+  x: number;
+  y: number;
 };
 
 const storageKey = "wah-thali-addresses";
+const defaultArea = "Select delivery location";
 
 function readSavedAddresses() {
   if (typeof window === "undefined") return [] as SavedAddress[];
 
   try {
     const raw = window.localStorage.getItem(storageKey);
-    const parsed = raw ? JSON.parse(raw) as SavedAddress[] : [];
-    return Array.isArray(parsed) ? parsed.filter((item) => item.id.startsWith("address-")) : [];
+    const parsed = raw ? (JSON.parse(raw) as SavedAddress[]) : [];
+    return Array.isArray(parsed) ? parsed.filter((item) => item.id?.startsWith("address-")) : [];
   } catch {
     return [];
   }
@@ -54,37 +72,85 @@ function getAddressLabel(tag: AddressTag, customLabel?: string) {
   return customLabel?.trim() || "Other";
 }
 
+function getAreaFromNominatim(data: Record<string, unknown>, fallback: string) {
+  const address = (data.address ?? {}) as Record<string, string | undefined>;
+  const parts = [
+    address.suburb,
+    address.neighbourhood,
+    address.village,
+    address.town,
+    address.city,
+    address.county,
+    address.state,
+  ].filter(Boolean);
+
+  return parts.slice(0, 3).join(", ") || (typeof data.display_name === "string" ? data.display_name : fallback);
+}
+
+function getSearchTitle(data: Record<string, unknown>) {
+  const address = (data.address ?? {}) as Record<string, string | undefined>;
+  return (
+    address.suburb ||
+    address.neighbourhood ||
+    address.village ||
+    address.town ||
+    address.city ||
+    (typeof data.name === "string" ? data.name : "") ||
+    "Selected location"
+  );
+}
+
 function isServiceablePin(pinCode: string, serviceablePins: string[]) {
   void pinCode;
   void serviceablePins;
   return true;
 }
 
+function cleanPhone(value: string) {
+  return value.replace(/\D/g, "").slice(-10);
+}
+
 export function AddressLocationClient({ restaurantSettings }: { restaurantSettings: RestaurantSettings }) {
   const router = useRouter();
   const deliveryLocation = useDeliveryLocation();
-  const [mode, setMode] = useState<"select" | "add">("select");
+  const supportMobile = cleanPhone(restaurantSettings.supportPhone);
+  const supportMobileRef = useRef(supportMobile);
+  supportMobileRef.current = supportMobile;
+  const [mode, setMode] = useState<ScreenMode>("select");
   const [locating, setLocating] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [message, setMessage] = useState("");
   const [query, setQuery] = useState("");
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
   const [savedAddressesLoaded, setSavedAddressesLoaded] = useState(false);
-  const supportMobile = restaurantSettings.supportPhone.replace(/\D/g, "").slice(-10);
+  const [activeAddressActionsId, setActiveAddressActionsId] = useState<string | null>(null);
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
+  const [markerPosition, setMarkerPosition] = useState<PinPosition>({ x: 50, y: 43 });
   const [address, setAddress] = useState({
-    area: deliveryLocation.address === "Select delivery location" ? "" : deliveryLocation.address,
+    area: deliveryLocation.address === defaultArea ? "" : deliveryLocation.address,
     details: "",
     pinCode: deliveryLocation.pinCode ?? extractPinCode(deliveryLocation.address),
-    receiver: "Customer",
-    phone: supportMobile,
+    receiver: "",
+    phone: "",
     tag: "Home" as AddressTag,
     customLabel: "",
     latitude: deliveryLocation.latitude ?? "",
     longitude: deliveryLocation.longitude ?? "",
   });
 
+  const currentArea = address.area || (deliveryLocation.address === defaultArea ? "" : deliveryLocation.address);
+  const recentAddresses = useMemo(() => savedAddresses.slice(0, 5), [savedAddresses]);
+
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      setSavedAddresses(readSavedAddresses());
+      const storedSupportMobile = supportMobileRef.current;
+      setSavedAddresses(readSavedAddresses().map((item) => ({
+        ...item,
+        receiver: item.receiver === "Customer" && cleanPhone(item.phone) === storedSupportMobile ? "" : item.receiver,
+        phone: cleanPhone(item.phone) === storedSupportMobile ? "" : cleanPhone(item.phone),
+      })));
       setSavedAddressesLoaded(true);
     }, 0);
 
@@ -97,24 +163,83 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
   }, [savedAddresses, savedAddressesLoaded]);
 
   useEffect(() => {
-    const session = readCustomerSession();
-    if (!session) return;
+    function refreshSession() {
+      const session = readCustomerSession();
+      setCustomerSession(session);
+      if (!session) return;
 
-    const timeoutId = window.setTimeout(() => {
       setAddress((current) => ({
         ...current,
         receiver: session.name,
         phone: session.mobile,
       }));
-    }, 0);
+    }
+
+    refreshSession();
+    return subscribeCustomerSession(refreshSession);
+  }, []);
+
+  useEffect(() => {
+    if (!message) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setMessage("");
+    }, 3500);
 
     return () => window.clearTimeout(timeoutId);
-  }, []);
+  }, [message]);
+
+  useEffect(() => {
+    const searchText = query.trim();
+    if (searchText.length < 3) {
+      const timeoutId = window.setTimeout(() => {
+        setSearchResults([]);
+        setSearching(false);
+      }, 0);
+
+      return () => window.clearTimeout(timeoutId);
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      setSearching(true);
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&countrycodes=in&q=${encodeURIComponent(searchText)}`,
+          { signal: controller.signal },
+        );
+        const data = (await response.json()) as Array<Record<string, unknown>>;
+        setSearchResults(
+          data.map((item, index) => {
+            const displayName = typeof item.display_name === "string" ? item.display_name : searchText;
+            const title = getSearchTitle(item);
+            return {
+              id: String(item.place_id ?? `${displayName}-${index}`),
+              title,
+              subtitle: displayName,
+              pinCode: extractPinCode(displayName),
+              latitude: typeof item.lat === "string" ? Number(item.lat).toFixed(6) : "",
+              longitude: typeof item.lon === "string" ? Number(item.lon).toFixed(6) : "",
+            };
+          }),
+        );
+      } catch {
+        if (!controller.signal.aborted) setSearchResults([]);
+      } finally {
+        if (!controller.signal.aborted) setSearching(false);
+      }
+    }, 450);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [query]);
 
   async function syncAddressToCustomer(item: SavedAddress, isDefault: boolean) {
     const session = readCustomerSession();
     if (!session?.mobile) {
-      setMessage("Address saved on this device. Login to sync it to your profile.");
+      setMessage("Location saved on this device. Login to sync it to your profile.");
       return;
     }
 
@@ -130,18 +255,107 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
           city: "",
           state: "",
           pinCode: item.pinCode,
-          landmark: item.receiver ? `Receiver: ${item.receiver}, ${item.phone}` : undefined,
+          landmark: [item.receiver, item.phone].filter(Boolean).length ? `Receiver: ${[item.receiver, item.phone].filter(Boolean).join(", ")}` : undefined,
           isDefault,
         }),
       });
-      const data = await response.json();
-      setMessage(response.ok ? "Address saved to your profile." : data.error || "Address saved here, but Supabase sync failed.");
+      const data = (await response.json()) as { error?: string };
+      setMessage(response.ok ? "Location saved to your customer profile." : data.error || "Saved here, but profile sync failed.");
     } catch {
-      setMessage("Address saved here, but Supabase sync failed. Please try again.");
+      setMessage("Saved here, but profile sync failed. Please try again.");
     }
   }
 
-  async function detectLocation() {
+  function upsertSavedAddress(next: SavedAddress) {
+    setSavedAddresses((current) => [
+      next,
+      ...current.filter((item) => {
+        if (item.id === next.id) return false;
+        const sameCoordinates = item.latitude && next.latitude && item.latitude === next.latitude && item.longitude === next.longitude;
+        const sameAddress = `${item.details}, ${item.area}`.toLowerCase() === `${next.details}, ${next.area}`.toLowerCase();
+        return !sameCoordinates && !sameAddress;
+      }),
+    ]);
+  }
+
+  function buildSavedAddress(partial: Partial<SavedAddress> & { area: string }) {
+    const session = readCustomerSession();
+    const label = partial.label || getAddressLabel(address.tag, address.customLabel);
+    return {
+      id: partial.id || `address-${Date.now()}`,
+      tag: partial.tag || address.tag,
+      label,
+      area: partial.area,
+      details: partial.details?.trim() || partial.area,
+      pinCode: partial.pinCode || extractPinCode(`${partial.details ?? ""}, ${partial.area}`),
+      receiver: partial.receiver ?? session?.name ?? address.receiver,
+      phone: cleanPhone(partial.phone ?? session?.mobile ?? address.phone ?? ""),
+      distance: partial.distance || (partial.latitude ? "0 m" : "Saved"),
+      latitude: partial.latitude || address.latitude,
+      longitude: partial.longitude || address.longitude,
+    } satisfies SavedAddress;
+  }
+
+  async function saveDetectedAddress(area: string, pinCode: string, latitude: string, longitude: string) {
+    const next = buildSavedAddress({
+      tag: "Home",
+      label: "Home",
+      area,
+      details: area,
+      pinCode,
+      latitude,
+      longitude,
+      distance: "0 m",
+    });
+
+    setMarkerPosition({ x: 50, y: 43 });
+    setAddress((current) => ({
+      ...current,
+      area,
+      details: current.details,
+      pinCode,
+      latitude,
+      longitude,
+      receiver: next.receiver,
+      phone: next.phone,
+      tag: "Home",
+    }));
+    saveDeliveryLocation({ label: next.label || "Home", address: area, pinCode, latitude, longitude });
+    upsertSavedAddress(next);
+    await syncAddressToCustomer(next, true);
+  }
+
+  async function updateLocationFromMovedPin(position: PinPosition) {
+    if (!address.latitude || !address.longitude) {
+      setMessage("Detecting your current location first...");
+      void detectLocation(true);
+      return;
+    }
+
+    const latitude = (Number(address.latitude) - (position.y - 43) * 0.00008).toFixed(6);
+    const longitude = (Number(address.longitude) + (position.x - 50) * 0.00008).toFixed(6);
+    let area = address.area || "Selected location";
+    let pinCode = address.pinCode;
+
+    setLocating(true);
+    setMessage("Detecting moved pin location...");
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&lat=${latitude}&lon=${longitude}`);
+      const data = (await response.json()) as Record<string, unknown>;
+      const displayName = typeof data.display_name === "string" ? data.display_name : "";
+      area = getAreaFromNominatim(data, area);
+      pinCode = extractPinCode(displayName) || pinCode;
+    } catch {
+      area = address.area || "Moved pin location";
+    }
+
+    setAddress((current) => ({ ...current, area, pinCode, latitude, longitude }));
+    saveDeliveryLocation({ label: getAddressLabel(address.tag, address.customLabel), address: area, pinCode, latitude, longitude });
+    setMessage("Moved pin location detected.");
+    setLocating(false);
+  }
+
+  async function detectLocation(openAddScreen = false) {
     if (!("geolocation" in navigator)) {
       setMessage("Location detection is not supported on this browser.");
       return;
@@ -153,20 +367,21 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
       async (position) => {
         const latitude = position.coords.latitude.toFixed(6);
         const longitude = position.coords.longitude.toFixed(6);
-        let area = query || "Current location";
+        let area = query.trim() || "Current location";
+        let pinCode = "";
 
         try {
-          const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`);
-          const data = await response.json();
-          const details = data.address ?? {};
-          area = [details.suburb, details.neighbourhood, details.village, details.town, details.city, details.state].filter(Boolean).slice(0, 3).join(", ") || data.display_name || area;
+          const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&lat=${latitude}&lon=${longitude}`);
+          const data = (await response.json()) as Record<string, unknown>;
+          const displayName = typeof data.display_name === "string" ? data.display_name : "";
+          area = getAreaFromNominatim(data, area);
+          pinCode = extractPinCode(displayName);
         } catch {
-          area = "Current location";
+          area = query.trim() || "Current location";
         }
 
-        setAddress((current) => ({ ...current, area, latitude, longitude }));
-        saveDeliveryLocation({ label: "Home", address: area, pinCode: extractPinCode(area), latitude, longitude });
-        setMessage("Current location selected. Save it to keep it in your address list.");
+        await saveDetectedAddress(area, pinCode, latitude, longitude);
+        if (openAddScreen) setMode("add");
         setLocating(false);
       },
       (error) => {
@@ -177,7 +392,129 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
     );
   }
 
+  function chooseSearchResult(result: SearchResult) {
+    setQuery(result.title);
+    setSearchResults([]);
+    setAddress((current) => ({
+      ...current,
+      area: result.title,
+      pinCode: result.pinCode || current.pinCode,
+      latitude: result.latitude,
+      longitude: result.longitude,
+    }));
+
+    const next = buildSavedAddress({
+      area: result.title,
+      details: result.subtitle,
+      pinCode: result.pinCode,
+      latitude: result.latitude,
+      longitude: result.longitude,
+      distance: "Saved",
+    });
+    saveDeliveryLocation({ label: next.label || next.tag, address: result.title, pinCode: result.pinCode, latitude: result.latitude, longitude: result.longitude });
+    upsertSavedAddress(next);
+    void syncAddressToCustomer(next, true);
+  }
+
+  function saveAddress() {
+    const area = address.area.trim() || query.trim();
+    if (!area) {
+      setMessage("Please search or use current location first.");
+      return;
+    }
+
+    if (!address.details.trim()) {
+      setMessage("Please enter address details.");
+      return;
+    }
+
+    const pinCode = address.pinCode.trim() || extractPinCode(`${address.details}, ${area}`);
+    if (!isServiceablePin(pinCode, restaurantSettings.serviceablePins)) {
+      setMessage("Service is not available for this PIN code. Please choose another delivery location.");
+      return;
+    }
+
+    const label = getAddressLabel(address.tag, address.customLabel);
+    const next = buildSavedAddress({
+      tag: address.tag,
+      label,
+      id: editingAddressId || undefined,
+      area,
+      details: address.details,
+      pinCode,
+      receiver: address.receiver,
+      phone: address.phone,
+      latitude: address.latitude,
+      longitude: address.longitude,
+      distance: address.latitude ? "0 m" : "Saved",
+    });
+
+    upsertSavedAddress(next);
+    saveDeliveryLocation({
+      label,
+      address: `${next.details}, ${next.area}`,
+      pinCode,
+      latitude: address.latitude,
+      longitude: address.longitude,
+    });
+    void syncAddressToCustomer(next, true);
+    setEditingAddressId(null);
+    setMode("select");
+  }
+
+  function chooseAddress(item: SavedAddress) {
+    const label = item.label || item.tag;
+    saveDeliveryLocation({ label, address: `${item.details}, ${item.area}`, pinCode: item.pinCode, latitude: item.latitude, longitude: item.longitude });
+    setAddress((current) => ({
+      ...current,
+      area: item.area,
+      details: item.details === item.area ? "" : item.details,
+      pinCode: item.pinCode,
+      receiver: item.receiver,
+      phone: item.phone,
+      tag: item.tag,
+      customLabel: item.tag === "Other" ? label : current.customLabel,
+      latitude: item.latitude || "",
+      longitude: item.longitude || "",
+    }));
+    setMessage(`${label} selected.`);
+  }
+
+  function editAddress(item: SavedAddress) {
+    const label = item.label || item.tag;
+    setEditingAddressId(item.id);
+    setActiveAddressActionsId(null);
+    setQuery(item.area);
+    setAddress((current) => ({
+      ...current,
+      area: item.area,
+      details: item.details === item.area ? "" : item.details,
+      pinCode: item.pinCode,
+      receiver: item.receiver,
+      phone: cleanPhone(item.phone),
+      tag: item.tag,
+      customLabel: item.tag === "Other" ? label : "",
+      latitude: item.latitude || "",
+      longitude: item.longitude || "",
+    }));
+    setMarkerPosition({ x: 50, y: 43 });
+    setMode("add");
+  }
+
+  function deleteAddress(item: SavedAddress) {
+    setSavedAddresses((current) => current.filter((saved) => saved.id !== item.id));
+    setActiveAddressActionsId(null);
+    if (editingAddressId === item.id) setEditingAddressId(null);
+    setMessage(`${item.label || item.tag} location deleted.`);
+  }
+
   function goBack() {
+    if (mode === "add") {
+      setEditingAddressId(null);
+      setMode("select");
+      return;
+    }
+
     if (window.history.length > 1) {
       router.back();
       return;
@@ -186,279 +523,437 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
     router.push("/menu");
   }
 
-  function saveCurrentLocation() {
-    const area = address.area.trim() || query.trim() || deliveryLocation.address;
-    const pinCode = address.pinCode.trim() || extractPinCode(area);
-    if (!area || area === "Select delivery location") {
-      setMessage("Please use current location or search an area first.");
-      return;
-    }
-    if (!isServiceablePin(pinCode, restaurantSettings.serviceablePins)) {
-      setMessage("Service is not available for this PIN code. Please choose another delivery location.");
-      return;
-    }
-
-    const label = getAddressLabel(address.tag, address.customLabel);
-    const next: SavedAddress = {
-      id: `address-${Date.now()}`,
-      tag: address.tag,
-      label,
-      area,
-      details: address.details.trim() || area,
-      pinCode,
-      receiver: address.receiver || "Customer",
-      phone: address.phone || supportMobile,
-      distance: address.latitude ? "0 m" : "Saved",
-    };
-
-    setSavedAddresses((current) => [next, ...current.filter((item) => `${item.details}, ${item.area}` !== `${next.details}, ${next.area}`)]);
-    saveDeliveryLocation({
-      label,
-      address: `${next.details}, ${next.area}`,
-      pinCode,
-      latitude: address.latitude,
-      longitude: address.longitude,
-    });
-    void syncAddressToCustomer(next, true);
-  }
-
-  function saveAddress() {
-    if (!address.area.trim() && !query.trim()) {
-      setMessage("Please search or use current location first.");
-      return;
-    }
-
-    if (!address.details.trim()) {
-      setMessage("Please enter Address details.");
-      return;
-    }
-    const pinCode = address.pinCode.trim() || extractPinCode(`${address.details}, ${address.area || query}`);
-    if (!isServiceablePin(pinCode, restaurantSettings.serviceablePins)) {
-      setMessage("Service is not available for this PIN code. Please choose another delivery location.");
-      return;
-    }
-
-    const label = getAddressLabel(address.tag, address.customLabel);
-    const next: SavedAddress = {
-      id: `address-${Date.now()}`,
-      tag: address.tag,
-      label,
-      area: address.area || query,
-      details: address.details,
-      pinCode,
-      receiver: address.receiver || "Customer",
-      phone: address.phone || supportMobile,
-      distance: address.latitude ? "0 m" : "Saved",
-    };
-
-    setSavedAddresses((current) => [next, ...current]);
-    saveDeliveryLocation({
-      label,
-      address: `${next.details}, ${next.area}`,
-      pinCode,
-      latitude: address.latitude,
-      longitude: address.longitude,
-    });
-    void syncAddressToCustomer(next, true);
-    setMode("select");
-  }
-
-  function chooseAddress(item: SavedAddress) {
-    const label = item.label || item.tag;
-    saveDeliveryLocation({ label, address: `${item.details}, ${item.area}`, pinCode: item.pinCode });
-    setAddress((current) => ({ ...current, ...item, customLabel: item.tag === "Other" ? label : current.customLabel }));
-    setMessage(`${label} selected.`);
-  }
-
   return (
-    <section className="mx-auto min-h-screen w-full max-w-[430px] bg-white px-5 pb-28 pt-7 text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-6 sm:rounded-[28px] sm:pt-9 lg:max-w-5xl">
+    <section className="mx-auto min-h-screen w-full max-w-[430px] bg-[#f5f6fb] text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-5 sm:overflow-hidden sm:rounded-[28px] lg:max-w-[1120px]">
       {mode === "select" ? (
-        <>
-          <div className="flex items-center gap-3">
-            <button type="button" onClick={goBack} className="grid h-9 w-9 place-items-center rounded-full bg-white text-charcoal shadow-sm ring-1 ring-border" aria-label="Back">
-              <ArrowLeft size={20} strokeWidth={3} />
-            </button>
-            <h1 className="text-[22px] font-black leading-none text-charcoal sm:text-[26px]">Select a location</h1>
-          </div>
+        <div className="px-5 pb-28 pt-7 lg:grid lg:min-h-[560px] lg:grid-cols-[390px_minmax(0,1fr)] lg:gap-7 lg:px-7 lg:py-7">
+          <div className="min-w-0">
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={goBack} className="grid h-9 w-9 place-items-center rounded-full text-charcoal" aria-label="Back">
+                <ArrowLeft size={27} strokeWidth={3} />
+              </button>
+              <h1 className="text-[21px] font-black leading-none text-charcoal lg:text-[19px]">Select a location</h1>
+            </div>
 
-          <label className="mt-6 flex h-14 items-center gap-3 rounded-2xl bg-white px-4 shadow-sm ring-1 ring-border sm:mt-8 sm:h-16 sm:gap-4">
-            <Search size={25} className="shrink-0 text-red sm:h-[31px] sm:w-[31px]" strokeWidth={3} />
-            <input
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setAddress((current) => ({ ...current, area: event.target.value, pinCode: extractPinCode(event.target.value) || current.pinCode }));
-              }}
-              className="min-w-0 flex-1 bg-transparent text-[15px] font-black text-charcoal placeholder:text-charcoal/75 sm:text-[18px]"
-              placeholder="Search for area, street name..."
+            <SearchBox
+              query={query}
+              setQuery={setQuery}
+              onTyped={(value) => setAddress((current) => ({ ...current, pinCode: extractPinCode(value) || current.pinCode }))}
             />
-          </label>
+            <SearchResults searching={searching} results={searchResults} onChoose={chooseSearchResult} />
 
-          <div className="mt-6 overflow-hidden rounded-2xl bg-white shadow-sm sm:mt-8">
-            <button onClick={detectLocation} className="grid min-h-20 w-full grid-cols-[38px_1fr_auto] items-center gap-3 px-4 py-4 text-left sm:min-h-24 sm:grid-cols-[46px_1fr_auto] sm:px-5">
-              <LocateFixed size={26} className={`text-red sm:h-[31px] sm:w-[31px] ${locating ? "animate-spin" : ""}`} strokeWidth={2.6} />
-              <span className="min-w-0">
-                <span className="block text-[17px] font-black text-red sm:text-[20px]">Use current location</span>
-                <span className="mt-1 block truncate text-[13px] font-black text-muted sm:text-[17px]">
-                  {deliveryLocation.address === "Select delivery location" ? "Detect with GPS" : deliveryLocation.address}
+            <div className="mt-8 overflow-hidden rounded-[22px] bg-white shadow-sm ring-1 ring-black/5 lg:mt-6 lg:rounded-[18px]">
+              <button
+                type="button"
+                onClick={() => void detectLocation(false)}
+                className="grid min-h-24 w-full grid-cols-[46px_1fr_auto] items-center gap-3 px-5 py-5 text-left lg:min-h-[74px] lg:grid-cols-[36px_1fr_auto] lg:px-4 lg:py-4"
+              >
+                <LocateFixed className={`h-[30px] w-[30px] text-maroon lg:h-6 lg:w-6 ${locating ? "animate-spin" : ""}`} strokeWidth={2.7} />
+                <span className="min-w-0">
+                  <span className="block text-[16px] font-black text-maroon lg:text-[14px]">{locating ? "Detecting location" : "Use current location"}</span>
+                  <span className="mt-1 block truncate text-[14px] font-black text-muted lg:text-[12px]">
+                    {currentArea || "Detect with GPS"}
+                  </span>
                 </span>
-              </span>
-              <ChevronRight size={23} className="text-muted sm:h-[27px] sm:w-[27px]" />
-            </button>
-            <button onClick={saveCurrentLocation} className="grid h-16 w-full grid-cols-[38px_1fr_auto] items-center gap-3 border-t border-border px-4 text-left sm:grid-cols-[46px_1fr_auto] sm:px-5">
-              <Save size={23} className="text-red" strokeWidth={2.7} />
-              <span className="text-[16px] font-black text-red sm:text-[18px]">Save current location</span>
-              <ChevronRight size={23} className="text-muted" />
-            </button>
-            <button onClick={() => setMode("add")} className="grid h-16 w-full grid-cols-[38px_1fr_auto] items-center gap-3 border-t border-border px-4 text-left sm:h-20 sm:grid-cols-[46px_1fr_auto] sm:px-5">
-              <Plus size={27} className="text-red sm:h-[31px] sm:w-[31px]" strokeWidth={3} />
-              <span className="text-[17px] font-black text-red sm:text-[20px]">Add Address</span>
-              <ChevronRight size={23} className="text-muted sm:h-[27px] sm:w-[27px]" />
-            </button>
+                <ChevronRight className="h-[25px] w-[25px] text-muted lg:h-5 lg:w-5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingAddressId(null);
+                  setMode("add");
+                }}
+                className="grid h-[86px] w-full grid-cols-[46px_1fr_auto] items-center gap-3 border-t border-border px-5 text-left lg:h-[68px] lg:grid-cols-[36px_1fr_auto] lg:px-4"
+              >
+                <Plus className="h-[30px] w-[30px] text-maroon lg:h-6 lg:w-6" strokeWidth={3} />
+                <span className="text-[16px] font-black text-maroon lg:text-[14px]">Add Address</span>
+                <ChevronRight className="h-[25px] w-[25px] text-muted lg:h-5 lg:w-5" />
+              </button>
+            </div>
           </div>
 
-          <h2 className="mt-7 text-[14px] font-black uppercase tracking-[0.22em] text-muted sm:mt-8 sm:text-[17px]">Saved Addresses</h2>
-          <div className="mt-4 grid gap-4 sm:mt-5 sm:gap-5">
-            {savedAddresses.length ? savedAddresses.map((item) => (
-              <article key={item.id} className="rounded-[22px] bg-white p-4 shadow-sm sm:rounded-[24px] sm:p-5">
-                <button onClick={() => chooseAddress(item)} className="grid w-full grid-cols-[46px_1fr] gap-3 text-left sm:grid-cols-[56px_1fr] sm:gap-4">
-                  <div className="grid justify-items-center">
-                    {item.tag === "Home" ? <Home size={28} className="text-muted sm:h-[35px] sm:w-[35px]" /> : item.tag === "Work" ? <BriefcaseBusiness size={28} className="text-muted sm:h-[35px] sm:w-[35px]" /> : <MapPin size={28} className="text-muted sm:h-[35px] sm:w-[35px]" />}
-                    <span className="mt-1 text-xs font-black text-muted">{item.distance}</span>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[15px] font-black text-charcoal sm:text-[17px]">{item.label || item.tag}</p>
-                    <p className="mt-1 text-[13px] font-black leading-5 text-muted sm:text-[16px] sm:leading-6">{item.details}, {item.area}</p>
-                    <p className="mt-1 text-[12px] font-black text-muted sm:text-[14px]">Phone number: +91-{item.phone}</p>
-                  </div>
-                </button>
-                <div className="ml-[58px] mt-3 flex gap-3 sm:ml-[72px] sm:mt-4 sm:gap-4">
-                  <button className="grid h-10 w-10 place-items-center rounded-full bg-white text-red shadow-sm ring-1 ring-border" aria-label="More address actions">
-                    <MoreHorizontal size={21} />
-                  </button>
-                  <button className="grid h-10 w-10 place-items-center rounded-full bg-white text-red shadow-sm ring-1 ring-border" aria-label="Share address">
-                    <Share2 size={18} />
-                  </button>
-                  <button className="grid h-10 w-10 place-items-center rounded-full bg-white text-red shadow-sm ring-1 ring-border" aria-label="Add address photo">
-                    <Camera size={18} />
-                  </button>
+          <aside className="mt-8 min-w-0 lg:mt-0">
+            <h2 className="text-[15px] font-black uppercase tracking-[0.18em] text-muted lg:text-[13px] lg:tracking-[0.16em]">Recent Locations</h2>
+            <div className="mt-5 grid gap-4 lg:mt-4 lg:grid-cols-2 lg:gap-3">
+              {recentAddresses.length ? (
+                recentAddresses.map((item) => (
+                  <SavedAddressCard
+                    key={item.id}
+                    item={item}
+                    actionsOpen={activeAddressActionsId === item.id}
+                    onChoose={() => chooseAddress(item)}
+                    onToggleActions={() => setActiveAddressActionsId((current) => current === item.id ? null : item.id)}
+                    onEdit={() => editAddress(item)}
+                    onDelete={() => deleteAddress(item)}
+                  />
+                ))
+              ) : (
+                <div className="rounded-[22px] bg-white p-6 text-center shadow-sm ring-1 ring-black/5 lg:col-span-2 lg:p-5">
+                  <Clock3 className="mx-auto text-muted" size={32} />
+                  <p className="mt-3 text-[14px] font-black text-charcoal lg:text-[13px]">No recent locations</p>
+                  <p className="mt-1 text-[13px] font-bold leading-5 text-muted lg:text-[12px]">Use current location to save it automatically here.</p>
                 </div>
-              </article>
-            )) : (
-              <div className="rounded-[24px] bg-white p-5 text-center shadow-sm">
-                <MapPin className="mx-auto text-red" size={28} />
-                <p className="mt-3 text-[15px] font-black text-charcoal sm:text-[17px]">No saved addresses yet</p>
-                <p className="mt-1 text-sm font-bold text-muted">Use current location or add your delivery address.</p>
-              </div>
-            )}
-          </div>
-        </>
+              )}
+            </div>
+            <div className="mt-5 hidden rounded-[18px] bg-white p-5 shadow-sm ring-1 ring-black/5 lg:block">
+              <p className="text-[14px] font-black text-maroon">Fast delivery starts with the right location</p>
+              <p className="mt-2 text-[12px] font-bold leading-5 text-muted">Search, detect GPS, or add complete delivery details. Logged-in customer details sync automatically.</p>
+            </div>
+            <p className="mt-7 text-center text-[15px] font-bold text-muted lg:text-[13px]">
+              powered by <span className="font-black text-maroon">Wah Thali Maps</span>
+            </p>
+          </aside>
+        </div>
       ) : (
-        <>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setMode("select")} className="grid h-9 w-9 place-items-center rounded-full bg-white text-charcoal shadow-sm ring-1 ring-border" aria-label="Back to locations">
-              <ArrowLeft size={20} strokeWidth={3} />
+        <div className="min-h-screen bg-white lg:grid lg:h-[calc(100vh-40px)] lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_400px] lg:grid-rows-[82px_minmax(0,1fr)] lg:overflow-hidden">
+          <div className="relative z-20 flex items-center gap-3 bg-white px-5 pb-5 pt-7 shadow-[0_5px_18px_rgba(34,31,32,0.08)] lg:col-span-2 lg:px-6 lg:py-4">
+            <button type="button" onClick={goBack} className="grid h-10 w-10 shrink-0 place-items-center text-charcoal lg:h-9 lg:w-9" aria-label="Back">
+              <ArrowLeft size={27} className="lg:h-6 lg:w-6" strokeWidth={3} />
             </button>
-            <h1 className="text-[19px] font-black leading-tight text-charcoal sm:text-[26px]">Select delivery location</h1>
+            <div className="min-w-0 flex-1">
+              <SearchBox
+                query={query}
+                compact
+                setQuery={setQuery}
+                onTyped={(value) => setAddress((current) => ({ ...current, pinCode: extractPinCode(value) || current.pinCode }))}
+              />
+            </div>
           </div>
+          <SearchResults searching={searching} results={searchResults} onChoose={chooseSearchResult} overlay />
 
-          <label className="mt-6 flex h-14 items-center gap-3 rounded-2xl bg-white px-4 shadow-sm ring-1 ring-border sm:mt-8 sm:h-16 sm:gap-4">
-            <Search size={25} className="shrink-0 text-red sm:h-[31px] sm:w-[31px]" strokeWidth={3} />
-            <input
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setAddress((current) => ({ ...current, area: event.target.value, pinCode: extractPinCode(event.target.value) || current.pinCode }));
-              }}
-              className="min-w-0 flex-1 bg-transparent text-[15px] font-black text-charcoal placeholder:text-muted sm:text-[18px]"
-              placeholder="Search for area, street name..."
-            />
-          </label>
+          <MapPreview
+            area={currentArea || "Move pin to your exact location"}
+            latitude={address.latitude}
+            longitude={address.longitude}
+            locating={locating}
+            onLocate={() => void detectLocation(true)}
+            pinPosition={markerPosition}
+            onPinMove={setMarkerPosition}
+            onPinDrop={(position) => void updateLocationFromMovedPin(position)}
+          />
 
-          <div className="mt-6 rounded-t-[28px] bg-white px-4 pb-5 pt-4 shadow-[0_-2px_18px_rgba(34,31,32,0.08)] sm:mt-8 sm:px-5">
-            <div className="mx-auto mb-5 h-1.5 w-16 rounded-full bg-border" />
-            <p className="text-[12px] font-black text-muted sm:text-[15px]">Delivery details</p>
-            <button onClick={detectLocation} className="mt-4 grid h-16 w-full grid-cols-[42px_1fr_auto] items-center gap-3 rounded-2xl border border-border bg-white px-3 text-left sm:h-20 sm:grid-cols-[48px_1fr_auto] sm:px-4">
-              <span className="grid h-10 w-10 place-items-center rounded-full bg-red text-white sm:h-11 sm:w-11">
-                <MapPin size={21} className="fill-white sm:h-[25px] sm:w-[25px]" />
+          <div className="relative -mt-9 rounded-t-[28px] bg-white px-5 pb-28 pt-7 shadow-[0_-8px_24px_rgba(34,31,32,0.08)] lg:mt-0 lg:min-h-0 lg:overflow-y-auto lg:rounded-none lg:px-5 lg:pb-5 lg:pt-5 lg:shadow-none">
+            <p className="text-[13px] font-black text-muted lg:text-xs">Delivery details</p>
+            <button
+              type="button"
+              onClick={() => void detectLocation(true)}
+              className="mt-4 grid h-[78px] w-full grid-cols-[50px_1fr_auto] items-center gap-3 rounded-2xl border border-border bg-white px-4 text-left lg:mt-3 lg:h-16 lg:grid-cols-[42px_1fr_auto] lg:rounded-xl lg:px-3"
+            >
+              <span className="grid h-11 w-11 place-items-center rounded-full bg-maroon text-white lg:h-9 lg:w-9">
+                <MapPin size={25} className="lg:h-5 lg:w-5" fill="currentColor" />
               </span>
               <span className="min-w-0">
-                <span className="block truncate text-[14px] font-black text-charcoal sm:text-[18px]">{address.area || "Use current location"}</span>
-                {address.latitude ? <span className="mt-1 block text-xs font-bold text-muted">{address.latitude}, {address.longitude}</span> : null}
+                <span className="block truncate text-[16px] font-black text-charcoal lg:text-sm">{currentArea || "Use current location"}</span>
+                {address.latitude ? <span className="mt-0.5 block truncate text-[12px] font-bold text-muted lg:text-[11px]">{address.latitude}, {address.longitude}</span> : null}
               </span>
-              <ChevronRight size={26} className="text-muted" />
+              <ChevronRight size={25} className="text-muted lg:h-5 lg:w-5" />
             </button>
 
-            <label className="mt-6 block">
+            <label className="mt-8 block lg:mt-5">
               <textarea
                 value={address.details}
                 onChange={(event) => setAddress({ ...address, details: event.target.value })}
-                className="min-h-24 w-full resize-none rounded-2xl border border-border bg-white px-4 py-5 text-[14px] font-bold text-charcoal placeholder:text-muted/70 sm:py-6 sm:text-[16px]"
+                className="min-h-24 w-full resize-none rounded-2xl border border-border bg-white px-5 py-6 text-[14px] font-bold text-charcoal outline-none placeholder:text-muted/70 focus:border-maroon lg:min-h-20 lg:rounded-xl lg:px-4 lg:py-4 lg:text-[13px]"
                 placeholder="Address details*"
               />
-              <span className="mt-2 block text-[12px] font-black text-muted">E.g. Floor, House no.</span>
+              <span className="mt-2 block text-[12px] font-black text-muted lg:text-[11px]">E.g. Floor, House no.</span>
             </label>
 
-            <label className="mt-4 block">
+            <label className="mt-5 block lg:mt-4">
               <input
                 value={address.pinCode}
                 onChange={(event) => setAddress({ ...address, pinCode: event.target.value.replace(/\D/g, "").slice(0, 6) })}
                 inputMode="numeric"
-                className="h-14 w-full rounded-2xl border border-border bg-white px-4 text-[15px] font-black text-charcoal outline-none placeholder:text-muted/70 sm:h-16 sm:text-[17px]"
+                className="h-14 w-full rounded-2xl border border-border bg-white px-5 text-[14px] font-black text-charcoal outline-none placeholder:text-muted/70 focus:border-maroon lg:h-12 lg:rounded-xl lg:px-4 lg:text-[13px]"
                 placeholder="PIN code*"
               />
-              <span className="mt-2 block text-[12px] font-black text-muted">
-                Delivery is available only for admin-added PIN codes.
-              </span>
             </label>
 
-            <p className="mt-5 text-[12px] font-black text-muted sm:mt-7 sm:text-[15px]">Receiver details for this address</p>
-            <label className="mt-3 grid h-14 w-full grid-cols-[34px_1fr] items-center gap-3 rounded-2xl border border-border bg-white px-4 sm:mt-4 sm:h-20 sm:grid-cols-[42px_1fr]">
-              <Phone size={21} className="text-charcoal sm:h-[25px] sm:w-[25px]" />
-              <input
-                value={`${address.receiver}, ${address.phone}`}
-                onChange={(event) => {
-                  const [receiver, phone] = event.target.value.split(",");
-                  setAddress({ ...address, receiver: receiver?.trim() ?? "", phone: phone?.trim() ?? "" });
-                }}
-                className="min-w-0 bg-transparent text-[13px] font-black text-muted sm:text-[17px]"
-              />
-            </label>
+            <p className="mt-6 text-[13px] font-black text-muted lg:mt-5 lg:text-xs">Receiver details for this address <span className="font-bold">(optional)</span></p>
+            <div className="mt-3 grid gap-3 lg:gap-2">
+              <label className="grid h-14 grid-cols-[34px_1fr] items-center gap-3 rounded-2xl border border-border bg-white px-4 lg:h-12 lg:rounded-xl">
+                <Phone size={21} className="text-charcoal lg:h-5 lg:w-5" />
+                <input
+                  value={address.receiver}
+                  onChange={(event) => setAddress({ ...address, receiver: event.target.value })}
+                  className="min-w-0 bg-transparent text-[13px] font-black text-charcoal outline-none placeholder:text-muted/70 lg:text-xs"
+                  placeholder="Receiver name"
+                />
+              </label>
+              <label className="grid h-14 grid-cols-[34px_1fr] items-center gap-3 rounded-2xl border border-border bg-white px-4 lg:h-12 lg:rounded-xl">
+                <Phone size={21} className="text-charcoal lg:h-5 lg:w-5" />
+                <input
+                  value={address.phone}
+                  onChange={(event) => setAddress({ ...address, phone: event.target.value.replace(/\D/g, "").slice(0, 10) })}
+                  inputMode="tel"
+                  className="min-w-0 bg-transparent text-[13px] font-black text-charcoal outline-none placeholder:text-muted/70 lg:text-xs"
+                  placeholder="Receiver mobile number"
+                />
+              </label>
+            </div>
+            {customerSession ? (
+              <p className="mt-2 text-[12px] font-bold text-muted">Using logged-in customer: {customerSession.name}</p>
+            ) : null}
 
-            <p className="mt-5 text-[12px] font-black text-muted sm:mt-7 sm:text-[15px]">Save address as</p>
-            <div className="mt-3 grid grid-cols-3 gap-2">
+            <p className="mt-7 text-[13px] font-black text-muted lg:mt-5 lg:text-xs">Save address as</p>
+            <div className="mt-4 grid grid-cols-3 gap-3 lg:mt-3 lg:gap-2">
               {(["Home", "Work", "Other"] as const).map((tag) => (
                 <button
                   key={tag}
+                  type="button"
                   onClick={() => setAddress({ ...address, tag, customLabel: tag === "Other" ? address.customLabel : "" })}
-                  className={`inline-flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2 text-[12px] font-black sm:h-12 sm:gap-2 sm:px-3 sm:text-[15px] ${
-                    address.tag === tag ? "border-red bg-red/5 text-red ring-1 ring-red/20" : "border-border bg-white text-charcoal"
+                  className={`inline-flex h-12 min-w-0 items-center justify-center gap-2 rounded-xl border px-2 text-[13px] font-black lg:h-10 lg:text-xs ${
+                    address.tag === tag ? "border-maroon bg-[#fff4f5] text-maroon" : "border-border bg-white text-charcoal"
                   }`}
                 >
-                  {tag === "Home" ? <Home size={16} /> : tag === "Work" ? <BriefcaseBusiness size={16} /> : <MapPin size={16} />}
+                  {tag === "Home" ? <Home size={17} /> : tag === "Work" ? <BriefcaseBusiness size={17} /> : <MapPin size={17} />}
                   {tag}
                 </button>
               ))}
             </div>
+
             {address.tag === "Other" ? (
-              <label className="mt-3 block">
-                <input
-                  value={address.customLabel}
-                  onChange={(event) => setAddress({ ...address, customLabel: event.target.value })}
-                  className="h-11 w-full rounded-xl border border-border bg-white px-3 text-[13px] font-bold text-charcoal placeholder:text-muted"
-                  placeholder="Name this address, e.g. Mom's home"
-                />
-              </label>
+              <input
+                value={address.customLabel}
+                onChange={(event) => setAddress({ ...address, customLabel: event.target.value })}
+                className="mt-4 h-12 w-full rounded-xl border border-border bg-white px-4 text-[13px] font-bold text-charcoal outline-none placeholder:text-muted focus:border-maroon lg:h-10 lg:text-xs"
+                placeholder="Name this address"
+              />
             ) : null}
 
-            <button onClick={saveAddress} className="mt-5 h-14 w-full rounded-xl bg-red text-[18px] font-black text-white shadow-[0_10px_24px_rgba(214,0,50,0.22)] sm:h-16 sm:text-[22px]">
-              Save address
-            </button>
+            <div className="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-[430px] border-t border-border bg-white px-5 pb-[calc(env(safe-area-inset-bottom)+14px)] pt-3 lg:static lg:mt-5 lg:max-w-none lg:border-t-0 lg:px-0 lg:pb-0 lg:pt-0">
+              <button type="button" onClick={saveAddress} className="h-16 w-full rounded-xl bg-maroon text-[18px] font-black text-white shadow-[0_14px_28px_rgba(141,0,33,0.2)] lg:h-12 lg:text-base">
+                {editingAddressId ? "Update address" : "Save address"}
+              </button>
+            </div>
           </div>
-        </>
+        </div>
       )}
 
-      {message ? <p className="mt-4 rounded-2xl bg-white p-3 text-center text-xs font-black text-muted">{message}</p> : null}
+      {message ? (
+        <div className="fixed inset-x-0 bottom-24 z-40 mx-auto w-full max-w-[430px] px-5">
+          <p className="rounded-2xl bg-charcoal px-4 py-3 text-center text-xs font-black leading-5 text-white shadow-xl">{message}</p>
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+function SearchBox({
+  query,
+  setQuery,
+  onTyped,
+  compact = false,
+}: {
+  query: string;
+  setQuery: (value: string) => void;
+  onTyped: (value: string) => void;
+  compact?: boolean;
+}) {
+  return (
+    <label className={`${compact ? "mt-0 h-[58px] lg:h-12" : "mt-7 h-20 lg:mt-6 lg:h-16"} flex items-center gap-3 rounded-2xl bg-white px-4 shadow-sm ring-1 ring-black/10 lg:rounded-[18px]`}>
+      <Search className={`${compact ? "h-[27px] w-[27px] lg:h-6 lg:w-6" : "h-[33px] w-[33px] lg:h-7 lg:w-7"} shrink-0 text-maroon`} strokeWidth={3.2} />
+      <input
+        value={query}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          onTyped(event.target.value);
+        }}
+        className="min-w-0 flex-1 bg-transparent text-[14px] font-black text-charcoal outline-none placeholder:text-muted/80 lg:text-[13px]"
+        placeholder="Search for area, street name..."
+      />
+    </label>
+  );
+}
+
+function SearchResults({
+  results,
+  searching,
+  onChoose,
+  overlay = false,
+}: {
+  results: SearchResult[];
+  searching: boolean;
+  onChoose: (result: SearchResult) => void;
+  overlay?: boolean;
+}) {
+  if (!searching && !results.length) return null;
+
+  return (
+    <div className={`${overlay ? "absolute left-5 right-5 top-[92px] z-30" : "mt-3"} overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-black/10`}>
+      {searching ? <p className="px-4 py-3 text-sm font-black text-muted">Searching locations...</p> : null}
+      {results.map((result) => (
+        <button
+          key={result.id}
+          type="button"
+          onClick={() => onChoose(result)}
+          className="grid w-full grid-cols-[34px_1fr] gap-3 border-t border-border px-4 py-3 text-left first:border-t-0"
+        >
+          <MapPin size={22} className="mt-0.5 text-maroon" />
+          <span className="min-w-0">
+            <span className="block truncate text-[13px] font-black text-charcoal">{result.title}</span>
+            <span className="mt-0.5 block line-clamp-2 text-[11px] font-bold leading-4 text-muted">{result.subtitle}</span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SavedAddressCard({
+  item,
+  actionsOpen,
+  onChoose,
+  onToggleActions,
+  onEdit,
+  onDelete,
+}: {
+  item: SavedAddress;
+  actionsOpen: boolean;
+  onChoose: () => void;
+  onToggleActions: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const Icon = item.tag === "Home" ? Home : item.tag === "Work" ? BriefcaseBusiness : MapPin;
+
+  return (
+    <div className="relative rounded-[22px] bg-white shadow-sm ring-1 ring-black/5 lg:rounded-[18px]">
+      <button type="button" onClick={onChoose} className="grid w-full grid-cols-[48px_1fr_32px] gap-4 p-5 pr-3 text-left lg:grid-cols-[38px_1fr_30px] lg:gap-3 lg:p-4 lg:pr-3">
+        <span className="grid justify-items-center">
+          <Icon className="h-[31px] w-[31px] text-muted lg:h-7 lg:w-7" />
+          <span className="mt-1 text-[11px] font-black text-muted lg:text-[10px]">{item.distance}</span>
+        </span>
+        <span className="min-w-0">
+          <span className="line-clamp-3 text-[16px] font-black leading-snug text-charcoal lg:text-[13px]">{item.area}</span>
+          <span className="mt-1 line-clamp-2 text-[14px] font-bold leading-snug text-muted lg:text-[12px]">{item.details === item.area ? "India" : item.details}</span>
+          {item.receiver || item.phone ? (
+            <span className="mt-2 block truncate text-[11px] font-black text-muted lg:text-[10px]">
+              {[item.receiver, item.phone].filter(Boolean).join(", ")}
+            </span>
+          ) : null}
+        </span>
+        <span aria-hidden="true" />
+      </button>
+
+      <button
+        type="button"
+        onClick={onToggleActions}
+        className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-[#fff4f5] text-maroon ring-1 ring-maroon/10"
+        aria-label={`Actions for ${item.label || item.tag} address`}
+        aria-expanded={actionsOpen}
+      >
+        <MoreHorizontal size={18} strokeWidth={2.8} />
+      </button>
+
+      {actionsOpen ? (
+        <div className="absolute right-3 top-12 z-20 w-36 overflow-hidden rounded-2xl bg-white text-sm font-black shadow-xl ring-1 ring-black/10">
+          <button type="button" onClick={onEdit} className="flex h-11 w-full items-center gap-2 px-4 text-left text-charcoal hover:bg-[#fff4f5]">
+            <Pencil size={15} className="text-maroon" /> Edit
+          </button>
+          <button type="button" onClick={onDelete} className="flex h-11 w-full items-center gap-2 border-t border-border px-4 text-left text-red hover:bg-[#fff4f5]">
+            <Trash2 size={15} /> Delete
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MapPreview({
+  area,
+  latitude,
+  longitude,
+  locating,
+  onLocate,
+  pinPosition,
+  onPinMove,
+  onPinDrop,
+}: {
+  area: string;
+  latitude: string;
+  longitude: string;
+  locating: boolean;
+  onLocate: () => void;
+  pinPosition: PinPosition;
+  onPinMove: (position: PinPosition) => void;
+  onPinDrop: (position: PinPosition) => void;
+}) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
+  const dragStartRef = useRef(pinPosition);
+
+  function getPositionFromPointer(clientX: number, clientY: number) {
+    const rect = mapRef.current?.getBoundingClientRect();
+    if (!rect) return pinPosition;
+
+    return {
+      x: Math.min(88, Math.max(12, ((clientX - rect.left) / rect.width) * 100)),
+      y: Math.min(72, Math.max(20, ((clientY - rect.top) / rect.height) * 100)),
+    };
+  }
+
+  function startDrag(event: PointerEvent<HTMLButtonElement>) {
+    draggingRef.current = true;
+    dragStartRef.current = pinPosition;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    onPinMove(getPositionFromPointer(event.clientX, event.clientY));
+  }
+
+  function movePin(event: PointerEvent<HTMLButtonElement>) {
+    if (!draggingRef.current) return;
+    onPinMove(getPositionFromPointer(event.clientX, event.clientY));
+  }
+
+  function finishDrag(event: PointerEvent<HTMLButtonElement>) {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    const nextPosition = getPositionFromPointer(event.clientX, event.clientY);
+    const dragDistance = Math.hypot(nextPosition.x - dragStartRef.current.x, nextPosition.y - dragStartRef.current.y);
+    onPinMove(nextPosition);
+    if (dragDistance > 1.5) onPinDrop(nextPosition);
+  }
+
+  return (
+    <div ref={mapRef} className="relative h-[330px] overflow-hidden bg-[#eef1f6] touch-none lg:h-full lg:min-h-0">
+      <div
+        className="absolute inset-0 opacity-80"
+        style={{
+          backgroundImage:
+            "linear-gradient(28deg, transparent 0 41%, rgba(255,255,255,0.95) 41% 47%, transparent 47%), linear-gradient(115deg, transparent 0 48%, rgba(255,255,255,0.95) 48% 54%, transparent 54%), linear-gradient(90deg,#d9dee8 1px,transparent 1px), linear-gradient(#d9dee8 1px,transparent 1px)",
+          backgroundSize: "260px 180px, 260px 180px, 82px 82px, 82px 82px",
+        }}
+      />
+      <div className="absolute left-[8%] top-[10%] h-16 w-28 rounded-sm bg-[#dde2ec]" />
+      <div className="absolute right-[10%] top-[13%] h-20 w-32 rounded-sm bg-[#dde2ec]" />
+      <div className="absolute left-[3%] top-[47%] h-24 w-36 rounded-sm bg-[#dde2ec]" />
+      <div className="absolute right-[7%] top-[50%] h-20 w-28 rounded-sm bg-[#dde2ec]" />
+      <span className="absolute left-1/2 top-[38%] grid h-16 w-16 -translate-x-1/2 place-items-center rounded-full bg-[#2ca8ff]/20 text-[#2ca8ff]">
+        <span className="h-7 w-7 rounded-full border-4 border-white bg-[#2ca8ff] shadow-md" />
+      </span>
+      <button
+        type="button"
+        className="absolute z-10 grid h-[70px] w-[70px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-maroon text-white shadow-2xl active:scale-95"
+        style={{ left: `${pinPosition.x}%`, top: `${pinPosition.y}%` }}
+        onPointerDown={startDrag}
+        onPointerMove={movePin}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+        aria-label="Move delivery pin"
+      >
+        <MapPin size={42} fill="currentColor" />
+      </button>
+      <button
+        type="button"
+        onClick={onLocate}
+        className="absolute bottom-14 left-1/2 z-20 inline-flex h-12 -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-2xl bg-white px-5 text-[13px] font-black text-maroon shadow-xl lg:bottom-12 lg:h-10 lg:rounded-xl lg:text-xs"
+      >
+        <LocateFixed size={19} className={locating ? "animate-spin" : ""} /> Use current location
+      </button>
+      <div className="absolute bottom-3 left-4 right-4 rounded-2xl bg-white/90 px-4 py-2 text-center text-[11px] font-bold leading-4 text-muted shadow-sm lg:rounded-xl">
+        {latitude && longitude ? `${area} (${latitude}, ${longitude})` : area}
+      </div>
+    </div>
   );
 }

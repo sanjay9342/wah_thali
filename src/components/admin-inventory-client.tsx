@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, type SyntheticEvent } from "react";
 import { CheckCircle2, Download, Edit3, EyeOff, PackagePlus, Plus, Search, SlidersHorizontal, Trash2, X } from "lucide-react";
-import Link from "next/link";
+import { AdminSectionNav } from "@/components/admin-section-nav";
 import type { AdminProduct } from "@/lib/types";
 import { formatRupees } from "@/lib/pricing";
 
@@ -243,12 +243,12 @@ export function AdminInventoryClient({
             <p className="mt-1 text-sm font-semibold text-muted">Live Supabase menu controls for product CRUD, visibility, pricing, and stock.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href="/admin" className="inline-flex h-11 items-center rounded-lg border border-border px-4 font-black">Dashboard</Link>
             <button onClick={() => setForm(emptyForm)} className="inline-flex h-11 items-center gap-2 rounded-lg bg-red px-4 font-black text-white">
               <Plus size={18} /> Add product
             </button>
           </div>
         </div>
+        <AdminSectionNav />
 
         {message ? <p className="mt-4 rounded-lg border border-border bg-cream px-4 py-3 text-sm font-black text-maroon">{message}</p> : null}
 
@@ -293,7 +293,7 @@ export function AdminInventoryClient({
             </div>
           </aside>
 
-          <div className="surface overflow-hidden rounded-2xl">
+          <div className="surface min-w-0 overflow-hidden rounded-2xl">
             <div className="flex flex-col gap-3 border-b border-border p-5 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-xl font-black text-maroon">Menu inventory</h2>
@@ -312,44 +312,44 @@ export function AdminInventoryClient({
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] text-left text-sm">
+              <table className="w-full min-w-[920px] text-left text-sm">
                 <thead className="bg-cream text-maroon">
                   <tr>
                     {["Item", "Price", "Stock", "Reorder", "Margin", "Variants", "Add-ons", "Availability", "Actions"].map((head) => (
-                      <th key={head} className="p-4">{head}</th>
+                      <th key={head} className="p-3">{head}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredProducts.map((product) => (
                     <tr key={product.id} className="border-t border-border align-top">
-                      <td className="p-4">
+                      <td className="p-3">
                         <div className="flex items-center gap-3">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={safeAdminImage(product.image)} alt="" className="h-14 w-14 rounded-xl object-cover" />
+                          <img src={safeAdminImage(product.image)} alt="" className="h-14 w-14 rounded-xl object-cover" onError={useFallbackImage} />
                           <div>
                             <p className="font-black text-charcoal">{product.name}</p>
                             <p className="text-xs font-bold text-muted">{product.category} - {product.dietaryType} - {product.spiceLevel}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="p-4 font-black">{formatRupees(product.price)}</td>
-                      <td className="p-4">
-                        <input type="number" min={0} className="h-10 w-20 rounded-lg border border-border bg-cream px-3 font-black" defaultValue={product.stock} onBlur={(event) => quickUpdate(product, { stock: Number(event.target.value) })} />
+                      <td className="p-3 font-black">{formatRupees(product.price)}</td>
+                      <td className="p-3">
+                        <input type="number" min={0} className="h-10 w-[72px] rounded-lg border border-border bg-cream px-3 font-black" defaultValue={product.stock} onBlur={(event) => quickUpdate(product, { stock: Number(event.target.value) })} />
                       </td>
-                      <td className="p-4">
-                        <input type="number" min={0} className="h-10 w-20 rounded-lg border border-border bg-cream px-3 font-black" defaultValue={product.reorderAt} onBlur={(event) => quickUpdate(product, { reorderAt: Number(event.target.value) })} />
+                      <td className="p-3">
+                        <input type="number" min={0} className="h-10 w-[72px] rounded-lg border border-border bg-cream px-3 font-black" defaultValue={product.reorderAt} onBlur={(event) => quickUpdate(product, { reorderAt: Number(event.target.value) })} />
                       </td>
-                      <td className="p-4 font-black text-maroon">{product.margin}%</td>
-                      <td className="p-4">{product.variants.length}</td>
-                      <td className="p-4">{product.addons.length}</td>
-                      <td className="p-4">
-                        <button onClick={() => quickUpdate(product, { available: !product.available })} disabled={isPending} className={`inline-flex h-9 min-w-36 items-center justify-center gap-2 rounded-lg px-3 text-xs font-black disabled:opacity-60 ${product.available ? "bg-maroon text-white" : "bg-red/10 text-red"}`}>
+                      <td className="p-3 font-black text-maroon">{product.margin}%</td>
+                      <td className="p-3">{product.variants.length}</td>
+                      <td className="p-3">{product.addons.length}</td>
+                      <td className="p-3">
+                        <button onClick={() => quickUpdate(product, { available: !product.available })} disabled={isPending} className={`inline-flex h-9 min-w-28 items-center justify-center gap-2 rounded-lg px-3 text-xs font-black disabled:opacity-60 ${product.available ? "bg-maroon text-white" : "bg-red/10 text-red"}`}>
                           {product.available ? <CheckCircle2 size={15} /> : <EyeOff size={15} />}
                           {product.available ? "Available" : "Unavailable"}
                         </button>
                       </td>
-                      <td className="p-4">
+                      <td className="p-3">
                         <div className="flex gap-2">
                           <button onClick={() => openEdit(product)} className="grid h-9 w-9 place-items-center rounded-lg border border-border text-maroon" aria-label={`Edit ${product.name}`}>
                             <Edit3 size={16} />
@@ -375,6 +375,11 @@ export function AdminInventoryClient({
 
 function safeAdminImage(src: string) {
   return src || "/wah-thali-meal-cutout-v2.png";
+}
+
+function useFallbackImage(event: SyntheticEvent<HTMLImageElement>) {
+  event.currentTarget.onerror = null;
+  event.currentTarget.src = "/wah-thali-meal-cutout-v2.png";
 }
 
 function toProductForm(product: AdminProduct): ProductForm {

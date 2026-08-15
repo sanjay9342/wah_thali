@@ -1,6 +1,7 @@
 import type { OrderStatus } from "./types";
 
 const orderTransitions: Record<OrderStatus, OrderStatus[]> = {
+  PENDING_PAYMENT: ["NEW", "CONFIRMED", "CANCELLED"],
   NEW: ["CONFIRMED", "CANCELLED"],
   CONFIRMED: ["PREPARING", "CANCELLED"],
   PREPARING: ["PACKED", "CANCELLED"],

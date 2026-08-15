@@ -2,15 +2,12 @@ import {
   BarChart3,
   ClipboardList,
   IndianRupee,
-  ListTree,
-  Percent,
   Package,
-  PackageCheck,
-  Settings,
   ShoppingBag,
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { AdminSectionNav } from "@/components/admin-section-nav";
 import { AdminDashboardProductsClient } from "@/components/admin-dashboard-products-client";
 import { getAdminDashboardMetrics, getAdminProductsFromDb } from "@/lib/db";
 import { formatRupees } from "@/lib/pricing";
@@ -35,21 +32,8 @@ export default async function AdminPage() {
             <h1 className="text-3xl font-black text-maroon">Operations dashboard</h1>
             <p className="mt-1 text-sm font-semibold text-muted">Products, inventory, coupons, orders, customers, and settings.</p>
           </div>
-          <nav className="flex flex-wrap gap-2">
-            {[
-              ["/admin/orders", ClipboardList, "Orders"],
-              ["/admin/inventory", PackageCheck, "Inventory"],
-              ["/admin/categories", ListTree, "Categories"],
-              ["/admin/coupons", Percent, "Coupons"],
-              ["/admin/customers", Users, "Customers"],
-              ["/admin/settings", Settings, "Settings"],
-            ].map(([href, Icon, label]) => (
-              <Link key={String(label)} href={String(href)} className="inline-flex h-11 items-center gap-2 rounded-lg border border-border px-4 font-black">
-                <Icon size={18} /> {String(label)}
-              </Link>
-            ))}
-          </nav>
         </div>
+        <AdminSectionNav />
 
         <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[

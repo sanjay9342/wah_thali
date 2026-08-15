@@ -25,7 +25,7 @@ export async function POST(request: Request) {
   }
 
   const { mobile, ...address } = parsed.data;
-  const customer = await prisma.customer.findUnique({ where: { mobile } });
+  const customer = await prisma.customer.findUnique({ where: { mobile }, select: { id: true } });
   if (!customer) {
     return NextResponse.json({ error: "Login first to save this address to your profile." }, { status: 404 });
   }

@@ -21,7 +21,11 @@ export default async function ConfirmedPage({
 
   const order = await prisma.order.findUnique({
     where: { orderNumber },
-    include: { customer: true, items: true, payments: true },
+    include: {
+      customer: { select: { id: true, name: true, mobile: true, email: true } },
+      items: true,
+      payments: true,
+    },
   });
 
   if (!order) notFound();

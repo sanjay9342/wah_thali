@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode, type SyntheticEvent } from "react";
 import {
   ArrowLeft,
   BadgeCheck,
@@ -340,7 +340,7 @@ function ProductCard({
       <div className="relative aspect-[1.58/1] w-full overflow-hidden bg-[#f6f1ed] sm:aspect-[1.42/1]">
         <button className="block h-full w-full text-left" onClick={onOpen} aria-label={`View details for ${product.name}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="eager" />
+          <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="eager" onError={useFallbackImage} />
         </button>
         <button
           className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-white text-red shadow-[0_8px_18px_rgba(34,31,32,0.12)] sm:right-3 sm:top-3 sm:h-9 sm:w-9"
@@ -407,7 +407,7 @@ function FoodieProductCard({
       <div className="relative aspect-[1.55/1] overflow-hidden bg-[#f3f5f8]">
         <button className="block h-full w-full text-left" onClick={onOpen} aria-label={`View details for ${product.name}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="eager" />
+          <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="eager" onError={useFallbackImage} />
         </button>
         <button
           className="absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-full bg-white text-[#98a0ad] shadow-[0_8px_18px_rgba(34,31,32,0.12)]"
@@ -448,6 +448,165 @@ function FoodieProductCard({
         </div>
       </div>
     </article>
+  );
+}
+
+function DesktopSearchPage({
+  query,
+  setQuery,
+  searchGroups,
+  categoryOffers,
+  validCart,
+  savedProductIds,
+  orderingDisabled,
+  onFilter,
+  onAdd,
+  onDecrease,
+  onOpen,
+  onToggleSave,
+}: {
+  query: string;
+  setQuery: (value: string) => void;
+  searchGroups: { category: string; items: Product[] }[];
+  categoryOffers: CategoryOfferMap;
+  validCart: CartLine[];
+  savedProductIds: string[];
+  orderingDisabled: boolean;
+  onFilter: () => void;
+  onAdd: (product: Product) => void;
+  onDecrease: (product: Product) => void;
+  onOpen: (product: Product) => void;
+  onToggleSave: (product: Product) => void;
+}) {
+  return (
+    <section className="hidden bg-[#f7f8fc] px-8 pb-16 pt-8 lg:block">
+      <div className="mx-auto max-w-[1180px]">
+        <div className="rounded-[28px] bg-[#fff4f5] px-10 py-8 shadow-[0_14px_34px_rgba(34,31,32,0.05)]">
+          <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(420px,1fr)] items-center gap-8">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-maroon">Search Wah Thali</p>
+              <h1 className="mt-3 max-w-[410px] text-[38px] font-black leading-tight text-charcoal">
+                What are you looking for today?
+              </h1>
+            </div>
+            <label className="grid h-14 grid-cols-[50px_1fr_86px] items-center rounded-[18px] border border-[#f0e2e4] bg-white px-2 shadow-[0_8px_18px_rgba(17,24,39,0.05)]">
+              <Search size={23} className="mx-auto text-[#68707c]" strokeWidth={2.4} />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className="min-w-0 bg-transparent text-[15px] font-semibold text-[#111827] outline-none placeholder:text-[#a8adb7]"
+                placeholder="Search fresh dishes"
+              />
+              <button
+                type="button"
+                onClick={onFilter}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border-l border-[#eef1f6] text-[11px] font-black text-[#68707c]"
+              >
+                <SlidersHorizontal size={17} strokeWidth={2.5} />
+                Filter
+              </button>
+            </label>
+          </div>
+        </div>
+
+        <div className="mt-8 grid gap-10">
+          {searchGroups.map((group) => (
+            <section key={group.category}>
+              <div className="mb-5 flex items-center gap-4">
+                <h2 className="text-[26px] font-black text-[#111827]">{shortCategoryName(group.category)}</h2>
+                <span className="rounded-full bg-[#fff4f5] px-3 py-1 text-xs font-black text-maroon">{group.items.length} {group.items.length === 1 ? "item" : "items"}</span>
+              </div>
+              <div className="grid grid-cols-4 gap-5">
+                {group.items.map((product) => (
+                  <FoodieProductCard
+                    key={product.id}
+                    product={product}
+                    offer={getProductOffer(product, categoryOffers)}
+                    quantity={getQuantity(validCart, product.id)}
+                    saved={savedProductIds.includes(product.id)}
+                    onAdd={() => onAdd(product)}
+                    onDecrease={() => onDecrease(product)}
+                    onOpen={() => onOpen(product)}
+                    onToggleSave={() => onToggleSave(product)}
+                    orderingDisabled={orderingDisabled}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DesktopTrustFooter({ categories }: { categories: string[] }) {
+  const topCategories = categories.filter((category) => category !== "All").slice(0, 5);
+
+  return (
+    <section className="hidden border-t border-[#f1e7e4] bg-white lg:block">
+      <div className="mx-auto max-w-[1180px] px-5 py-9">
+        <div className="grid grid-cols-[1.15fr_0.7fr_0.8fr_0.8fr] gap-12">
+          <div>
+            <Link href="/" className="relative block h-12 w-40 overflow-hidden">
+              <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill sizes="160px" className="object-contain object-left" />
+            </Link>
+            <p className="mt-5 max-w-[360px] text-sm font-semibold leading-7 text-muted">
+              Fresh homestyle meals delivered straight to your doorstep. Simple ordering, clean food, and fast delivery.
+            </p>
+            <div className="mt-6 flex gap-4 text-muted">
+              <a href="https://www.facebook.com/wahthali21" aria-label="Facebook" className="text-4xl font-black hover:text-maroon">f</a>
+              <a href="https://www.instagram.com/wahthali/" aria-label="Instagram" className="grid h-11 w-11 place-items-center rounded-xl border-[3px] border-current text-xl font-black hover:text-maroon">◎</a>
+            </div>
+          </div>
+
+          <FooterColumn title="Top Categories">
+            {topCategories.map((category) => (
+              <Link key={category} href={`/?category=${encodeURIComponent(category)}`} className="text-sm font-bold text-muted hover:text-maroon">
+                {shortCategoryName(category)}
+              </Link>
+            ))}
+          </FooterColumn>
+
+          <FooterColumn title="Our Policies">
+            {[
+              ["Privacy Policy", "/privacy-policy"],
+              ["About Us", "/about"],
+              ["Terms and Conditions", "/terms-and-conditions"],
+              ["Refund Policy", "/refund-cancellation-policy"],
+              ["Delivery Policy", "/delivery-policy"],
+            ].map(([label, href]) => (
+              <Link key={href} href={href} className="text-sm font-bold text-muted hover:text-maroon">
+                {label}
+              </Link>
+            ))}
+          </FooterColumn>
+
+          <FooterColumn title="Support & More">
+            {[
+              ["Help Center", "/support"],
+              ["Orders", "/orders"],
+              ["Offers", "/offers"],
+              ["Loyalty", "/loyalty"],
+              ["Account", "/account"],
+            ].map(([label, href]) => (
+              <Link key={href} href={href} className="text-sm font-bold text-muted hover:text-maroon">
+                {label}
+              </Link>
+            ))}
+          </FooterColumn>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FooterColumn({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div>
+      <h3 className="text-base font-black uppercase tracking-wide text-charcoal">{title}</h3>
+      <div className="mt-6 grid gap-4">{children}</div>
+    </div>
   );
 }
 function DishDetailSheet({
@@ -1069,36 +1228,39 @@ export function MenuExperience({
   return (
     <main className="min-h-screen bg-white pb-24 text-charcoal lg:pb-0">
       <header className="sticky top-0 z-50 border-b border-[#f1e7e4] bg-white/96 backdrop-blur">
-        <div className="mx-auto hidden h-[104px] max-w-[1250px] items-center gap-6 px-0 lg:flex">
-          <Link href="/" className="relative h-16 w-[164px] overflow-hidden border-r border-[#f1e7e4] pr-6" aria-label="Wah Thali home">
+        <div className="mx-auto hidden h-[68px] max-w-[1250px] items-center gap-5 px-0 lg:flex">
+          <Link href="/" className="relative h-10 w-[138px] overflow-hidden border-r border-[#f1e7e4] pr-5" aria-label="Wah Thali home">
             <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill priority sizes="164px" className="object-contain object-left" />
           </Link>
 
-          <Link href="/address" className="flex min-w-0 max-w-[300px] items-center gap-3 text-sm font-black">
-            <MapPin size={18} className="text-red" />
+          <Link href="/address" className="flex min-w-0 max-w-[300px] items-center gap-2 text-[13px] font-black">
+            <MapPin size={17} className="text-red" />
             <span className="truncate">{deliveryLocation.address}</span>
-            <ChevronDown size={16} className="text-muted" />
+            <ChevronDown size={15} className="text-muted" />
           </Link>
 
-          <nav className="ml-auto flex items-center gap-8 text-sm font-black">
+          <nav className="ml-auto flex items-center gap-11 text-[13px] font-black">
             {[
               ["/", "Home"],
               ["/menu", "Search"],
               ["/orders", "Orders"],
               ["/offers", "Offers"],
               ["/support", "Help"],
-            ].map(([href, label]) => (
-              <Link key={href} href={href} className={label === "Home" ? "text-red" : "text-charcoal hover:text-red"}>
-                {label}
-              </Link>
-            ))}
+            ].map(([href, label]) => {
+              const active = href === "/" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
+              return (
+                <Link key={href} href={href} className={active ? "text-red" : "text-charcoal hover:text-red"} aria-current={active ? "page" : undefined}>
+                  {label}
+                </Link>
+              );
+            })}
           </nav>
 
-          <Link href="/cart" className="relative grid h-11 w-11 place-items-center text-charcoal" aria-label="Cart">
-            <ShoppingCart size={30} />
+          <Link href="/cart" className="relative grid h-9 w-9 place-items-center text-charcoal" aria-label="Cart">
+            <ShoppingCart size={26} />
             {cartCount ? <span className="absolute -right-1 top-0 rounded-full bg-red px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
           </Link>
-          <Link href="/login" className="rounded-xl bg-red px-6 py-3 text-sm font-black text-white shadow-[0_9px_20px_rgba(141,0,33,0.18)]">
+          <Link href="/login" className="inline-flex h-9 items-center rounded-[10px] bg-red px-4 text-[12px] font-black text-white shadow-[0_8px_18px_rgba(141,0,33,0.16)]">
             Sign In
           </Link>
         </div>
@@ -1206,6 +1368,23 @@ export function MenuExperience({
         </section>
       ) : null}
 
+      {isSearchPage ? (
+        <DesktopSearchPage
+          query={query}
+          setQuery={setQuery}
+          searchGroups={searchGroups}
+          categoryOffers={categoryOffers}
+          validCart={validCart}
+          savedProductIds={savedProductIds}
+          orderingDisabled={orderingDisabled}
+          onFilter={() => setActivePopup("filters")}
+          onAdd={(product) => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
+          onDecrease={decreaseProduct}
+          onOpen={setSelectedProduct}
+          onToggleSave={toggleSaved}
+        />
+      ) : null}
+
       {mobileMenuView === "categories" ? (
         <section className="min-h-[calc(100vh-72px)] bg-[#f7f8fc] px-5 pb-24 pt-6 lg:hidden">
           <div className="flex items-center gap-3">
@@ -1288,8 +1467,8 @@ export function MenuExperience({
         </section>
       ) : null}
 
-      <div className={`${mobileMenuView === "home" && !isSearchPage ? "grid" : "hidden lg:grid"} mx-auto w-full max-w-[1180px] gap-6 px-5 pt-3 sm:px-6 lg:grid-cols-[210px_minmax(0,1fr)] lg:pt-6 xl:px-0`}>
-        <aside className="sticky top-[128px] hidden h-[520px] overflow-hidden rounded-2xl border border-[#f1e7e4] bg-white p-4 shadow-[0_14px_40px_rgba(34,31,32,0.04)] lg:block">
+      <div className={`${isSearchPage ? "hidden" : mobileMenuView === "home" ? "grid" : "hidden lg:grid"} mx-auto w-full max-w-[1180px] gap-6 px-5 pt-3 sm:px-6 lg:grid-cols-[200px_minmax(0,1fr)] lg:pt-5 xl:px-0`}>
+        <aside className="sticky top-[98px] hidden max-h-[calc(100vh-118px)] overflow-y-auto rounded-2xl border border-[#f1e7e4] bg-white p-4 shadow-[0_14px_40px_rgba(34,31,32,0.04)] lg:block">
           <div className="mb-4 flex items-center gap-2 border-b border-[#f1e7e4] pb-4 text-sm font-black uppercase tracking-wide text-muted">
             <BookOpen size={18} />
             Categories
@@ -1299,16 +1478,16 @@ export function MenuExperience({
               <button
                 key={category}
                 onClick={() => setActiveCategory(category)}
-                className={`grid h-14 grid-cols-[38px_1fr] items-center gap-3 rounded-2xl px-3 text-left text-sm font-black ${
+                className={`grid h-[50px] grid-cols-[34px_1fr] items-center gap-3 rounded-xl px-3 text-left text-sm font-black ${
                   activeCategory === category ? "bg-[#fff4f5] text-red shadow-sm" : "text-charcoal hover:bg-[#fff8f9]"
                 }`}
               >
-                <span className={`grid h-8 w-8 place-items-center overflow-hidden rounded-full ${activeCategory === category ? "bg-red text-white" : "bg-[#fff4f5]"}`}>
+                <span className={`grid h-7 w-7 place-items-center overflow-hidden rounded-full ${activeCategory === category ? "bg-red text-white" : "bg-[#fff4f5]"}`}>
                   {category === "All" ? (
                     <Grid3X3 size={17} />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-full w-full object-cover" loading="eager" />
+                    <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-full w-full object-cover" loading="eager" onError={useFallbackImage} />
                   )}
                 </span>
                 <span className="truncate">{shortCategoryName(category)}</span>
@@ -1366,21 +1545,21 @@ export function MenuExperience({
               className="object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-r from-red via-red/90 to-red/20" />
-            <div className="relative grid h-[286px] grid-cols-[minmax(0,45%)_minmax(0,55%)] items-center gap-6 px-11">
+            <div className="relative grid h-[248px] grid-cols-[minmax(0,45%)_minmax(0,55%)] items-center gap-6 px-10">
               <div className="relative z-10 min-w-0 text-white">
                 <p className="text-xs font-black uppercase tracking-[0.22em] text-white/75">Wah Thali offer</p>
-                <h1 className="mt-2 line-clamp-2 max-w-[500px] text-[48px] font-black leading-[1.08]">
+                <h1 className="mt-2 line-clamp-2 max-w-[500px] text-[42px] font-black leading-[1.08]">
                   {promoSlides[activeSlide]?.title || "Delicious food at your doorstep"}
                 </h1>
-                <p className="mt-4 line-clamp-2 max-w-[440px] text-2xl font-semibold text-white/85">
+                <p className="mt-3 line-clamp-2 max-w-[440px] text-xl font-semibold text-white/85">
                   {promoSlides[activeSlide]?.body || `Meals from ${formatRupees(99)}`}
                 </p>
-                <div className="mt-5 inline-flex h-12 max-w-full items-center rounded-xl bg-white px-6 text-base font-black text-red">
+                <div className="mt-4 inline-flex h-11 max-w-full items-center rounded-xl bg-white px-5 text-sm font-black text-red">
                   {promoSlides[activeSlide]?.code || "Order now"}
                 </div>
               </div>
               <div className="relative h-full min-w-0" />
-              <div className="absolute bottom-5 left-11 flex gap-2">
+              <div className="absolute bottom-4 left-10 flex gap-2">
                 {promoSlides.map((slide, index) => (
                   <button
                     key={slide.id}
@@ -1394,8 +1573,8 @@ export function MenuExperience({
             </div>
           </section>
 
-          <section className={`${isHomePage ? "block" : "block"} mt-5 rounded-[16px] border border-[#eef1f6] bg-white px-2 py-1.5 shadow-[0_8px_22px_rgba(34,31,32,0.05)] lg:mt-8`}>
-            <label className="grid h-11 grid-cols-[42px_1fr_58px] items-center lg:h-12 lg:grid-cols-[42px_1fr_66px]">
+          <section className={`${isHomePage ? "block" : "block"} mt-5 rounded-[16px] border border-[#eef1f6] bg-white px-2 py-1.5 shadow-[0_8px_22px_rgba(34,31,32,0.05)] lg:mt-6`}>
+            <label className="grid h-11 grid-cols-[42px_1fr_58px] items-center lg:h-11 lg:grid-cols-[42px_1fr_66px]">
               <Search size={20} className="mx-auto text-[#68707c]" />
               <input
                 value={query}
@@ -1424,7 +1603,7 @@ export function MenuExperience({
             </section>
           ) : null}
 
-          <section className="mt-5 lg:mt-8">
+          <section className="mt-5 lg:mt-6">
             <div className="flex justify-between gap-2 overflow-x-auto pb-3 lg:justify-between lg:overflow-visible">
               {categoryItems.slice(0, 5).map((category) => (
                 <button
@@ -1438,14 +1617,14 @@ export function MenuExperience({
                   }}
                   className="grid min-w-[48px] place-items-center gap-2 text-center"
                 >
-                  <span className={`grid h-[52px] w-[52px] place-items-center overflow-hidden rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] sm:h-20 sm:w-20 lg:h-24 lg:w-24 ${
+                  <span className={`grid h-[52px] w-[52px] place-items-center overflow-hidden rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] sm:h-20 sm:w-20 lg:h-20 lg:w-20 ${
                     activeCategory === category ? "border-red bg-red text-white" : "border-[#f1e7e4] bg-white text-charcoal"
                   }`}>
                     {category === "All" ? (
                       <Grid3X3 size={21} />
                     ) : (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[72%] w-[72%] rounded-full object-cover" loading="eager" />
+                      <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[72%] w-[72%] rounded-full object-cover" loading="eager" onError={useFallbackImage} />
                     )}
                   </span>
                   <span className={`max-w-[54px] truncate text-[10px] font-black sm:max-w-20 sm:text-sm ${activeCategory === category ? "text-red" : "text-charcoal"}`}>
@@ -1458,7 +1637,7 @@ export function MenuExperience({
                 onClick={() => setMobileMenuView("categories")}
                 className="grid min-w-[48px] place-items-center gap-2 text-center"
               >
-                <span className="grid h-[52px] w-[52px] place-items-center rounded-full border border-[#f1e7e4] bg-[#f8fafc] text-charcoal shadow-[0_8px_22px_rgba(34,31,32,0.06)] sm:h-20 sm:w-20 lg:h-24 lg:w-24">
+                <span className="grid h-[52px] w-[52px] place-items-center rounded-full border border-[#f1e7e4] bg-[#f8fafc] text-charcoal shadow-[0_8px_22px_rgba(34,31,32,0.06)] sm:h-20 sm:w-20 lg:h-20 lg:w-20">
                   <Grid3X3 size={21} />
                 </span>
                 <span className="max-w-[54px] truncate text-[10px] font-black text-charcoal sm:max-w-20 sm:text-sm">More</span>
@@ -1466,17 +1645,13 @@ export function MenuExperience({
             </div>
           </section>
 
-          <section id="menu-items" className="mt-6 border-t-[5px] border-[#c8c8c8] pt-7 pb-16 lg:border-t-0 lg:pt-0 lg:pb-8">
+          <section id="menu-items" className="mt-6 border-t-[5px] border-[#c8c8c8] pt-7 pb-16 lg:mt-5 lg:border-t-0 lg:pt-0 lg:pb-8">
             <div className="mb-5 flex items-center justify-between">
               <h2 className="foodie-display text-[30px] leading-none text-charcoal lg:font-sans lg:text-[26px] lg:font-black">Popular Dishes</h2>
               <button onClick={() => setActiveCategory("All")} className="inline-flex items-center gap-1 text-[11px] font-black text-maroon lg:text-xs">
                 View all <ChevronRight size={11} />
               </button>
             </div>
-            <div className="mb-4 hidden justify-center lg:flex lg:justify-start">
-              <DietFilterToggle value={dietFilter} onChange={setDietFilter} />
-            </div>
-
             {popularProducts.length ? (
               <>
               <div className="flex snap-x gap-3.5 overflow-x-auto pb-5 lg:hidden">
@@ -1496,7 +1671,7 @@ export function MenuExperience({
                   </div>
                 ))}
               </div>
-              <div className="hidden gap-4 pb-3 lg:grid lg:grid-cols-[repeat(auto-fit,minmax(230px,1fr))]">
+              <div className="hidden gap-4 pb-3 lg:grid lg:grid-cols-[repeat(auto-fit,minmax(220px,1fr))]">
                 {popularProducts.slice(0, 9).map((product) => (
                   <ProductCard
                     key={product.id}
@@ -1556,28 +1731,28 @@ export function MenuExperience({
               ))}
             </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-[#f1e7e4] pt-5">
+            <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-[#f1e7e4] pt-5 lg:grid-cols-4 lg:gap-x-10 lg:pt-7">
               {[
                 ["No Minimum Order", "Order in for yourself"],
                 ["Lightning Delivery", "On selected locations"],
                 ["Best Quality", "Satisfaction guaranteed"],
                 ["Safe & Secure", "100% secure payments"],
               ].map(([title, body]) => (
-                <div key={title} className="grid grid-cols-[22px_1fr] gap-2">
-                  <span className="grid h-5 w-5 place-items-center text-[#ff6b00]">
+                <div key={title} className="grid grid-cols-[24px_1fr] gap-2 lg:grid-cols-[36px_1fr] lg:gap-4">
+                  <span className="grid h-6 w-6 place-items-center text-[#ff6b00] lg:h-9 lg:w-9">
                     {title === "No Minimum Order" ? (
-                      <ShoppingBag size={18} strokeWidth={2.7} />
+                      <ShoppingBag className="h-5 w-5 lg:h-8 lg:w-8" strokeWidth={2.7} />
                     ) : title === "Lightning Delivery" ? (
-                      <Zap size={18} strokeWidth={2.7} />
+                      <Zap className="h-5 w-5 lg:h-8 lg:w-8" strokeWidth={2.7} />
                     ) : title === "Best Quality" ? (
-                      <BadgeCheck size={18} strokeWidth={2.7} />
+                      <BadgeCheck className="h-5 w-5 lg:h-8 lg:w-8" strokeWidth={2.7} />
                     ) : (
-                      <LockKeyhole size={18} strokeWidth={2.7} />
+                      <LockKeyhole className="h-5 w-5 lg:h-8 lg:w-8" strokeWidth={2.7} />
                     )}
                   </span>
                   <span>
-                    <span className="block text-[10px] font-black text-charcoal">{title}</span>
-                    <span className="mt-0.5 block text-[8px] font-semibold text-muted">{body}</span>
+                    <span className="block text-[10px] font-black text-charcoal lg:text-base">{title}</span>
+                    <span className="mt-0.5 block text-[8px] font-semibold text-muted lg:mt-1 lg:text-sm">{body}</span>
                   </span>
                 </div>
               ))}
@@ -1599,6 +1774,8 @@ export function MenuExperience({
           ) : null}
         </div>
       </div>
+
+      <DesktopTrustFooter categories={categoryItems} />
 
       <div
         className={`fixed bottom-[72px] left-0 right-0 z-[60] px-5 transition-all duration-300 ease-out lg:bottom-6 ${
@@ -1746,6 +1923,11 @@ function getCategoryImage(category: string, images: Record<string, string>, prod
   if (direct) return direct;
   const matchingProduct = products.find((product) => product.category === category);
   return matchingProduct?.image ?? "/wah-thali-meal-cutout-v2.png";
+}
+
+function useFallbackImage(event: SyntheticEvent<HTMLImageElement>) {
+  event.currentTarget.onerror = null;
+  event.currentTarget.src = "/wah-thali-meal-cutout-v2.png";
 }
 
 function getProductOffer(product: Product, categoryOffers: CategoryOfferMap) {

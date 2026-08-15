@@ -3,6 +3,7 @@
 import { Bell, ChevronDown, MapPin, ShoppingCart, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useStoredCart } from "@/lib/use-stored-cart";
 import { useDeliveryLocation } from "@/lib/delivery-location";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
@@ -11,6 +12,7 @@ import { useEffect, useState } from "react";
 
 export function Header({ showContact = true }: { showContact?: boolean; whatsappNumber?: string }) {
   const deliveryLocation = useDeliveryLocation();
+  const pathname = usePathname();
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const cart = useStoredCart(customerSession?.mobile);
@@ -28,37 +30,40 @@ export function Header({ showContact = true }: { showContact?: boolean; whatsapp
 
   return (
     <header className="sticky top-0 z-50 border-b border-[#f1e7e4] bg-white/96 backdrop-blur">
-      <div className="mx-auto hidden h-[104px] max-w-[1250px] items-center gap-6 px-0 lg:flex">
-        <Link href="/" className="relative h-16 w-[164px] overflow-hidden border-r border-[#f1e7e4] pr-6" aria-label="Wah Thali home">
+      <div className="mx-auto hidden h-[68px] max-w-[1248px] items-center gap-5 px-6 lg:flex">
+        <Link href="/" className="relative h-10 w-[138px] overflow-hidden border-r border-[#f1e7e4] pr-5" aria-label="Wah Thali home">
           <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill priority sizes="164px" className="object-contain object-left" />
         </Link>
 
-        <Link href="/address" className="flex min-w-0 max-w-[300px] items-center gap-3 text-sm font-black">
-          <MapPin size={18} className="text-red" />
+        <Link href="/address" className="flex min-w-0 max-w-[280px] items-center gap-2 text-[13px] font-black">
+          <MapPin size={17} className="text-red" />
           <span className="truncate">{deliveryLocation.address}</span>
-          <ChevronDown size={16} className="text-muted" />
+          <ChevronDown size={15} className="text-muted" />
         </Link>
 
-        <nav className="ml-auto flex items-center gap-8 text-sm font-black">
+        <nav className="ml-auto flex items-center gap-11 text-[13px] font-black">
           {[
             ["/", "Home"],
             ["/menu", "Search"],
             ["/orders", "Orders"],
             ["/offers", "Offers"],
             ["/support", "Help"],
-          ].map(([href, label]) => (
-            <Link key={href} href={href} className="text-charcoal hover:text-red">
-              {label}
-            </Link>
-          ))}
+          ].map(([href, label]) => {
+            const active = href === "/" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
+            return (
+              <Link key={href} href={href} className={active ? "text-red" : "text-charcoal hover:text-red"} aria-current={active ? "page" : undefined}>
+                {label}
+              </Link>
+            );
+          })}
         </nav>
 
-        <Link href="/cart" className="relative grid h-11 w-11 place-items-center text-charcoal" aria-label="Cart">
-          <ShoppingCart size={30} />
+        <Link href="/cart" className="relative grid h-9 w-9 place-items-center text-charcoal" aria-label="Cart">
+          <ShoppingCart size={26} />
           {cartCount ? <span className="absolute -right-1 top-0 rounded-full bg-red px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
         </Link>
         {showContact ? (
-          <Link href="/login" className="rounded-xl bg-red px-6 py-3 text-sm font-black text-white shadow-[0_9px_20px_rgba(141,0,33,0.18)]">
+          <Link href="/login" className="inline-flex h-9 items-center rounded-[10px] bg-red px-4 text-[12px] font-black text-white shadow-[0_8px_18px_rgba(141,0,33,0.16)]">
             Sign In
           </Link>
         ) : null}

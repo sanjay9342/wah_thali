@@ -10,6 +10,7 @@ const couponPalettes = [
     accent: "#009b63",
     ink: "#006b45",
     soft: "#eafff3",
+    glow: "#c9f7dd",
     pill: "#c7ffe1",
     border: "#b7efcf",
     dash: "#9ce6bf",
@@ -18,6 +19,7 @@ const couponPalettes = [
     accent: "#b9320b",
     ink: "#8f2507",
     soft: "#fff4e7",
+    glow: "#ffdfb8",
     pill: "#ffe0bf",
     border: "#ffd1aa",
     dash: "#ffc07f",
@@ -26,6 +28,7 @@ const couponPalettes = [
     accent: "#095fb9",
     ink: "#064b95",
     soft: "#eaf5ff",
+    glow: "#c9e5ff",
     pill: "#d7ecff",
     border: "#bfddff",
     dash: "#9fcaff",
@@ -34,6 +37,7 @@ const couponPalettes = [
     accent: "#008f72",
     ink: "#006b55",
     soft: "#eafff9",
+    glow: "#c8fff2",
     pill: "#cffff2",
     border: "#b7efe4",
     dash: "#94e4d5",
@@ -42,6 +46,7 @@ const couponPalettes = [
     accent: "#8d0021",
     ink: "#6f001a",
     soft: "#fff4f5",
+    glow: "#ffd7df",
     pill: "#ffdbe2",
     border: "#efc8d1",
     dash: "#df9cad",
@@ -50,9 +55,28 @@ const couponPalettes = [
     accent: "#6242b7",
     ink: "#493088",
     soft: "#f3efff",
+    glow: "#ded4ff",
     pill: "#e2d9ff",
     border: "#d1c4fb",
     dash: "#b7a8ef",
+  },
+  {
+    accent: "#b7791f",
+    ink: "#8a5415",
+    soft: "#fff8df",
+    glow: "#ffe7a3",
+    pill: "#ffe9ad",
+    border: "#f5d782",
+    dash: "#e7bf4f",
+  },
+  {
+    accent: "#0f766e",
+    ink: "#115e59",
+    soft: "#ecfeff",
+    glow: "#bff7f1",
+    pill: "#ccfbf1",
+    border: "#99f6e4",
+    dash: "#5eead4",
   },
 ];
 
@@ -82,11 +106,11 @@ export function OffersClient({ coupons }: { coupons: Coupon[] }) {
       </div>
 
       <section className="mt-4 grid gap-3 lg:grid-cols-2">
-        {coupons.length ? coupons.map((coupon, index) => (
+        {coupons.length ? coupons.map((coupon) => (
           <CouponTicket
             key={coupon.code}
             coupon={coupon}
-            palette={couponPalettes[index % couponPalettes.length]}
+            palette={getCouponPalette(coupon.code)}
             copied={copiedCode === coupon.code}
             onCopy={() => copyCode(coupon.code)}
           />
@@ -116,10 +140,17 @@ function CouponTicket({
   onCopy: () => void;
 }) {
   return (
-    <article className="relative grid min-h-[152px] grid-cols-[92px_minmax(0,1fr)] overflow-hidden rounded-[16px] bg-white shadow-[0_8px_20px_rgba(17,24,39,0.05)] ring-1 ring-[#e6eaf1] sm:grid-cols-[104px_minmax(0,1fr)]">
+    <article
+      className="relative grid min-h-[152px] grid-cols-[92px_minmax(0,1fr)] overflow-hidden rounded-[16px] bg-white shadow-[0_10px_24px_rgba(17,24,39,0.06)] ring-1 sm:grid-cols-[104px_minmax(0,1fr)]"
+      style={{ borderColor: palette.border, boxShadow: `0 14px 28px ${palette.glow}44` }}
+    >
+      <span
+        className="pointer-events-none absolute -right-12 -top-16 h-32 w-32 rounded-full blur-2xl"
+        style={{ backgroundColor: palette.glow }}
+      />
       <div
         className="relative grid place-items-center px-3 text-center"
-        style={{ background: `linear-gradient(90deg, ${palette.soft}, #ffffff)` }}
+        style={{ background: `linear-gradient(135deg, ${palette.soft} 0%, ${palette.glow} 58%, #ffffff 100%)` }}
       >
         <div>
           <p className="text-[24px] font-black leading-none sm:text-[27px]" style={{ color: palette.ink }}>
@@ -133,7 +164,7 @@ function CouponTicket({
         <span className="absolute -right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-[#f6f7fb]" />
       </div>
 
-      <div className="min-w-0 px-3.5 py-3.5">
+      <div className="relative min-w-0 px-3.5 py-3.5">
         <div className="flex items-start justify-between gap-2">
           <span className="min-w-0 truncate rounded-[7px] px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wide sm:text-[11px]" style={{ backgroundColor: palette.pill, color: palette.ink }}>
             {coupon.code}
@@ -162,6 +193,11 @@ function CouponTicket({
       </div>
     </article>
   );
+}
+
+function getCouponPalette(code: string) {
+  const hash = [...code].reduce((total, character) => total + character.charCodeAt(0), 0);
+  return couponPalettes[hash % couponPalettes.length];
 }
 
 function getCouponHero(coupon: Coupon) {

@@ -9,7 +9,7 @@ const couponSchema = z.object({
   type: z.enum(["FIXED", "PERCENT"]),
   value: z.coerce.number().int().positive(),
   minOrder: z.coerce.number().int().nonnegative(),
-  maxDiscount: z.coerce.number().int().positive().optional(),
+  maxDiscount: z.coerce.number().int().positive().nullable().optional(),
   startsAt: z.coerce.date().default(new Date()),
   endsAt: z.coerce.date().default(new Date(Date.now() + 1000 * 60 * 60 * 24 * 30)),
   active: z.boolean().default(true),

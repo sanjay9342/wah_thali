@@ -131,6 +131,7 @@ export type AdvancedSettings = {
 export type RestaurantSettings = BusinessSettings & AdvancedSettings;
 
 export type OrderStatus =
+  | "PENDING_PAYMENT"
   | "NEW"
   | "CONFIRMED"
   | "PREPARING"

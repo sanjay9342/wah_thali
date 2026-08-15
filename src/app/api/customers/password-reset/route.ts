@@ -19,7 +19,10 @@ export async function POST(request: Request) {
   }
 
   const email = normalizeEmail(parsed.data.email);
-  const customer = await prisma.customer.findUnique({ where: { email } });
+  const customer = await prisma.customer.findUnique({
+    where: { email },
+    select: { id: true, name: true, mobile: true },
+  });
 
   if (customer) {
     await logActivity({
@@ -36,4 +39,3 @@ export async function POST(request: Request) {
     message: "If that email is registered, a password reset request has been recorded.",
   });
 }
-

@@ -1,48 +1,102 @@
 import Link from "next/link";
+import { ArrowLeft, CalendarDays, FileText, Mail, MapPin, Phone } from "lucide-react";
 import { Header } from "@/components/header";
 import { MobileNav } from "@/components/mobile-nav";
 import { SiteFooter } from "@/components/site-footer";
 import { business, type Policy } from "@/lib/business";
 
+function sectionId(heading: string) {
+  return heading.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
 export function LegalPage({ policy }: { policy: Policy }) {
   return (
     <>
       <Header />
-      <main className="bg-white px-4 pb-10 pt-6 sm:px-6 lg:px-8">
-        <article className="mx-auto max-w-5xl overflow-hidden rounded-[28px] bg-white shadow-[0_12px_34px_rgba(34,31,32,0.06)] ring-1 ring-border">
-          <section className="bg-red p-6 text-white sm:p-8 lg:p-10">
-            <Link href="/" className="text-sm font-black text-white">
-              Back to Wah Thali
+      <main className="bg-[#fbfbfc] pb-28 lg:pb-12">
+        <section className="bg-red px-4 py-8 text-white sm:px-6 sm:py-10 lg:px-8 lg:py-12">
+          <div className="mx-auto max-w-[1120px]">
+            <Link
+              href="/"
+              className="inline-flex h-11 items-center gap-2 rounded-full bg-white/12 px-4 text-sm font-black text-white ring-1 ring-white/22 transition-colors hover:bg-white/18"
+            >
+              <ArrowLeft size={18} strokeWidth={2.7} />
+              <span>Back to Wah Thali</span>
             </Link>
-            <p className="mt-6 text-xs font-black uppercase tracking-widest text-white/75">{business.legalName}</p>
-            <h1 className="mt-2 text-4xl font-black leading-tight text-white sm:text-5xl">{policy.title}</h1>
-            <p className="mt-2 text-sm font-bold text-white/75">Effective Date: {policy.effectiveDate}</p>
-            <p className="mt-5 max-w-3xl text-base font-semibold leading-7 text-white/82">{policy.summary}</p>
-          </section>
 
-          <div className="space-y-6 p-5 sm:p-8">
+            <div className="mt-8 max-w-4xl">
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-white/75">{business.legalName}</p>
+              <h1 className="mt-3 text-[36px] font-black leading-[1.05] text-white sm:text-5xl lg:text-[58px]">{policy.title}</h1>
+              <p className="mt-5 max-w-3xl text-base font-semibold leading-7 text-white/85 sm:text-lg">{policy.summary}</p>
+            </div>
+
+            <div className="mt-7 grid gap-3 text-sm font-black sm:grid-cols-2 lg:max-w-3xl">
+              <div className="flex items-center gap-3 rounded-lg bg-white/12 px-4 py-3 ring-1 ring-white/18">
+                <CalendarDays size={18} className="shrink-0" />
+                <span>Effective Date: {policy.effectiveDate}</span>
+              </div>
+              <div className="flex items-center gap-3 rounded-lg bg-white/12 px-4 py-3 ring-1 ring-white/18">
+                <FileText size={18} className="shrink-0" />
+                <span>{policy.sections.length} policy sections</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div className="mx-auto grid max-w-[1120px] gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:px-8">
+          <article className="space-y-4">
             {policy.sections.map((section, index) => (
-              <section key={section.heading}>
-                <h2 className="text-xl font-black text-red">
-                  {index + 1}. {section.heading}
-                </h2>
-                <div className="mt-3 space-y-3 text-sm font-semibold leading-7 text-muted">
-                  {section.body.map((paragraph) => (
-                    <p key={paragraph}>{paragraph}</p>
-                  ))}
+              <section key={section.heading} id={sectionId(section.heading)} className="rounded-lg border border-[#eee1e4] bg-white p-5 shadow-[0_10px_24px_rgba(34,31,32,0.04)] sm:p-6">
+                <div className="flex items-start gap-4">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#fff4f5] text-sm font-black text-red">
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="text-xl font-black leading-tight text-charcoal">{section.heading}</h2>
+                    <div className="mt-4 space-y-3 text-[15px] font-semibold leading-7 text-muted">
+                      {section.body.map((paragraph) => (
+                        <p key={paragraph}>{paragraph}</p>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </section>
             ))}
+          </article>
 
-            <section className="rounded-2xl bg-[#fff4f5] p-4">
-              <h2 className="font-black text-red">Contact Us</h2>
-              <p className="mt-2 text-sm leading-6 text-muted">{business.legalName}</p>
-              <p className="text-sm leading-6 text-muted">Email: {business.legalEmail}</p>
-              <p className="text-sm leading-6 text-muted">Customer support: {business.phone}</p>
-              <p className="text-sm leading-6 text-muted">Address: {business.address}</p>
+          <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+            <section className="rounded-lg border border-[#eee1e4] bg-white p-5 shadow-[0_10px_24px_rgba(34,31,32,0.04)]">
+              <h2 className="text-base font-black text-charcoal">On this page</h2>
+              <nav className="mt-4 grid gap-2" aria-label={`${policy.title} sections`}>
+                {policy.sections.map((section, index) => (
+                  <a key={section.heading} href={`#${sectionId(section.heading)}`} className="flex items-center gap-3 rounded-lg bg-[#fbfbfc] px-3 py-2 text-sm font-black text-muted hover:text-red">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-white text-[11px] text-red ring-1 ring-[#eee1e4]">{index + 1}</span>
+                    <span className="min-w-0 truncate">{section.heading}</span>
+                  </a>
+                ))}
+              </nav>
             </section>
-          </div>
-        </article>
+
+            <section className="rounded-lg border border-[#eee1e4] bg-[#fff4f5] p-5">
+              <h2 className="text-base font-black text-red">Contact Us</h2>
+              <p className="mt-2 text-sm font-semibold leading-6 text-muted">{business.legalName}</p>
+              <div className="mt-4 grid gap-3 text-sm font-bold text-charcoal">
+                <a href={`mailto:${business.legalEmail}`} className="flex min-w-0 items-center gap-3">
+                  <Mail size={17} className="shrink-0 text-red" />
+                  <span className="truncate">{business.legalEmail}</span>
+                </a>
+                <a href={`tel:${business.phone}`} className="flex items-center gap-3">
+                  <Phone size={17} className="shrink-0 text-red" />
+                  <span>{business.phone}</span>
+                </a>
+                <p className="flex items-start gap-3 leading-6">
+                  <MapPin size={17} className="mt-1 shrink-0 text-red" />
+                  <span>{business.address}</span>
+                </p>
+              </div>
+            </section>
+          </aside>
+        </div>
       </main>
       <SiteFooter />
       <MobileNav />

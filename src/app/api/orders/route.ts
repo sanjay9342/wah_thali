@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCouponsFromDb, getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
+import { createRazorpayOrder } from "@/lib/razorpay";
 import type { CartLine, RestaurantSettings } from "@/lib/types";
 
 const orderItemSchema = z.object({
@@ -16,6 +17,7 @@ const orderSchema = z.object({
   customerName: z.string().min(1),
   couponCode: z.string().trim().optional(),
   pinCode: z.string().trim().optional(),
+  paymentMethod: z.enum(["COD", "RAZORPAY"]).default("COD"),
   items: z.array(orderItemSchema).min(1),
 });
 
@@ -91,7 +93,12 @@ export async function GET() {
 
   const orders = await prisma.order.findMany({
     orderBy: { createdAt: "desc" },
-    include: { customer: true, items: true, payments: true, timeline: true },
+    include: {
+      customer: { select: { id: true, name: true, mobile: true, email: true } },
+      items: true,
+      payments: true,
+      timeline: true,
+    },
     take: 100,
   });
 
@@ -157,6 +164,30 @@ export async function POST(request: Request) {
   }
 
   const orderNumber = await getNextOrderNumber();
+  if (data.paymentMethod === "RAZORPAY" && !settings.onlinePaymentsEnabled) {
+    return NextResponse.json({ error: "Online payments are not enabled right now." }, { status: 423 });
+  }
+
+  const razorpayOrder = data.paymentMethod === "RAZORPAY"
+    ? await createRazorpayOrder({
+        amountRupees: calculated.grandTotal,
+        receipt: orderNumber,
+        notes: {
+          orderNumber,
+          customerMobile: data.customerMobile,
+        },
+      })
+    : null;
+
+  if (data.paymentMethod === "RAZORPAY") {
+    if (!razorpayOrder?.ok) {
+      console.error("Razorpay order creation failed.", {
+        status: razorpayOrder?.status,
+        message: razorpayOrder?.message,
+      });
+      return NextResponse.json({ error: "Online payment could not be started. Please try again." }, { status: 502 });
+    }
+  }
 
   const order = await prisma.$transaction(async (tx) => {
     for (const item of calculated.items) {
@@ -176,7 +207,9 @@ export async function POST(request: Request) {
         discount: calculated.discount,
         gst: calculated.gst,
         grandTotal: calculated.grandTotal,
-        status: settings.autoAcceptOrders ? "CONFIRMED" : "NEW",
+        status: data.paymentMethod === "RAZORPAY"
+          ? "PENDING_PAYMENT"
+          : settings.autoAcceptOrders ? "CONFIRMED" : "NEW",
         customer: {
           connectOrCreate: {
             where: { mobile: data.customerMobile },
@@ -193,16 +226,33 @@ export async function POST(request: Request) {
         },
         timeline: {
           create: {
-            toStatus: settings.autoAcceptOrders ? "CONFIRMED" : "NEW",
+            toStatus: data.paymentMethod === "RAZORPAY"
+              ? "PENDING_PAYMENT"
+              : settings.autoAcceptOrders ? "CONFIRMED" : "NEW",
             note: [
-              settings.autoAcceptOrders ? "Order auto accepted from admin settings." : "Order created from website checkout.",
+              data.paymentMethod === "RAZORPAY"
+                ? "Order created and waiting for Razorpay payment."
+                : settings.autoAcceptOrders ? "Order auto accepted from admin settings." : "Order created from website checkout.",
               calculated.couponCode ? `Coupon ${calculated.couponCode} applied.` : "",
               data.pinCode ? `Location: PIN ${data.pinCode}` : "",
             ].filter(Boolean).join(" "),
           },
         },
+        payments: {
+          create: {
+            provider: data.paymentMethod === "RAZORPAY" ? "RAZORPAY" : "COD",
+            providerPaymentId: razorpayOrder?.ok ? razorpayOrder.order.id : undefined,
+            status: data.paymentMethod === "RAZORPAY" ? "CREATED" : "COD_PENDING",
+            amount: calculated.grandTotal,
+          },
+        },
       },
-      include: { customer: true, items: true, timeline: true },
+      include: {
+        customer: { select: { id: true, name: true, mobile: true, email: true } },
+        items: true,
+        payments: true,
+        timeline: true,
+      },
     });
   }).catch((error) => {
     console.error("Order creation transaction failed.", error);
@@ -221,7 +271,15 @@ export async function POST(request: Request) {
     metadata: { grandTotal: order.grandTotal, couponCode: calculated.couponCode },
   });
 
-  return NextResponse.json({ order }, { status: 201 });
+  return NextResponse.json({
+    order,
+    razorpay: razorpayOrder?.ok ? {
+      keyId: razorpayOrder.keyId,
+      orderId: razorpayOrder.order.id,
+      amount: razorpayOrder.order.amount,
+      currency: razorpayOrder.order.currency,
+    } : undefined,
+  }, { status: 201 });
 }
 
 function getStoreStatusMessage(settings: RestaurantSettings) {

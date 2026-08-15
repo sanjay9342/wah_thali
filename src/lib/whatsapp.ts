@@ -1,0 +1,100 @@
+import "server-only";
+
+type WhatsAppSendResult =
+  | { ok: true; messageId?: string }
+  | { ok: false; status?: number; message: string };
+
+function readEnv(key: string) {
+  const raw = process.env[key]?.trim();
+  return raw?.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1") ?? "";
+}
+
+export function getWhatsAppOtpConfigStatus() {
+  const required = [
+    "META_WHATSAPP_PHONE_NUMBER_ID",
+    "META_WHATSAPP_ACCESS_TOKEN",
+    "META_WHATSAPP_OTP_TEMPLATE_NAME",
+  ];
+  const missing = required.filter((key) => !readEnv(key));
+  return { configured: missing.length === 0, missing };
+}
+
+function toWhatsAppPhone(mobile: string) {
+  const digits = mobile.replace(/\D/g, "");
+  if (digits.length > 10) return digits;
+
+  const countryCode = readEnv("META_WHATSAPP_DEFAULT_COUNTRY_CODE") || "91";
+  return `${countryCode.replace(/\D/g, "")}${digits.slice(-10)}`;
+}
+
+function getTemplateComponents(code: string) {
+  const components: Array<Record<string, unknown>> = [
+    {
+      type: "body",
+      parameters: [{ type: "text", text: code }],
+    },
+  ];
+
+  const buttonSubType = readEnv("META_WHATSAPP_OTP_BUTTON_SUB_TYPE");
+  if (buttonSubType) {
+    components.push({
+      type: "button",
+      sub_type: buttonSubType,
+      index: readEnv("META_WHATSAPP_OTP_BUTTON_INDEX") || "0",
+      parameters: [{ type: "text", text: code }],
+    });
+  }
+
+  return components;
+}
+
+export async function sendWhatsAppOtp(mobile: string, code: string): Promise<WhatsAppSendResult> {
+  const status = getWhatsAppOtpConfigStatus();
+  if (!status.configured) {
+    return {
+      ok: false,
+      message: `WhatsApp OTP is not configured. Missing: ${status.missing.join(", ")}`,
+    };
+  }
+
+  const graphApiVersion = readEnv("META_GRAPH_API_VERSION") || "v23.0";
+  const phoneNumberId = readEnv("META_WHATSAPP_PHONE_NUMBER_ID");
+  const accessToken = readEnv("META_WHATSAPP_ACCESS_TOKEN");
+  const templateName = readEnv("META_WHATSAPP_OTP_TEMPLATE_NAME");
+  const languageCode = readEnv("META_WHATSAPP_LANGUAGE_CODE") || "en_US";
+  const endpoint = `https://graph.facebook.com/${graphApiVersion}/${phoneNumberId}/messages`;
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: toWhatsAppPhone(mobile),
+      type: "template",
+      template: {
+        name: templateName,
+        language: { code: languageCode },
+        components: getTemplateComponents(code),
+      },
+    }),
+  });
+
+  const data = await response.json().catch(() => null) as {
+    messages?: Array<{ id?: string }>;
+    error?: { message?: string };
+  } | null;
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: response.status,
+      message: data?.error?.message || "Meta WhatsApp Cloud API rejected the OTP message.",
+    };
+  }
+
+  return { ok: true, messageId: data?.messages?.[0]?.id };
+}

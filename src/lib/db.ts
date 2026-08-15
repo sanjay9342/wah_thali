@@ -355,7 +355,7 @@ export async function getAdminOrdersFromDb(): Promise<AdminOrder[]> {
 
   const orders = await prisma.order.findMany({
     include: {
-      customer: true,
+      customer: { select: { id: true, name: true, mobile: true, email: true } },
       items: true,
       payments: true,
       timeline: { orderBy: { createdAt: "asc" } },
@@ -385,7 +385,12 @@ export async function getAdminCustomersFromDb(): Promise<AdminCustomer[]> {
   if (!isDatabaseConfigured()) return [];
 
   const customers = await prisma.customer.findMany({
-    include: {
+    select: {
+      id: true,
+      name: true,
+      mobile: true,
+      email: true,
+      updatedAt: true,
       loyalty: true,
       orders: { orderBy: { createdAt: "desc" } },
     },

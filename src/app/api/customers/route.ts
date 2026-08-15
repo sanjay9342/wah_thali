@@ -9,11 +9,24 @@ const customerSchema = z.object({
   email: z.string().email().optional(),
 });
 
-function toPublicCustomer<Customer extends { passwordHash?: string | null }>(customer: Customer) {
-  const publicCustomer = { ...customer };
+function toPublicCustomer<Customer extends object>(customer: Customer) {
+  const publicCustomer = { ...customer } as Customer & { passwordHash?: string | null };
   delete publicCustomer.passwordHash;
   return publicCustomer;
 }
+
+const publicCustomerSelect = {
+  id: true,
+  name: true,
+  mobile: true,
+  email: true,
+  birthday: true,
+  anniversary: true,
+  createdAt: true,
+  updatedAt: true,
+  loyalty: true,
+  orders: { orderBy: { createdAt: "desc" as const }, take: 5 },
+};
 
 export async function GET() {
   if (!isDatabaseConfigured()) {
@@ -22,7 +35,7 @@ export async function GET() {
 
   const customers = await prisma.customer.findMany({
     orderBy: { updatedAt: "desc" },
-    include: { loyalty: true, orders: { orderBy: { createdAt: "desc" }, take: 5 } },
+    select: publicCustomerSelect,
   });
 
   return NextResponse.json({ customers: customers.map(toPublicCustomer), configured: true });
@@ -45,6 +58,7 @@ export async function POST(request: Request) {
       loyalty: { create: { points: 0, tier: "Starter" } },
     },
     update: parsed.data,
+    select: publicCustomerSelect,
   });
 
   await logActivity({

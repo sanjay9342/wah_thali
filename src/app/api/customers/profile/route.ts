@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { hashPassword, normalizeEmail, normalizeMobile } from "@/lib/customer-auth";
+import { verifyCustomerOtp } from "@/lib/customer-otp";
 import { logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
@@ -9,9 +10,18 @@ const profileSchema = z.object({
   mobile: z.string().min(8),
   email: z.string().email().optional().or(z.literal("")),
   password: z.string().min(6).optional().or(z.literal("")),
+  otp: z.string().min(4).optional(),
 });
 
-const customerInclude = {
+const publicCustomerSelect = {
+  id: true,
+  name: true,
+  mobile: true,
+  email: true,
+  birthday: true,
+  anniversary: true,
+  createdAt: true,
+  updatedAt: true,
   addresses: true,
   loyalty: true,
   orders: {
@@ -21,10 +31,14 @@ const customerInclude = {
   },
 };
 
-function toPublicCustomer<Customer extends { passwordHash?: string | null }>(customer: Customer) {
-  const publicCustomer = { ...customer };
+function toPublicCustomer<Customer extends object>(customer: Customer) {
+  const publicCustomer = { ...customer } as Customer & { passwordHash?: string | null };
   delete publicCustomer.passwordHash;
   return publicCustomer;
+}
+
+function isMissingPasswordHashColumn(error: unknown) {
+  return error instanceof Error && error.message.includes("Customer.passwordHash");
 }
 
 export async function GET(request: Request) {
@@ -40,7 +54,7 @@ export async function GET(request: Request) {
 
   const customer = await prisma.customer.findUnique({
     where: { mobile },
-    include: customerInclude,
+    select: publicCustomerSelect,
   });
 
   return NextResponse.json({ customer: customer ? toPublicCustomer(customer) : null, configured: true });
@@ -66,29 +80,51 @@ export async function POST(request: Request) {
   }
 
   if (email) {
-    const existingEmailCustomer = await prisma.customer.findUnique({ where: { email } });
+    const existingEmailCustomer = await prisma.customer.findUnique({
+      where: { email },
+      select: { mobile: true },
+    });
     if (existingEmailCustomer && existingEmailCustomer.mobile !== mobile) {
       return NextResponse.json({ error: "This email is already linked to another account." }, { status: 409 });
     }
   }
 
+  const otp = parsed.data.otp?.trim();
+  if (!otp) {
+    return NextResponse.json({ error: "Please verify your WhatsApp OTP before saving your profile." }, { status: 401 });
+  }
+
+  const otpResult = await verifyCustomerOtp(mobile, "signup", otp);
+  if (!otpResult.ok) {
+    return NextResponse.json({ error: otpResult.message }, { status: 401 });
+  }
+
   const passwordHash = password ? await hashPassword(password) : undefined;
-  const customer = await prisma.customer.upsert({
+  const upsertCustomer = (includePassword: boolean) => prisma.customer.upsert({
     where: { mobile },
     create: {
       name,
       mobile,
       email: email || undefined,
-      passwordHash,
+      ...(includePassword && passwordHash ? { passwordHash } : {}),
       loyalty: { create: { points: 0, tier: "Starter" } },
     },
     update: {
       name,
       email: email || null,
-      ...(passwordHash ? { passwordHash } : {}),
+      ...(includePassword && passwordHash ? { passwordHash } : {}),
     },
-    include: customerInclude,
+    select: publicCustomerSelect,
   });
+
+  let customer: Awaited<ReturnType<typeof upsertCustomer>>;
+  try {
+    customer = await upsertCustomer(true);
+  } catch (error) {
+    if (!isMissingPasswordHashColumn(error)) throw error;
+    console.error("Customer.passwordHash is missing in the database. Saving profile without password hash.", error);
+    customer = await upsertCustomer(false);
+  }
 
   await logActivity({
     type: "CUSTOMER_PROFILE_SAVED",

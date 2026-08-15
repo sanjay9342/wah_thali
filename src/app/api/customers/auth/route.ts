@@ -18,7 +18,11 @@ const authSchema = z.discriminatedUnion("method", [
   }),
 ]);
 
-const customerInclude = {
+const publicCustomerSelect = {
+  id: true,
+  name: true,
+  mobile: true,
+  email: true,
   addresses: true,
   loyalty: true,
   orders: {
@@ -28,8 +32,13 @@ const customerInclude = {
   },
 };
 
-function toPublicCustomer<Customer extends { passwordHash?: string | null }>(customer: Customer) {
-  const publicCustomer = { ...customer };
+const passwordCustomerSelect = {
+  ...publicCustomerSelect,
+  passwordHash: true,
+};
+
+function toPublicCustomer<Customer extends object>(customer: Customer) {
+  const publicCustomer = { ...customer } as Customer & { passwordHash?: string | null };
   delete publicCustomer.passwordHash;
   return publicCustomer;
 }
@@ -48,7 +57,10 @@ export async function POST(request: Request) {
     const email = normalizeEmail(parsed.data.email);
     const customer = await prisma.customer.findUnique({
       where: { email },
-      include: customerInclude,
+      select: passwordCustomerSelect,
+    }).catch((error) => {
+      console.error("Password login failed while reading customer password hash.", error);
+      return null;
     });
 
     const validPassword = await verifyPassword(parsed.data.password, customer?.passwordHash);
@@ -79,7 +91,7 @@ export async function POST(request: Request) {
 
   const customer = await prisma.customer.findUnique({
     where: { mobile },
-    include: customerInclude,
+    select: publicCustomerSelect,
   });
 
   if (!customer) {

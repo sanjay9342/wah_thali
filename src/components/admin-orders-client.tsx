@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { BellRing, CheckCircle2, Clock, MessageCircle, Printer, RefreshCw, XCircle } from "lucide-react";
-import Link from "next/link";
+import { AdminSectionNav } from "@/components/admin-section-nav";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 import { formatRupees } from "@/lib/pricing";
 import { canTransitionOrder } from "@/lib/state-machines";
@@ -18,6 +18,7 @@ const declineReasons = [
 ];
 
 const statusCopy: Record<OrderStatus, { label: string; customer: string }> = {
+  PENDING_PAYMENT: { label: "Payment pending", customer: "Your payment is still pending." },
   NEW: { label: "New", customer: "We received your order." },
   CONFIRMED: { label: "Accepted", customer: "Good news, your order has been accepted." },
   PREPARING: { label: "Preparing", customer: "Your food is being prepared fresh." },
@@ -144,7 +145,7 @@ export function AdminOrdersClient({
   }
 
   const counters = useMemo(
-    () => ["NEW", "CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY"].map((status) => [status, orders.filter((order) => order.status === status).length]),
+    () => ["PENDING_PAYMENT", "NEW", "CONFIRMED", "PREPARING"].map((status) => [status, orders.filter((order) => order.status === status).length]),
     [orders],
   );
 
@@ -161,12 +162,12 @@ export function AdminOrdersClient({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href="/admin" className="inline-flex h-11 items-center rounded-lg border border-border px-4 font-black">Dashboard</Link>
             <button disabled={isPending} onClick={handleRefresh} className="inline-flex h-11 min-w-36 items-center justify-center gap-2 rounded-lg bg-maroon px-4 font-black text-white disabled:opacity-60">
               <RefreshCw size={18} className={isPending ? "animate-spin" : ""} /> {isPending ? "Refreshing..." : "Refresh"}
             </button>
           </div>
         </div>
+        <AdminSectionNav />
 
         {newOrders.length ? (
           <div className="mt-4 flex items-center gap-3 rounded-xl border border-red/20 bg-red/10 px-4 py-3 font-black text-maroon">

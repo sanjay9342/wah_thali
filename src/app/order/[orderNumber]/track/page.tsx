@@ -31,7 +31,11 @@ export default async function TrackPage({
 
   const order = await prisma.order.findUnique({
     where: { orderNumber },
-    include: { customer: true, items: true, timeline: { orderBy: { createdAt: "asc" } } },
+    include: {
+      customer: { select: { id: true, name: true, mobile: true, email: true } },
+      items: true,
+      timeline: { orderBy: { createdAt: "asc" } },
+    },
   });
 
   if (!order) notFound();

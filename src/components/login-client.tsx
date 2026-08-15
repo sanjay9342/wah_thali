@@ -203,17 +203,6 @@ export function LoginClient() {
         return;
       }
 
-      const otpResponse = await fetch("/api/customers/otp/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mobile: cleanMobile(form.mobile), purpose: "signup", otp: form.otp.trim() }),
-      });
-      const otpData = await otpResponse.json();
-      if (!otpResponse.ok) {
-        setMessage(otpData.error || "Could not verify WhatsApp OTP.");
-        return;
-      }
-
       const response = await fetch("/api/customers/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -222,6 +211,7 @@ export function LoginClient() {
           mobile: cleanMobile(form.mobile),
           email: form.email.trim(),
           password: form.password,
+          otp: form.otp.trim(),
         }),
       });
       const data = await response.json();
