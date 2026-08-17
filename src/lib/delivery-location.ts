@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getDeliveryCoverage, type DeliveryCoverageSettings } from "@/lib/delivery-radius";
 
 export type DeliveryLocation = {
   label: string;
@@ -51,10 +52,13 @@ export function extractPinCode(value: string) {
   return value.match(/\b\d{6}\b/)?.[0] ?? "";
 }
 
-export function isServiceableLocation(location: DeliveryLocation, serviceablePins: string[]) {
-  void location;
-  void serviceablePins;
-  return true;
+export function isServiceableLocation(location: DeliveryLocation, settingsOrPins: DeliveryCoverageSettings | string[]) {
+  if (Array.isArray(settingsOrPins)) return true;
+  return getDeliveryCoverage(location, settingsOrPins).serviceable;
+}
+
+export function getDeliveryLocationCoverage(location: DeliveryLocation, settings: DeliveryCoverageSettings) {
+  return getDeliveryCoverage(location, settings);
 }
 
 export function useDeliveryLocation() {

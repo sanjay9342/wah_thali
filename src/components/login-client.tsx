@@ -233,7 +233,7 @@ export function LoginClient() {
       <main className="min-h-screen bg-white text-charcoal">
         <section className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col overflow-hidden bg-white">
           <div className="relative z-0 h-[500px] overflow-hidden bg-maroon">
-            <Image src="/wah-thali-meal-cutout-v2.png" alt="" fill priority sizes="430px" className="object-contain object-center opacity-95" />
+            <Image src="/wah-thali-meal-cutout-v2.png" alt="" fill loading="eager" sizes="430px" className="object-contain object-center opacity-95" />
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-48 bg-gradient-to-b from-transparent via-white/55 to-white" />
           </div>
           <div className="relative z-10 -mt-14 flex flex-1 flex-col bg-gradient-to-b from-white/5 via-white/82 via-35% to-white px-6 pb-10 pt-12 text-center">

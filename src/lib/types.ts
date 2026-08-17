@@ -101,6 +101,11 @@ export type BusinessSettings = {
   freeDeliveryThreshold: number;
   minimumOrder: number;
   serviceablePins: string[];
+  locationRestrictionEnabled: boolean;
+  kitchenAddress: string;
+  kitchenLatitude: string;
+  kitchenLongitude: string;
+  deliveryRadiusKm: number;
   openingHours: string;
   supportPhone: string;
   whatsappNumber: string;

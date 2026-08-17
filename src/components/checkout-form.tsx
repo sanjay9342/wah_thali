@@ -8,6 +8,8 @@ import { business } from "@/lib/business";
 import { writeStoredCart } from "@/lib/cart-storage";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 import { saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
+import { getDeliveryCoverage } from "@/lib/delivery-radius";
+import { getStoreOrderingStatus } from "@/lib/store-hours";
 import { useStoredCart } from "@/lib/use-stored-cart";
 import type { RestaurantSettings } from "@/lib/types";
 
@@ -34,11 +36,17 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
     latitude: deliveryLocation.latitude ?? "",
     longitude: deliveryLocation.longitude ?? "",
   });
-  const orderingDisabled = restaurantSettings.storeMode === "CLOSED" || restaurantSettings.storeMode === "PAUSED";
-  const statusMessage = getStoreStatusMessage(restaurantSettings);
+  const orderingStatus = getStoreOrderingStatus(restaurantSettings);
+  const deliveryCoverage = getDeliveryCoverage({
+    pinCode: deliveryLocation.pinCode,
+    latitude: deliveryLocation.latitude,
+    longitude: deliveryLocation.longitude,
+  }, restaurantSettings);
+  const orderingDisabled = orderingStatus.unavailable || !deliveryCoverage.serviceable;
+  const statusMessage = orderingStatus.message;
   const [message, setMessage] = useState(
     orderingDisabled
-      ? statusMessage
+      ? orderingStatus.unavailable ? statusMessage : deliveryCoverage.message
       : paymentMethods[0]
         ? `${paymentMethods[0]} is selected. You can place the order.`
         : "No payment method is enabled. Please contact support.",
@@ -86,6 +94,8 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
           customerName: address.name.trim(),
           customerMobile: address.phone.trim(),
           pinCode: address.pinCode.trim(),
+          latitude: String(address.latitude || deliveryLocation.latitude || ""),
+          longitude: String(address.longitude || deliveryLocation.longitude || ""),
           items: cartLines,
         }),
       });
@@ -212,7 +222,7 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
                 </span>
               ))}
             </div>
-            <p className="mt-2">Delivery is currently open for all locations.</p>
+            <p className="mt-2">{deliveryCoverage.message}</p>
           </div>
         </div>
 
@@ -327,10 +337,3 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
   );
 }
 
-function getStoreStatusMessage(settings: RestaurantSettings) {
-  if (settings.storeStatusReason.trim()) return settings.storeStatusReason;
-  if (settings.storeMode === "BUSY") return settings.busyMessage;
-  if (settings.storeMode === "PAUSED") return settings.pausedMessage;
-  if (settings.storeMode === "CLOSED") return settings.closedMessage;
-  return "Restaurant is accepting orders.";
-}

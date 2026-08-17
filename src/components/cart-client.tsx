@@ -30,9 +30,10 @@ import {
 import { calculateCartTotals, formatRupees, getPricableCartLines } from "@/lib/pricing";
 import { writeStoredCart } from "@/lib/cart-storage";
 import { readCustomerSession, saveCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
-import { extractPinCode, isServiceableLocation, saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
+import { extractPinCode, getDeliveryLocationCoverage, saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
 import { addNotification } from "@/lib/notifications";
 import { useStoredCart } from "@/lib/use-stored-cart";
+import { getStoreOrderingStatus } from "@/lib/store-hours";
 import type { CartLine, Coupon, Product, RestaurantSettings } from "@/lib/types";
 
 type PaymentMethod = "COD" | "RAZORPAY";
@@ -98,6 +99,7 @@ export function CartClient({
   const [showReceiverSheet, setShowReceiverSheet] = useState(false);
   const [showLocationSheet, setShowLocationSheet] = useState(false);
   const [showCookingSheet, setShowCookingSheet] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
   const [checkoutMessage, setCheckoutMessage] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
@@ -112,6 +114,8 @@ export function CartClient({
     area: "",
     details: "",
     pinCode: "",
+    latitude: "",
+    longitude: "",
     tag: "Home" as "Home" | "Work" | "Other",
   }));
   const appliedAddRef = useRef(false);
@@ -124,10 +128,13 @@ export function CartClient({
     () => calculateCartTotals(validLines, coupon, initialProducts, initialCoupons, restaurantSettings),
     [initialCoupons, initialProducts, validLines, coupon, restaurantSettings],
   );
-  const serviceable = isServiceableLocation(deliveryLocation, restaurantSettings.serviceablePins);
+  const deliveryCoverage = getDeliveryLocationCoverage(deliveryLocation, restaurantSettings);
+  const serviceable = deliveryCoverage.serviceable;
   const suggestions = initialProducts.filter((product) => !validLines.some((line) => line.productId === product.id)).slice(0, 6);
-  const storeOrderingDisabled = restaurantSettings.storeMode === "CLOSED" || restaurantSettings.storeMode === "PAUSED";
-  const statusMessage = getStoreStatusMessage(restaurantSettings);
+  const orderingStatus = getStoreOrderingStatus(restaurantSettings);
+  const storeOrderingDisabled = orderingStatus.unavailable;
+  const statusMessage = orderingStatus.message;
+  const showStoreStatus = restaurantSettings.storeMode !== "OPEN" || orderingStatus.outsideOrderingHours;
   const appliedCoupon = initialCoupons.find((item) => item.code === coupon);
   const featuredCoupon = initialCoupons[0];
   const featuredCouponValue = featuredCoupon ? getCouponBenefitText(featuredCoupon) : "";
@@ -266,6 +273,8 @@ export function CartClient({
       area: deliveryLocation.address === "Select delivery location" ? "" : deliveryLocation.address,
       details: "",
       pinCode: deliveryLocation.pinCode ?? extractPinCode(deliveryLocation.address),
+      latitude: deliveryLocation.latitude ?? "",
+      longitude: deliveryLocation.longitude ?? "",
       tag: deliveryLocation.label === "Work" || deliveryLocation.label === "Other" ? deliveryLocation.label : "Home",
     });
     setShowLocationSheet(true);
@@ -279,10 +288,59 @@ export function CartClient({
       label: locationDraft.tag,
       address: details ? `${details}, ${area}` : area,
       pinCode,
-      latitude: deliveryLocation.latitude,
-      longitude: deliveryLocation.longitude,
+      latitude: locationDraft.latitude || deliveryLocation.latitude,
+      longitude: locationDraft.longitude || deliveryLocation.longitude,
     });
     setShowLocationSheet(false);
+  }
+
+  function detectDeliveryLocation() {
+    if (!("geolocation" in navigator)) {
+      setCheckoutMessage("Location detection is not supported on this browser.");
+      return;
+    }
+
+    setLocating(true);
+    setCheckoutMessage("Detecting your current location...");
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const latitude = position.coords.latitude.toFixed(6);
+        const longitude = position.coords.longitude.toFixed(6);
+        let area = locationDraft.area;
+        let pinCode = locationDraft.pinCode;
+
+        try {
+          const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&lat=${latitude}&lon=${longitude}`);
+          const data = await response.json();
+          area = data.display_name || area || "Detected location";
+          pinCode = extractPinCode(area) || pinCode;
+        } catch {
+          area = area || "Detected location";
+        }
+
+        setLocationDraft((current) => ({
+          ...current,
+          area,
+          pinCode,
+          latitude,
+          longitude,
+        }));
+        saveDeliveryLocation({
+          label: locationDraft.tag,
+          address: area,
+          pinCode,
+          latitude,
+          longitude,
+        });
+        setCheckoutMessage("Current location saved for delivery check.");
+        setLocating(false);
+      },
+      (error) => {
+        setCheckoutMessage(error.message || "Location permission was denied.");
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+    );
   }
 
   function saveCookingNote(note: string) {
@@ -422,6 +480,8 @@ export function CartClient({
           customerMobile: receiverMobile,
           couponCode: coupon,
           pinCode: deliveryLocation.pinCode,
+          latitude: deliveryLocation.latitude,
+          longitude: deliveryLocation.longitude,
           paymentMethod: selectedPaymentMethod,
           items: validLines,
         }),
@@ -480,11 +540,11 @@ export function CartClient({
       <div className="mx-auto max-w-md rounded-[28px] bg-white p-6 text-center shadow-sm ring-1 ring-border">
         <h1 className="text-2xl font-black text-maroon">Your cart is empty</h1>
         <p className="mt-3 text-sm text-muted">Add your favourite Wah Thali dishes to continue.</p>
-        {restaurantSettings.storeMode !== "OPEN" ? (
+        {showStoreStatus ? (
           <div className="mt-4 rounded-2xl border border-red/20 bg-cream p-4 text-left text-sm text-maroon">
             <p className="flex items-center gap-2 font-black">
               <Store size={17} className="text-red" />
-              {restaurantSettings.storeMode === "BUSY" ? "Kitchen busy" : restaurantSettings.storeMode === "PAUSED" ? "Ordering paused" : "Restaurant closed"}
+              {orderingStatus.title}
             </p>
             <p className="mt-1 text-xs font-bold text-muted">{statusMessage}</p>
           </div>
@@ -748,11 +808,11 @@ export function CartClient({
       </div>
       ) : null}
 
-      {restaurantSettings.storeMode !== "OPEN" ? (
+      {showStoreStatus ? (
         <div className="mx-5 mt-4 rounded-2xl border border-red/20 bg-white p-4 text-sm text-maroon">
           <p className="flex items-center gap-2 font-black">
             <Store size={17} className="text-red" />
-            {restaurantSettings.storeMode === "BUSY" ? "Kitchen busy" : restaurantSettings.storeMode === "PAUSED" ? "Ordering paused" : "Restaurant closed"}
+            {orderingStatus.title}
           </p>
           <p className="mt-1 text-xs font-bold text-muted">{statusMessage}</p>
         </div>
@@ -761,12 +821,10 @@ export function CartClient({
         <div className="mx-5 mt-4 rounded-2xl border border-maroon/15 bg-white p-4 text-sm text-maroon">
           <p className="flex items-center gap-2 font-black">
             <MapPin size={17} />
-            {deliveryLocation.pinCode ? "Service not available" : "Delivery PIN required"}
+            {deliveryCoverage.needsLocation ? "Current location required" : "Service not available"}
           </p>
           <p className="mt-1 text-xs font-bold text-muted">
-            {deliveryLocation.pinCode
-              ? "This PIN code is not added in Admin Settings. Choose another delivery location."
-              : "Add your delivery PIN code to check if this order can be delivered."}
+            {deliveryCoverage.message}
           </p>
           <button onClick={openLocationSheet} className="mt-3 h-10 rounded-xl bg-maroon px-4 text-xs font-black text-white">
             Choose Location
@@ -1104,8 +1162,13 @@ export function CartClient({
             <span className="absolute left-1/2 top-[56%] grid h-16 w-16 -translate-x-1/2 place-items-center rounded-full bg-maroon text-white shadow-2xl">
               <MapPin size={34} fill="currentColor" />
             </span>
-            <button className="absolute bottom-5 left-1/2 inline-flex h-11 -translate-x-1/2 items-center gap-2 rounded-xl bg-white px-4 text-[14px] font-black text-maroon shadow-lg">
-              <LocateFixed size={17} /> Use current location
+            <button
+              type="button"
+              onClick={detectDeliveryLocation}
+              disabled={locating}
+              className="absolute bottom-5 left-1/2 inline-flex h-11 -translate-x-1/2 items-center gap-2 rounded-xl bg-white px-4 text-[14px] font-black text-maroon shadow-lg disabled:cursor-wait disabled:opacity-70"
+            >
+              <LocateFixed size={17} /> {locating ? "Detecting..." : "Use current location"}
             </button>
           </div>
           <div className="mt-5">
@@ -1133,7 +1196,7 @@ export function CartClient({
               className="mt-4 h-14 w-full rounded-xl border border-border bg-white px-4 text-[15px] font-black text-charcoal outline-none"
               placeholder="PIN code*"
             />
-            <p className="mt-2 text-[12px] font-bold text-muted">Delivery is currently open for all locations.</p>
+            <p className="mt-2 text-[12px] font-bold text-muted">{deliveryCoverage.message}</p>
             <p className="mt-5 text-[14px] font-black text-muted">Save address as</p>
             <div className="mt-3 flex gap-2">
               {[
@@ -1313,14 +1376,6 @@ function CartInfoRow({
   }
 
   return href ? <Link href={href}>{content}</Link> : content;
-}
-
-function getStoreStatusMessage(settings: RestaurantSettings) {
-  if (settings.storeStatusReason.trim()) return settings.storeStatusReason;
-  if (settings.storeMode === "BUSY") return settings.busyMessage;
-  if (settings.storeMode === "PAUSED") return settings.pausedMessage;
-  if (settings.storeMode === "CLOSED") return settings.closedMessage;
-  return "Restaurant is accepting orders.";
 }
 
 function getCouponBenefitText(coupon: Coupon) {

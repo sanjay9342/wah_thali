@@ -2,12 +2,13 @@
 
 import { useState, useTransition } from "react";
 import type { ReactNode } from "react";
-import { BellRing, Clock3, CreditCard, ImagePlus, Save, Settings2, Store, Trash2, Truck } from "lucide-react";
+import { BellRing, Clock3, CreditCard, ImagePlus, LocateFixed, Save, Settings2, Store, Trash2, Truck } from "lucide-react";
 import { AdminSectionNav } from "@/components/admin-section-nav";
-import type { BusinessSettings, HomeSlide } from "@/lib/types";
+import { buildOpeningHours, minutesToTimeInput, parseOpeningHours } from "@/lib/store-hours";
+import type { BusinessSettings, HomeSlide, StoreMode } from "@/lib/types";
 
 type AdvancedSettings = {
-  storeMode: string;
+  storeMode: StoreMode;
   storeStatusReason: string;
   busyMessage: string;
   pausedMessage: string;
@@ -46,6 +47,19 @@ const defaultAdvanced: AdvancedSettings = {
   adminDailyDigestTime: "21:00",
 };
 
+const storeModeOptions: { mode: StoreMode; label: string; helper: string }[] = [
+  { mode: "OPEN", label: "Open now", helper: "Accept orders" },
+  { mode: "BUSY", label: "Busy", helper: "Orders open" },
+  { mode: "PAUSED", label: "Pause", helper: "Stop briefly" },
+  { mode: "CLOSED", label: "Close now", helper: "Stop orders" },
+];
+
+function defaultStoreModeReason(mode: StoreMode) {
+  if (mode === "CLOSED") return "Store is closed right now. Please wait for opening hours.";
+  if (mode === "PAUSED") return "Ordering is paused for a short time. Please check back soon.";
+  return "";
+}
+
 export function AdminSettingsClient({
   initialSettings,
   initialAdvanced,
@@ -57,6 +71,7 @@ export function AdminSettingsClient({
   initialSlides: HomeSlide[];
   initialCategories: string[];
 }) {
+  const initialHours = parseOpeningHours(initialSettings.openingHours);
   const [settings, setSettings] = useState({
     openingHours: initialSettings.openingHours,
     supportPhone: initialSettings.supportPhone,
@@ -67,12 +82,31 @@ export function AdminSettingsClient({
     packagingFee: String(initialSettings.packagingFee),
     gstRate: String(initialSettings.gstRate),
     serviceablePins: initialSettings.serviceablePins.join(", "),
+    locationRestrictionEnabled: initialSettings.locationRestrictionEnabled,
+    kitchenAddress: initialSettings.kitchenAddress,
+    kitchenLatitude: initialSettings.kitchenLatitude,
+    kitchenLongitude: initialSettings.kitchenLongitude,
+    deliveryRadiusKm: String(initialSettings.deliveryRadiusKm),
   });
-  const [advanced, setAdvanced] = useState<AdvancedSettings>({ ...defaultAdvanced, ...initialAdvanced });
+  const [storeHours, setStoreHours] = useState({
+    opensAt: initialHours ? minutesToTimeInput(initialHours.openingMinutes) : "11:30",
+    closesAt: initialHours ? minutesToTimeInput(initialHours.closingMinutes) : "22:00",
+  });
+  const [advanced, setAdvanced] = useState<AdvancedSettings>({
+    ...defaultAdvanced,
+    ...initialAdvanced,
+    maxOrdersPerSlot: String(initialAdvanced?.maxOrdersPerSlot ?? defaultAdvanced.maxOrdersPerSlot),
+    defaultPrepMinutes: String(initialAdvanced?.defaultPrepMinutes ?? defaultAdvanced.defaultPrepMinutes),
+    rushPrepBufferMinutes: String(initialAdvanced?.rushPrepBufferMinutes ?? defaultAdvanced.rushPrepBufferMinutes),
+    lastOrderBufferMinutes: String(initialAdvanced?.lastOrderBufferMinutes ?? defaultAdvanced.lastOrderBufferMinutes),
+    lowStockAlertThreshold: String(initialAdvanced?.lowStockAlertThreshold ?? defaultAdvanced.lowStockAlertThreshold),
+  });
   const [slides, setSlides] = useState(initialSlides);
   const [slidesDirty, setSlidesDirty] = useState(false);
   const [message, setMessage] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [locatingKitchen, setLocatingKitchen] = useState(false);
+  const [storeModeSaving, setStoreModeSaving] = useState<StoreMode | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function run(task: () => Promise<void>) {
@@ -88,11 +122,16 @@ export function AdminSettingsClient({
 
   function saveSettings() {
     run(async () => {
+      const openingHours = buildOpeningHours(storeHours.opensAt, storeHours.closesAt);
+      if (!openingHours) {
+        throw new Error("Please choose valid opening and closing times.");
+      }
+
       const response = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          openingHours: settings.openingHours,
+          openingHours,
           supportPhone: settings.supportPhone,
           whatsappNumber: settings.whatsappNumber,
           minimumOrder: Number(settings.minimumOrder),
@@ -101,6 +140,11 @@ export function AdminSettingsClient({
           packagingFee: Number(settings.packagingFee),
           gstRate: Number(settings.gstRate),
           serviceablePins: settings.serviceablePins.split(",").map((pin) => pin.trim()).filter(Boolean),
+          locationRestrictionEnabled: settings.locationRestrictionEnabled,
+          kitchenAddress: settings.kitchenAddress,
+          kitchenLatitude: settings.kitchenLatitude,
+          kitchenLongitude: settings.kitchenLongitude,
+          deliveryRadiusKm: Number(settings.deliveryRadiusKm),
           ...advanced,
           maxOrdersPerSlot: Number(advanced.maxOrdersPerSlot),
           defaultPrepMinutes: Number(advanced.defaultPrepMinutes),
@@ -111,8 +155,43 @@ export function AdminSettingsClient({
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Settings save failed.");
-      setMessage("Advanced restaurant settings saved live.");
+      setSettings((current) => ({ ...current, openingHours: data.settings?.openingHours ?? openingHours }));
+      setMessage(`Restaurant settings saved live. Store hours are ${data.settings?.openingHours ?? openingHours}.`);
     });
+  }
+
+  async function publishStoreMode(mode: StoreMode) {
+    const nextReason = mode === "OPEN" || mode === "BUSY" ? "" : advanced.storeStatusReason.trim() || defaultStoreModeReason(mode);
+    const previous = advanced;
+
+    setAdvanced({ ...advanced, storeMode: mode, storeStatusReason: nextReason });
+    setStoreModeSaving(mode);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storeMode: mode,
+          storeStatusReason: nextReason,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Store mode update failed.");
+
+      setAdvanced((current) => ({
+        ...current,
+        storeMode: data.settings?.storeMode ?? mode,
+        storeStatusReason: data.settings?.storeStatusReason ?? nextReason,
+      }));
+      setMessage(mode === "OPEN" ? "Store opened live. Customers can place orders during opening hours." : `Store mode changed to ${mode.toLowerCase()} live.`);
+    } catch (error) {
+      setAdvanced(previous);
+      setMessage(error instanceof Error ? error.message : "Store mode update failed.");
+    } finally {
+      setStoreModeSaving(null);
+    }
   }
 
   function updateSlide(index: number, patch: Partial<HomeSlide>) {
@@ -182,6 +261,46 @@ export function AdminSettingsClient({
     }
   }
 
+  function detectKitchenLocation() {
+    if (!("geolocation" in navigator)) {
+      setMessage("Location detection is not supported on this browser.");
+      return;
+    }
+
+    setLocatingKitchen(true);
+    setMessage("Detecting kitchen location...");
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const latitude = position.coords.latitude.toFixed(6);
+        const longitude = position.coords.longitude.toFixed(6);
+        let kitchenAddress = settings.kitchenAddress;
+
+        try {
+          const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&lat=${latitude}&lon=${longitude}`);
+          const data = await response.json();
+          kitchenAddress = data.display_name || kitchenAddress;
+        } catch {
+          kitchenAddress = kitchenAddress || "Detected kitchen location";
+        }
+
+        setSettings((current) => ({
+          ...current,
+          kitchenAddress,
+          kitchenLatitude: latitude,
+          kitchenLongitude: longitude,
+          locationRestrictionEnabled: true,
+        }));
+        setMessage("Kitchen location detected. Click Save settings to publish the delivery radius.");
+        setLocatingKitchen(false);
+      },
+      (error) => {
+        setMessage(error.message || "Location permission was denied.");
+        setLocatingKitchen(false);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+    );
+  }
+
   return (
     <main className="min-h-screen bg-white">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
@@ -203,30 +322,37 @@ export function AdminSettingsClient({
 
         <section className="mt-6 grid gap-5 lg:grid-cols-3">
           <Panel title="Store mode" icon={<Store className="text-red" size={22} />}>
-            <label className="grid gap-2 text-sm font-bold text-charcoal">
-              Store status
-              <select value={advanced.storeMode} onChange={(event) => setAdvanced({ ...advanced, storeMode: event.target.value })} className="h-11 rounded-lg border border-border bg-cream px-3">
-                <option value="OPEN">Open</option>
-                <option value="BUSY">Busy</option>
-                <option value="PAUSED">Paused</option>
-                <option value="CLOSED">Closed</option>
-              </select>
-            </label>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => setAdvanced({ ...advanced, storeMode: "OPEN", storeStatusReason: "" })}
-                className="h-10 rounded-lg bg-maroon px-3 text-sm font-black text-white"
-              >
-                Store available now
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdvanced({ ...advanced, storeMode: "CLOSED", storeStatusReason: "Store is closed right now. Please wait for opening hours." })}
-                className="h-10 rounded-lg border border-border bg-cream px-3 text-sm font-black text-maroon"
-              >
-                Close store now
-              </button>
+            <div className="rounded-2xl border border-border bg-cream p-2">
+              <p className="px-2 pb-2 text-xs font-black uppercase tracking-widest text-muted">Live store switch</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {storeModeOptions.map((option) => {
+                  const active = advanced.storeMode === option.mode;
+                  const saving = storeModeSaving === option.mode;
+
+                  return (
+                    <button
+                      key={option.mode}
+                      type="button"
+                      onClick={() => publishStoreMode(option.mode)}
+                      disabled={storeModeSaving !== null}
+                      className={`min-h-16 rounded-xl px-4 py-3 text-left shadow-sm transition disabled:cursor-wait disabled:opacity-70 ${
+                        active
+                          ? "bg-maroon text-white ring-2 ring-maroon"
+                          : "border border-border bg-white text-charcoal hover:border-maroon/50 hover:text-maroon"
+                      }`}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="text-base font-black">{saving ? "Updating..." : option.label}</span>
+                        <span className={`h-3 w-3 rounded-full ${active ? "bg-white" : option.mode === "OPEN" || option.mode === "BUSY" ? "bg-green-600" : "bg-red"}`} />
+                      </span>
+                      <span className={`mt-1 block text-xs font-bold ${active ? "text-white/75" : "text-muted"}`}>{option.helper}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-black text-maroon">
+                Current live mode: {advanced.storeMode}
+              </p>
             </div>
             <Input label="Customer status reason" value={advanced.storeStatusReason} onChange={(value) => setAdvanced({ ...advanced, storeStatusReason: value })} />
             <Textarea label="Busy message" value={advanced.busyMessage} onChange={(value) => setAdvanced({ ...advanced, busyMessage: value })} />
@@ -234,7 +360,13 @@ export function AdminSettingsClient({
             <Textarea label="Closed message" value={advanced.closedMessage} onChange={(value) => setAdvanced({ ...advanced, closedMessage: value })} />
             <Toggle label="Auto accept orders" checked={advanced.autoAcceptOrders} onChange={(value) => setAdvanced({ ...advanced, autoAcceptOrders: value })} />
             <Toggle label="Require decline reason" checked={advanced.requireDeclineReason} onChange={(value) => setAdvanced({ ...advanced, requireDeclineReason: value })} />
-            <Input label="Opening hours" value={settings.openingHours} onChange={(value) => setSettings({ ...settings, openingHours: value })} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input type="time" label="Opening time" value={storeHours.opensAt} onChange={(value) => setStoreHours({ ...storeHours, opensAt: value })} />
+              <Input type="time" label="Closing time" value={storeHours.closesAt} onChange={(value) => setStoreHours({ ...storeHours, closesAt: value })} />
+            </div>
+            <p className="rounded-lg border border-border bg-cream px-3 py-2 text-xs font-black text-maroon">
+              Customer display: {buildOpeningHours(storeHours.opensAt, storeHours.closesAt) ?? settings.openingHours}
+            </p>
           </Panel>
 
           <Panel title="Kitchen timing" icon={<Clock3 className="text-red" size={22} />}>
@@ -256,6 +388,21 @@ export function AdminSettingsClient({
             <Input label="Delivery fee" value={settings.deliveryFee} onChange={(value) => setSettings({ ...settings, deliveryFee: value })} />
             <Input label="Free delivery threshold" value={settings.freeDeliveryThreshold} onChange={(value) => setSettings({ ...settings, freeDeliveryThreshold: value })} />
             <Input label="Packaging fee" value={settings.packagingFee} onChange={(value) => setSettings({ ...settings, packagingFee: value })} />
+            <Toggle label="Allow orders only inside delivery radius" checked={settings.locationRestrictionEnabled} onChange={(value) => setSettings({ ...settings, locationRestrictionEnabled: value })} />
+            <Input label="Allowed delivery radius in km" value={settings.deliveryRadiusKm} onChange={(value) => setSettings({ ...settings, deliveryRadiusKm: value })} />
+            <Input label="Kitchen address" value={settings.kitchenAddress} onChange={(value) => setSettings({ ...settings, kitchenAddress: value })} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input label="Kitchen latitude" value={settings.kitchenLatitude} onChange={(value) => setSettings({ ...settings, kitchenLatitude: value })} />
+              <Input label="Kitchen longitude" value={settings.kitchenLongitude} onChange={(value) => setSettings({ ...settings, kitchenLongitude: value })} />
+            </div>
+            <button
+              type="button"
+              onClick={detectKitchenLocation}
+              disabled={locatingKitchen}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-maroon/25 bg-cream px-3 text-sm font-black text-maroon disabled:cursor-wait disabled:opacity-60"
+            >
+              <LocateFixed size={17} /> {locatingKitchen ? "Detecting..." : "Use this device location as kitchen"}
+            </button>
           </Panel>
 
           <Panel title="Payments and tax" icon={<CreditCard className="text-red" size={22} />}>
@@ -364,11 +511,11 @@ function Panel({ title, icon, children }: { title: string; icon: ReactNode; chil
   );
 }
 
-function Input({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function Input({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
   return (
     <label className="grid gap-2 text-sm font-bold text-charcoal">
       {label}
-      <input value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-lg border border-border bg-cream px-3" />
+      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-lg border border-border bg-cream px-3" />
     </label>
   );
 }

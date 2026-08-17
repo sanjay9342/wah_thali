@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCouponsFromDb, getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
+import { getDeliveryCoverage } from "@/lib/delivery-radius";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { createRazorpayOrder } from "@/lib/razorpay";
+import { getStoreOrderingStatus } from "@/lib/store-hours";
 import type { CartLine, RestaurantSettings } from "@/lib/types";
 
 const orderItemSchema = z.object({
@@ -17,6 +19,8 @@ const orderSchema = z.object({
   customerName: z.string().min(1),
   couponCode: z.string().trim().optional(),
   pinCode: z.string().trim().optional(),
+  latitude: z.string().trim().optional(),
+  longitude: z.string().trim().optional(),
   paymentMethod: z.enum(["COD", "RAZORPAY"]).default("COD"),
   items: z.array(orderItemSchema).min(1),
 });
@@ -117,18 +121,25 @@ export async function POST(request: Request) {
 
   const data = parsed.data;
   const settings = await getRestaurantSettingsFromDb();
+  const orderingStatus = getStoreOrderingStatus(settings);
 
-  if (settings.storeMode === "CLOSED" || settings.storeMode === "PAUSED") {
+  if (orderingStatus.unavailable) {
     return NextResponse.json(
-      { error: getStoreStatusMessage(settings), storeMode: settings.storeMode },
+      { error: orderingStatus.message, storeMode: settings.storeMode, outsideOrderingHours: orderingStatus.outsideOrderingHours },
       { status: 423 },
     );
   }
 
-  if (isOutsideOrderingHours(settings)) {
+  const deliveryCoverage = getDeliveryCoverage({
+    pinCode: data.pinCode,
+    latitude: data.latitude,
+    longitude: data.longitude,
+  }, settings);
+
+  if (!deliveryCoverage.serviceable) {
     return NextResponse.json(
-      { error: `Ordering is available during ${settings.openingHours}. Last orders close ${settings.lastOrderBufferMinutes} minutes before closing time.` },
-      { status: 423 },
+      { error: deliveryCoverage.message, needsLocation: deliveryCoverage.needsLocation, distanceKm: deliveryCoverage.distanceKm },
+      { status: 422 },
     );
   }
 
@@ -235,6 +246,8 @@ export async function POST(request: Request) {
                 : settings.autoAcceptOrders ? "Order auto accepted from admin settings." : "Order created from website checkout.",
               calculated.couponCode ? `Coupon ${calculated.couponCode} applied.` : "",
               data.pinCode ? `Location: PIN ${data.pinCode}` : "",
+              data.latitude && data.longitude ? `GPS: ${data.latitude}, ${data.longitude}` : "",
+              deliveryCoverage.distanceKm !== null ? `Distance: ${deliveryCoverage.distanceKm.toFixed(2)} km.` : "",
             ].filter(Boolean).join(" "),
           },
         },
@@ -280,61 +293,6 @@ export async function POST(request: Request) {
       currency: razorpayOrder.order.currency,
     } : undefined,
   }, { status: 201 });
-}
-
-function getStoreStatusMessage(settings: RestaurantSettings) {
-  if (settings.storeStatusReason.trim()) return settings.storeStatusReason;
-  if (settings.storeMode === "PAUSED") return settings.pausedMessage;
-  if (settings.storeMode === "CLOSED") return settings.closedMessage;
-  return "Restaurant is not accepting orders right now.";
-}
-
-function isOutsideOrderingHours(settings: RestaurantSettings) {
-  const range = settings.openingHours.split(/\s*-\s*/);
-  const openingMinutes = range[0] ? parseTimeToMinutes(range[0]) : null;
-  const closingMinutes = range[1] ? parseTimeToMinutes(range[1]) : null;
-  if (openingMinutes === null || closingMinutes === null) return false;
-
-  const nowMinutes = getKolkataMinutes();
-  const lastOrderMinutes = normalizeMinutes(closingMinutes - settings.lastOrderBufferMinutes);
-
-  if (openingMinutes < closingMinutes) {
-    return nowMinutes < openingMinutes || nowMinutes >= lastOrderMinutes;
-  }
-
-  return nowMinutes >= lastOrderMinutes && nowMinutes < openingMinutes;
-}
-
-function getKolkataMinutes() {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Kolkata",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date());
-  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
-  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
-
-  return hour * 60 + minute;
-}
-
-function parseTimeToMinutes(value: string) {
-  const match = value.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/i);
-  if (!match) return null;
-
-  let hour = Number(match[1]);
-  const minute = Number(match[2] ?? 0);
-  const meridiem = match[3]?.toUpperCase();
-
-  if (meridiem === "PM" && hour < 12) hour += 12;
-  if (meridiem === "AM" && hour === 12) hour = 0;
-  if (hour > 23 || minute > 59) return null;
-
-  return hour * 60 + minute;
-}
-
-function normalizeMinutes(value: number) {
-  return ((value % 1440) + 1440) % 1440;
 }
 
 async function getNextOrderNumber() {

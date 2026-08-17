@@ -5,10 +5,8 @@ import {
   ArrowLeft,
   BadgeCheck,
   BadgePercent,
-  Bell,
   Bike,
   BookOpen,
-  ChevronDown,
   ChevronRight,
   Grid3X3,
   Heart,
@@ -33,13 +31,14 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { Header } from "@/components/header";
 import { MobileNav } from "@/components/mobile-nav";
 import { categories as fallbackCategories, products as fallbackProducts } from "@/lib/data";
 import { writeStoredCart } from "@/lib/cart-storage";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
-import { isServiceableLocation, useDeliveryLocation } from "@/lib/delivery-location";
-import { clearNotifications, markNotificationsRead, useNotifications } from "@/lib/notifications";
+import { getDeliveryLocationCoverage, useDeliveryLocation } from "@/lib/delivery-location";
 import { formatRupees, getPricableCartLines, getProductPrice } from "@/lib/pricing";
+import { getStoreOrderingStatus } from "@/lib/store-hours";
 import { useStoredCart } from "@/lib/use-stored-cart";
 import type { CartLine, CategoryOfferMap, HomeSlide, Product, RestaurantSettings } from "@/lib/types";
 
@@ -919,7 +918,7 @@ export function MenuExperience({
     if (!initialActiveCategory || initialActiveCategory === "All") return "All";
     return categories.includes(initialActiveCategory) ? initialActiveCategory : "All";
   });
-  const [activePopup, setActivePopup] = useState<"menu" | "notifications" | "filters" | null>(null);
+  const [activePopup, setActivePopup] = useState<"filters" | null>(null);
   const [activeSlide, setActiveSlide] = useState(0);
   const [savedProductIds, setSavedProductIds] = useState<string[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -931,14 +930,15 @@ export function MenuExperience({
   const [cartBarClosing, setCartBarClosing] = useState(false);
   const cartOwnerId = customerSession?.mobile;
   const cart = useStoredCart(cartOwnerId);
-  const { items: notifications, unreadCount } = useNotifications(cartOwnerId);
   const validCart = useMemo(() => getPricableCartLines(cart, products), [cart, products]);
   const storeMode = restaurantSettings?.storeMode ?? "OPEN";
-  const outsideOrderingHours = restaurantSettings ? isOutsideOrderingHours(restaurantSettings) : false;
-  const storeClosed = storeMode === "CLOSED" || storeMode === "PAUSED" || outsideOrderingHours;
-  const serviceable = isServiceableLocation(deliveryLocation, restaurantSettings?.serviceablePins ?? []);
+  const orderingStatus = restaurantSettings ? getStoreOrderingStatus(restaurantSettings) : null;
+  const outsideOrderingHours = orderingStatus?.outsideOrderingHours ?? false;
+  const storeClosed = orderingStatus?.unavailable ?? false;
+  const deliveryCoverage = restaurantSettings ? getDeliveryLocationCoverage(deliveryLocation, restaurantSettings) : null;
+  const serviceable = deliveryCoverage?.serviceable ?? true;
   const orderingDisabled = storeClosed || !serviceable;
-  const statusMessage = getStoreStatusMessage(restaurantSettings);
+  const statusMessage = orderingStatus?.message ?? "Ordering is controlled by the restaurant.";
 
   const visibleProducts = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -1100,18 +1100,9 @@ export function MenuExperience({
   if (storeClosed) {
     return (
       <main className="min-h-screen bg-white pb-24 text-charcoal">
-        <header className="sticky top-0 z-50 border-b border-[#f1e7e4] bg-white/96 backdrop-blur">
-          <div className="mx-auto hidden h-[104px] max-w-[1250px] items-center gap-6 px-0 lg:flex">
-            <Link href="/" className="relative h-16 w-[164px] overflow-hidden border-r border-[#f1e7e4] pr-6" aria-label="Wah Thali home">
-              <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill priority sizes="164px" className="object-contain" />
-            </Link>
-          </div>
-          <div className="grid h-[66px] grid-cols-[1fr_auto_auto] items-center gap-2.5 px-5 lg:hidden">
-            <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" width={144} height={56} priority className="h-[56px] w-[144px] object-contain" />
-          </div>
-        </header>
+        <Header />
 
-        <section className="mx-auto flex min-h-[calc(100vh-150px)] max-w-xl flex-col items-center justify-center px-8 pb-28 text-center lg:min-h-[calc(100vh-104px)]">
+        <section className="mx-auto flex min-h-[calc(100vh-170px)] max-w-xl flex-col items-center justify-center px-8 pb-28 text-center lg:min-h-[calc(100vh-74px)]">
           <div className="grid h-24 w-24 place-items-center rounded-full bg-[#fff4f5] text-maroon">
             <Store size={48} strokeWidth={2.6} />
           </div>
@@ -1140,80 +1131,15 @@ export function MenuExperience({
   if (!serviceable) {
     return (
       <main className="min-h-screen bg-white pb-24 text-charcoal">
-        <header className="sticky top-0 z-50 border-b border-[#f1e7e4] bg-white/96 backdrop-blur">
-          <div className="mx-auto hidden h-[104px] max-w-[1250px] items-center gap-6 px-0 lg:flex">
-            <Link href="/" className="relative h-16 w-[164px] overflow-hidden border-r border-[#f1e7e4] pr-6" aria-label="Wah Thali home">
-              <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill priority sizes="164px" className="object-contain object-left" />
-            </Link>
-            <Link href="/address" className="flex min-w-0 max-w-[360px] items-center gap-3 text-sm font-black">
-              <MapPin size={18} className="text-maroon" />
-              <span className="truncate">{deliveryLocation.address}</span>
-              <ChevronDown size={16} className="text-muted" />
-            </Link>
-            <nav className="ml-auto flex items-center gap-8 text-sm font-black">
-              {[
-                ["/", "Home"],
-                ["/menu", "Search"],
-                ["/orders", "Orders"],
-                ["/offers", "Offers"],
-                ["/support", "Help"],
-              ].map(([href, label]) => (
-                <Link key={href} href={href} className={href === pathname ? "text-maroon" : "text-charcoal hover:text-maroon"}>
-                  {label}
-                </Link>
-              ))}
-            </nav>
-            <Link href="/cart" className="relative grid h-11 w-11 place-items-center text-charcoal" aria-label="Cart">
-              <ShoppingCart size={30} />
-              {cartCount ? <span className="absolute -right-1 top-0 rounded-full bg-maroon px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
-            </Link>
-            <Link href="/login" className="rounded-xl bg-maroon px-6 py-3 text-sm font-black text-white shadow-[0_9px_20px_rgba(141,0,33,0.18)]">
-              Sign In
-            </Link>
-          </div>
+        <Header />
 
-          <div className="grid h-[64px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-5 lg:hidden">
-            <Link href="/address" className="inline-flex min-w-0 max-w-[190px] justify-self-start items-center gap-1">
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[15px] bg-[#f5f6f8] text-[#68707c]">
-                <MapPin size={18} strokeWidth={2.5} />
-              </span>
-              <span className="min-w-0">
-                <span className="block text-[8px] font-black uppercase tracking-wide text-[#a0a6b0]">Delivering to</span>
-                <span className="inline-flex max-w-[122px] items-center gap-0.5 align-top">
-                  <span className="min-w-0 truncate text-[12px] font-black leading-tight text-charcoal">{deliveryLocation.address}</span>
-                  <ChevronDown size={11} className="shrink-0 translate-y-[1px] text-[#6b7280]" />
-                </span>
-              </span>
-            </Link>
-            <button
-              className="relative grid h-8 w-8 place-items-center text-[#374151]"
-              onClick={() => {
-                setActivePopup("notifications");
-                markNotificationsRead(cartOwnerId);
-              }}
-              aria-label="Notifications"
-            >
-              <Bell size={21} strokeWidth={2.3} />
-              {unreadCount ? (
-                <span className="absolute -right-0.5 top-0 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-maroon px-1 text-[8px] font-black text-white">
-                  {unreadCount}
-                </span>
-              ) : null}
-            </button>
-            <Link href="/cart" className="relative grid h-8 w-8 place-items-center text-[#374151]" aria-label="Cart">
-              <ShoppingCart size={24} strokeWidth={2.4} />
-              {cartCount ? <span className="absolute -right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[8px] font-black text-white">{cartCount}</span> : null}
-            </Link>
-          </div>
-        </header>
-
-        <section className="flex min-h-[calc(100vh-150px)] flex-col items-center justify-center px-8 pb-28 text-center lg:min-h-[calc(100vh-104px)]">
+        <section className="flex min-h-[calc(100vh-170px)] flex-col items-center justify-center px-8 pb-28 text-center lg:min-h-[calc(100vh-74px)]">
           <div className="grid h-24 w-24 place-items-center rounded-full bg-[#fff4f5] text-maroon">
             <MapPin size={48} strokeWidth={2.7} />
           </div>
           <h1 className="mt-7 text-[28px] font-black leading-tight text-charcoal">Service Not Available</h1>
           <p className="mt-4 max-w-[340px] text-[17px] font-semibold leading-7 text-muted">
-            We currently do not deliver to your selected location. Please change your location to explore our products.
+            {deliveryCoverage?.message ?? "We currently do not deliver to your selected location. Please change your location to explore our products."}
           </p>
           <Link href="/address" className="mt-8 inline-flex h-14 min-w-[230px] items-center justify-center rounded-2xl bg-maroon px-7 text-[17px] font-black text-white shadow-[0_14px_26px_rgba(141,0,33,0.2)]">
             Choose Location
@@ -1227,79 +1153,9 @@ export function MenuExperience({
 
   return (
     <main className="min-h-screen bg-white pb-24 text-charcoal lg:pb-0">
-      <header className="sticky top-0 z-50 border-b border-[#f1e7e4] bg-white/96 backdrop-blur">
-        <div className="mx-auto hidden h-[68px] max-w-[1250px] items-center gap-5 px-0 lg:flex">
-          <Link href="/" className="relative h-10 w-[138px] overflow-hidden border-r border-[#f1e7e4] pr-5" aria-label="Wah Thali home">
-            <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill priority sizes="164px" className="object-contain object-left" />
-          </Link>
-
-          <Link href="/address" className="flex min-w-0 max-w-[300px] items-center gap-2 text-[13px] font-black">
-            <MapPin size={17} className="text-red" />
-            <span className="truncate">{deliveryLocation.address}</span>
-            <ChevronDown size={15} className="text-muted" />
-          </Link>
-
-          <nav className="ml-auto flex items-center gap-11 text-[13px] font-black">
-            {[
-              ["/", "Home"],
-              ["/menu", "Search"],
-              ["/orders", "Orders"],
-              ["/offers", "Offers"],
-              ["/support", "Help"],
-            ].map(([href, label]) => {
-              const active = href === "/" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
-              return (
-                <Link key={href} href={href} className={active ? "text-red" : "text-charcoal hover:text-red"} aria-current={active ? "page" : undefined}>
-                  {label}
-                </Link>
-              );
-            })}
-          </nav>
-
-          <Link href="/cart" className="relative grid h-9 w-9 place-items-center text-charcoal" aria-label="Cart">
-            <ShoppingCart size={26} />
-            {cartCount ? <span className="absolute -right-1 top-0 rounded-full bg-red px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
-          </Link>
-          <Link href="/login" className="inline-flex h-9 items-center rounded-[10px] bg-red px-4 text-[12px] font-black text-white shadow-[0_8px_18px_rgba(141,0,33,0.16)]">
-            Sign In
-          </Link>
-        </div>
-
-        <div className={`${mobileMenuView === "category" || isSearchPage ? "hidden" : "grid"} min-h-[78px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-5 pt-1 lg:hidden`}>
-          <Link href="/address" className="inline-flex min-w-0 max-w-[190px] justify-self-start items-center gap-1">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[15px] bg-[#f5f6f8] text-[#68707c]">
-              <MapPin size={18} strokeWidth={2.5} />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-[8px] font-black uppercase tracking-wide text-[#a0a6b0]">Delivering to</span>
-              <span className="inline-flex max-w-[122px] items-center gap-0.5 align-top">
-                <span className="min-w-0 truncate text-[12px] font-black leading-tight text-charcoal">{deliveryLocation.address}</span>
-                <ChevronDown size={11} className="shrink-0 translate-y-[1px] text-[#6b7280]" />
-              </span>
-            </span>
-          </Link>
-
-          <button
-            className="relative grid h-8 w-8 place-items-center text-[#374151]"
-            onClick={() => {
-              setActivePopup("notifications");
-              markNotificationsRead(cartOwnerId);
-            }}
-            aria-label="Notifications"
-          >
-            <Bell size={21} strokeWidth={2.3} />
-            {unreadCount ? (
-              <span className="absolute -right-0.5 top-0 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-maroon px-1 text-[8px] font-black text-white">
-                {unreadCount}
-              </span>
-            ) : null}
-          </button>
-          <Link href="/cart" className="relative grid h-8 w-8 place-items-center text-[#374151]" aria-label="Cart">
-            <ShoppingCart size={24} strokeWidth={2.4} />
-            {cartCount ? <span className="absolute -right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[8px] font-black text-white">{cartCount}</span> : null}
-          </Link>
-        </div>
-      </header>
+      <div className={mobileMenuView === "category" || isSearchPage ? "hidden lg:block" : undefined}>
+        <Header />
+      </div>
 
       {isSearchPage ? (
         <section className="min-h-screen bg-[#f7f8fc] px-6 pb-24 pt-1 lg:hidden">
@@ -1503,7 +1359,7 @@ export function MenuExperience({
                 src={promoSlides[activeSlide]?.image || "/wah-thali-meal-cutout-v2.png"}
                 alt={promoSlides[activeSlide]?.title || "Wah Thali offer"}
                 fill
-                priority
+                loading="eager"
                 unoptimized
                 sizes="366px"
                 className="object-cover"
@@ -1539,7 +1395,7 @@ export function MenuExperience({
               src={promoSlides[activeSlide]?.image || "/wah-thali-meal-cutout-v2.png"}
               alt={promoSlides[activeSlide]?.title || "Wah Thali offer"}
               fill
-              priority
+              loading="eager"
               unoptimized
               sizes="(max-width: 1279px) 760px, 1000px"
               className="object-cover"
@@ -1846,73 +1702,6 @@ export function MenuExperience({
           }}
           onClose={() => setActivePopup(null)}
         />
-      ) : activePopup ? (
-        <div className="fixed inset-0 z-[70] bg-charcoal/30 px-4 py-5 backdrop-blur-[2px]" onClick={() => setActivePopup(null)}>
-          <div
-            className={`ml-auto w-full bg-white p-4 shadow-2xl ring-1 ring-border ${
-              activePopup === "notifications" ? "mt-[70px] max-w-[315px] rounded-[24px]" : "mx-auto mt-16 max-w-md rounded-[28px]"
-            }`}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-black text-maroon">
-                {activePopup === "notifications" ? "Notifications" : "Wah Thali"}
-              </h2>
-              <div className="flex items-center gap-2">
-                {activePopup === "notifications" && notifications.length ? (
-                  <button
-                    type="button"
-                    onClick={() => clearNotifications(cartOwnerId)}
-                    className="rounded-full bg-[#fff4f5] px-3 py-2 text-[11px] font-black text-maroon"
-                  >
-                    Clear
-                  </button>
-                ) : null}
-                <button className="grid h-9 w-9 place-items-center rounded-full bg-[#fff4f5] text-maroon" onClick={() => setActivePopup(null)} aria-label="Close popup">
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-
-            {activePopup === "notifications" ? (
-              <div className="mt-4 max-h-[360px] space-y-2 overflow-y-auto pr-1">
-                {notifications.length ? (
-                  notifications.map((notification) => (
-                    <div key={notification.id} className="rounded-2xl border border-[#f0e2e4] bg-[#fff8f9] p-3">
-                      <div className="flex items-start gap-2">
-                        <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${notification.read ? "bg-muted/35" : "bg-maroon"}`} />
-                        <span className="min-w-0">
-                          <span className="block text-[13px] font-black leading-tight text-charcoal">{notification.title}</span>
-                          <span className="mt-1 block text-[11px] font-bold leading-4 text-muted">{notification.body}</span>
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-border bg-[#fff8f9] p-5 text-center">
-                    <p className="text-sm font-black text-charcoal">No notifications yet</p>
-                    <p className="mt-1 text-[11px] font-bold leading-4 text-muted">Account and order updates will appear here.</p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="mt-4 grid gap-3">
-                {[
-                  ["/menu", "Menu"],
-                  ["/offers", "Offers"],
-                  ["/orders", "Orders"],
-                  ["/login", "Sign In"],
-                  ["/cart", "Cart"],
-                ].map(([href, label]) => (
-                  <Link key={href} href={href} className="flex items-center justify-between rounded-2xl border border-border bg-white p-4 text-sm font-black text-charcoal">
-                    <span>{label}</span>
-                    <ChevronRight size={18} />
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
       ) : null}
     </main>
   );
@@ -1964,58 +1753,4 @@ function slugifyCategory(value: string) {
     .replace(/['"]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-}
-
-function getStoreStatusMessage(settings?: RestaurantSettings) {
-  if (!settings) return "Ordering is controlled by the restaurant.";
-  const customReason = settings.storeStatusReason.trim();
-  if (customReason) return customReason;
-  if (settings.storeMode === "BUSY") return settings.busyMessage;
-  if (settings.storeMode === "PAUSED") return settings.pausedMessage;
-  if (settings.storeMode === "CLOSED") return settings.closedMessage;
-  return "Restaurant is accepting orders.";
-}
-
-function isOutsideOrderingHours(settings: RestaurantSettings) {
-  const range = settings.openingHours.split(/\s*-\s*/);
-  const openingMinutes = range[0] ? parseTimeToMinutes(range[0]) : null;
-  const closingMinutes = range[1] ? parseTimeToMinutes(range[1]) : null;
-  if (openingMinutes === null || closingMinutes === null) return false;
-
-  const nowMinutes = getKolkataMinutes();
-  const lastOrderMinutes = normalizeMinutes(closingMinutes - settings.lastOrderBufferMinutes);
-  if (openingMinutes < closingMinutes) {
-    return nowMinutes < openingMinutes || nowMinutes >= lastOrderMinutes;
-  }
-
-  return nowMinutes >= lastOrderMinutes && nowMinutes < openingMinutes;
-}
-
-function getKolkataMinutes() {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Kolkata",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date());
-  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
-  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
-  return hour * 60 + minute;
-}
-
-function parseTimeToMinutes(value: string) {
-  const match = value.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/i);
-  if (!match) return null;
-
-  let hour = Number(match[1]);
-  const minute = Number(match[2] ?? 0);
-  const meridiem = match[3]?.toUpperCase();
-  if (meridiem === "PM" && hour < 12) hour += 12;
-  if (meridiem === "AM" && hour === 12) hour = 0;
-  if (hour > 23 || minute > 59) return null;
-  return hour * 60 + minute;
-}
-
-function normalizeMinutes(value: number) {
-  return ((value % 1440) + 1440) % 1440;
 }

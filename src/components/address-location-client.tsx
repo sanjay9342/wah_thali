@@ -17,7 +17,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { extractPinCode, saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
+import { extractPinCode, getDeliveryLocationCoverage, saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 import type { RestaurantSettings } from "@/lib/types";
 
@@ -98,12 +98,6 @@ function getSearchTitle(data: Record<string, unknown>) {
     (typeof data.name === "string" ? data.name : "") ||
     "Selected location"
   );
-}
-
-function isServiceablePin(pinCode: string, serviceablePins: string[]) {
-  void pinCode;
-  void serviceablePins;
-  return true;
 }
 
 function cleanPhone(value: string) {
@@ -429,8 +423,16 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
     }
 
     const pinCode = address.pinCode.trim() || extractPinCode(`${address.details}, ${area}`);
-    if (!isServiceablePin(pinCode, restaurantSettings.serviceablePins)) {
-      setMessage("Service is not available for this PIN code. Please choose another delivery location.");
+    const deliveryCoverage = getDeliveryLocationCoverage({
+      label: getAddressLabel(address.tag, address.customLabel),
+      address: `${address.details}, ${area}`,
+      pinCode,
+      latitude: address.latitude,
+      longitude: address.longitude,
+    }, restaurantSettings);
+
+    if (!deliveryCoverage.serviceable) {
+      setMessage(deliveryCoverage.message);
       return;
     }
 

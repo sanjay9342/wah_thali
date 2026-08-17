@@ -29,19 +29,23 @@ export function Header({ showContact = true }: { showContact?: boolean; whatsapp
   }, []);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-[#f1e7e4] bg-white/96 backdrop-blur">
-      <div className="mx-auto hidden h-[68px] max-w-[1248px] items-center gap-5 px-6 lg:flex">
-        <Link href="/" className="relative h-10 w-[138px] overflow-hidden border-r border-[#f1e7e4] pr-5" aria-label="Wah Thali home">
-          <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill priority sizes="164px" className="object-contain object-left" />
+    <header className="sticky top-0 z-50 border-b border-[#f1e7e4] bg-white/97 shadow-[0_6px_20px_rgba(34,31,32,0.045)] backdrop-blur">
+      <div className="mx-auto hidden h-[74px] max-w-[1250px] items-center gap-5 px-6 lg:flex">
+        <Link
+          href="/"
+          className="relative block h-[48px] w-[154px] shrink-0 overflow-hidden"
+          aria-label="Wah Thali home"
+        >
+          <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill loading="eager" sizes="154px" className="object-contain object-left" />
         </Link>
 
-        <Link href="/address" className="flex min-w-0 max-w-[280px] items-center gap-2 text-[13px] font-black">
-          <MapPin size={17} className="text-red" />
+        <Link href="/address" className="flex min-w-0 max-w-[300px] items-center gap-2 rounded-full border border-[#f1e7e4] bg-[#fff8f9] px-3 py-2 text-[13px] font-black text-charcoal">
+          <MapPin size={17} className="shrink-0 text-red" />
           <span className="truncate">{deliveryLocation.address}</span>
-          <ChevronDown size={15} className="text-muted" />
+          <ChevronDown size={15} className="shrink-0 text-muted" />
         </Link>
 
-        <nav className="ml-auto flex items-center gap-11 text-[13px] font-black">
+        <nav className="ml-auto flex items-center gap-8 text-[13px] font-black">
           {[
             ["/", "Home"],
             ["/menu", "Search"],
@@ -51,7 +55,12 @@ export function Header({ showContact = true }: { showContact?: boolean; whatsapp
           ].map(([href, label]) => {
             const active = href === "/" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
             return (
-              <Link key={href} href={href} className={active ? "text-red" : "text-charcoal hover:text-red"} aria-current={active ? "page" : undefined}>
+              <Link
+                key={href}
+                href={href}
+                className={`rounded-full px-3 py-2 transition-colors ${active ? "bg-[#fff4f5] text-red" : "text-charcoal hover:bg-[#fff8f9] hover:text-red"}`}
+                aria-current={active ? "page" : undefined}
+              >
                 {label}
               </Link>
             );
@@ -63,45 +72,48 @@ export function Header({ showContact = true }: { showContact?: boolean; whatsapp
           {cartCount ? <span className="absolute -right-1 top-0 rounded-full bg-red px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
         </Link>
         {showContact ? (
-          <Link href="/login" className="inline-flex h-9 items-center rounded-[10px] bg-red px-4 text-[12px] font-black text-white shadow-[0_8px_18px_rgba(141,0,33,0.16)]">
+          <Link href="/login" className="inline-flex h-10 items-center rounded-[10px] bg-red px-5 text-[12px] font-black text-white shadow-[0_8px_18px_rgba(141,0,33,0.16)]">
             Sign In
           </Link>
         ) : null}
       </div>
 
-      <div className="grid min-h-[78px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-5 pt-1 lg:hidden">
-        <Link href="/address" className="inline-flex min-w-0 max-w-[190px] justify-self-start items-center gap-1">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[15px] bg-[#f5f6f8] text-[#68707c]">
+      <div className="px-4 py-2 lg:hidden">
+        <div className="grid h-[44px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
+          <Link href="/" className="relative block h-[42px] w-[118px] overflow-hidden" aria-label="Wah Thali home">
+            <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill loading="eager" sizes="118px" className="object-contain object-left" />
+          </Link>
+
+          <button
+            type="button"
+            className="relative grid h-9 w-9 place-items-center rounded-full bg-[#fff8f9] text-[#374151] ring-1 ring-[#f1e7e4]"
+            onClick={() => {
+              setShowNotifications(true);
+              markNotificationsRead(customerSession?.mobile);
+            }}
+            aria-label="Notifications"
+          >
+            <Bell size={20} strokeWidth={2.3} />
+            {unreadCount ? (
+              <span className="absolute -right-0.5 top-0 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-maroon px-1 text-[8px] font-black text-white">
+                {unreadCount}
+              </span>
+            ) : null}
+          </button>
+          <Link href="/cart" className="relative grid h-9 w-9 place-items-center rounded-full bg-[#fff8f9] text-[#374151] ring-1 ring-[#f1e7e4]" aria-label="Cart">
+            <ShoppingCart size={22} strokeWidth={2.4} />
+            {cartCount ? <span className="absolute -right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[8px] font-black text-white">{cartCount}</span> : null}
+          </Link>
+        </div>
+
+        <Link href="/address" className="mt-1.5 grid h-9 min-w-0 grid-cols-[28px_1fr_16px] items-center rounded-full border border-[#f1e7e4] bg-[#fff8f9] px-2.5">
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white text-[#68707c]">
             <MapPin size={18} strokeWidth={2.5} />
           </span>
-          <span className="min-w-0">
-            <span className="block text-[8px] font-black uppercase tracking-wide text-[#a0a6b0]">Delivering to</span>
-            <span className="inline-flex max-w-[122px] items-center gap-0.5 align-top">
-              <span className="min-w-0 truncate text-[12px] font-black leading-tight text-charcoal">{deliveryLocation.address}</span>
-              <ChevronDown size={11} className="shrink-0 translate-y-[1px] text-[#6b7280]" />
-            </span>
+          <span className="min-w-0 px-2">
+            <span className="block truncate text-[12px] font-black leading-tight text-charcoal">Delivering to {deliveryLocation.address}</span>
           </span>
-        </Link>
-
-        <button
-          type="button"
-          className="relative grid h-8 w-8 place-items-center text-[#374151]"
-          onClick={() => {
-            setShowNotifications(true);
-            markNotificationsRead(customerSession?.mobile);
-          }}
-          aria-label="Notifications"
-        >
-          <Bell size={21} strokeWidth={2.3} />
-          {unreadCount ? (
-            <span className="absolute -right-0.5 top-0 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-maroon px-1 text-[8px] font-black text-white">
-              {unreadCount}
-            </span>
-          ) : null}
-        </button>
-        <Link href="/cart" className="relative grid h-8 w-8 place-items-center text-[#374151]" aria-label="Cart">
-          <ShoppingCart size={24} strokeWidth={2.4} />
-          {cartCount ? <span className="absolute -right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[8px] font-black text-white">{cartCount}</span> : null}
+          <ChevronDown size={13} className="shrink-0 text-[#6b7280]" />
         </Link>
       </div>
 
