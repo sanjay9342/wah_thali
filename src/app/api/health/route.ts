@@ -66,6 +66,7 @@ export async function GET(request: Request) {
     SUPABASE_STORAGE_BUCKET: configured(process.env.SUPABASE_STORAGE_BUCKET),
     ADMIN_MOBILES: configured(process.env.ADMIN_MOBILES),
     ADMIN_EMAILS: configured(process.env.ADMIN_EMAILS),
+    ADMIN_BOOTSTRAP_PASSWORD: configured(process.env.ADMIN_BOOTSTRAP_PASSWORD),
   };
   const paymentEnv = {
     RAZORPAY_KEY_ID: configured(process.env.RAZORPAY_KEY_ID),
@@ -76,6 +77,8 @@ export async function GET(request: Request) {
     META_WHATSAPP_PHONE_NUMBER_ID: configured(process.env.META_WHATSAPP_PHONE_NUMBER_ID),
     META_WHATSAPP_ACCESS_TOKEN: configured(process.env.META_WHATSAPP_ACCESS_TOKEN),
     META_WHATSAPP_VERIFY_TOKEN: configured(process.env.META_WHATSAPP_VERIFY_TOKEN),
+    META_WHATSAPP_OTP_TEMPLATE_NAME: configured(process.env.META_WHATSAPP_OTP_TEMPLATE_NAME || process.env.WHATSAPP_OTP_TEMPLATE_NAME || process.env.META_WHATSAPP_TEMPLATE_NAME),
+    META_WHATSAPP_LANGUAGE_CODE: configured(process.env.META_WHATSAPP_LANGUAGE_CODE),
   };
   const domainOk = requestHost === expectedHost || requestHost === `www.${expectedHost}` || requestHost.startsWith("localhost:");
   const ok = database.ok && supabaseConfigured && requiredEnv.NEXT_PUBLIC_SITE_URL && domainOk;

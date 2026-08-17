@@ -9,13 +9,23 @@ function readEnv(key: string) {
   return raw?.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1") ?? "";
 }
 
+function readFirstEnv(keys: string[]) {
+  for (const key of keys) {
+    const value = readEnv(key);
+    if (value) return value;
+  }
+
+  return "";
+}
+
 export function getWhatsAppOtpConfigStatus() {
-  const required = [
-    "META_WHATSAPP_PHONE_NUMBER_ID",
-    "META_WHATSAPP_ACCESS_TOKEN",
-    "META_WHATSAPP_OTP_TEMPLATE_NAME",
-  ];
-  const missing = required.filter((key) => !readEnv(key));
+  const missing = [
+    readEnv("META_WHATSAPP_PHONE_NUMBER_ID") ? "" : "META_WHATSAPP_PHONE_NUMBER_ID",
+    readEnv("META_WHATSAPP_ACCESS_TOKEN") ? "" : "META_WHATSAPP_ACCESS_TOKEN",
+    readFirstEnv(["META_WHATSAPP_OTP_TEMPLATE_NAME", "WHATSAPP_OTP_TEMPLATE_NAME", "META_WHATSAPP_TEMPLATE_NAME"])
+      ? ""
+      : "META_WHATSAPP_OTP_TEMPLATE_NAME",
+  ].filter(Boolean);
   return { configured: missing.length === 0, missing };
 }
 
@@ -60,7 +70,7 @@ export async function sendWhatsAppOtp(mobile: string, code: string): Promise<Wha
   const graphApiVersion = readEnv("META_GRAPH_API_VERSION") || "v23.0";
   const phoneNumberId = readEnv("META_WHATSAPP_PHONE_NUMBER_ID");
   const accessToken = readEnv("META_WHATSAPP_ACCESS_TOKEN");
-  const templateName = readEnv("META_WHATSAPP_OTP_TEMPLATE_NAME");
+  const templateName = readFirstEnv(["META_WHATSAPP_OTP_TEMPLATE_NAME", "WHATSAPP_OTP_TEMPLATE_NAME", "META_WHATSAPP_TEMPLATE_NAME"]);
   const languageCode = readEnv("META_WHATSAPP_LANGUAGE_CODE") || "en_US";
   const endpoint = `https://graph.facebook.com/${graphApiVersion}/${phoneNumberId}/messages`;
 

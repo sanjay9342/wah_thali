@@ -58,3 +58,25 @@ For database connection, set at least one of these in the deployed site's enviro
 - `SUPABASE_DB_URL`
 
 If login shows a database unavailable message on `https://wahthali.in`, the deployed host is missing these variables or the latest code has not been redeployed.
+
+For the first admin password login, set:
+
+- `ADMIN_EMAILS`
+- `ADMIN_MOBILES`
+- `ADMIN_BOOTSTRAP_PASSWORD`
+- `ADMIN_BOOTSTRAP_NAME`
+
+For WhatsApp OTP, set:
+
+- `META_WHATSAPP_PHONE_NUMBER_ID`
+- `META_WHATSAPP_ACCESS_TOKEN`
+- `META_WHATSAPP_OTP_TEMPLATE_NAME`
+- `META_WHATSAPP_LANGUAGE_CODE`
+- `META_WHATSAPP_DEFAULT_COUNTRY_CODE`
+
+The app also accepts `WHATSAPP_OTP_TEMPLATE_NAME` or `META_WHATSAPP_TEMPLATE_NAME` as aliases for the OTP template name.
+
+The OTP template must already exist and be approved in Meta WhatsApp Manager. It should be a WhatsApp authentication/OTP template whose body accepts the OTP code as the first variable. If the template has a copy-code or URL button variable, also set:
+
+- `META_WHATSAPP_OTP_BUTTON_SUB_TYPE`
+- `META_WHATSAPP_OTP_BUTTON_INDEX`
