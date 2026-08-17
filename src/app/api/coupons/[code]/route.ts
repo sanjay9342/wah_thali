@@ -17,7 +17,7 @@ const couponSchema = z.object({
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ code: string }> }) {
   if (!isDatabaseConfigured()) {
-    return NextResponse.json({ error: "DATABASE_URL is not configured." }, { status: 503 });
+    return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
 
   const { code } = await params;
@@ -43,7 +43,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ code: string }> }) {
   if (!isDatabaseConfigured()) {
-    return NextResponse.json({ error: "DATABASE_URL is not configured." }, { status: 503 });
+    return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
 
   const { code } = await params;

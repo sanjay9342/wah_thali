@@ -27,7 +27,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   if (!isDatabaseConfigured()) {
-    return NextResponse.json({ error: "DATABASE_URL is not configured." }, { status: 503 });
+    return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
 
   const parsed = couponSchema.safeParse(await request.json());

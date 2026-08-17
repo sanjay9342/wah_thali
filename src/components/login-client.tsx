@@ -27,6 +27,14 @@ function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
+function cleanApiMessage(value: unknown, fallback: string) {
+  const message = typeof value === "string" && value.trim() ? value : fallback;
+  if (/DATABASE_URL|SUPABASE_|RAZORPAY_|META_|SECRET|TOKEN/i.test(message)) {
+    return "Service is temporarily unavailable. Please contact support.";
+  }
+  return message;
+}
+
 export function LoginClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -98,7 +106,7 @@ export function LoginClient() {
       });
       const data = await response.json();
       if (!response.ok) {
-        setMessage(data.error || "Invalid email or password.");
+        setMessage(cleanApiMessage(data.error, "Invalid email or password."));
         return;
       }
 
@@ -126,7 +134,7 @@ export function LoginClient() {
         body: JSON.stringify({ email }),
       });
       const data = await response.json();
-      setMessage(data.message || (response.ok ? "Password reset request recorded." : "Could not request password reset."));
+      setMessage(cleanApiMessage(data.message || data.error, response.ok ? "Password reset request recorded." : "Could not request password reset."));
     } catch {
       setMessage("Could not connect. Please try again.");
     } finally {
@@ -163,7 +171,7 @@ export function LoginClient() {
       });
       const data = await response.json();
       if (!response.ok) {
-        setMessage(data.error || "Could not send WhatsApp OTP.");
+        setMessage(cleanApiMessage(data.error, "Could not send WhatsApp OTP."));
         return;
       }
 
@@ -195,7 +203,7 @@ export function LoginClient() {
         });
         const data = await response.json();
         if (!response.ok) {
-          setMessage(data.error || "Could not sign in with WhatsApp OTP.");
+          setMessage(cleanApiMessage(data.error, "Could not sign in with WhatsApp OTP."));
           return;
         }
 
@@ -216,7 +224,7 @@ export function LoginClient() {
       });
       const data = await response.json();
       if (!response.ok) {
-        setMessage(data.error || "Could not create account. Please try again.");
+        setMessage(cleanApiMessage(data.error, "Could not create account. Please try again."));
         return;
       }
 

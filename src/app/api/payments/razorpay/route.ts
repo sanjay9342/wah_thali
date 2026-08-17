@@ -19,7 +19,7 @@ function safeCompareHex(expected: string, actual: string) {
 
 export async function POST(request: NextRequest) {
   if (!isDatabaseConfigured()) {
-    return NextResponse.json({ error: "DATABASE_URL is not configured." }, { status: 503 });
+    return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
 
   const parsed = paymentSchema.safeParse(await request.json());
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       verified: false,
       testMode: true,
-      message: "RAZORPAY_KEY_SECRET is not configured. Verification adapter is ready.",
+      message: "Online payment verification is not configured yet.",
     });
   }
 

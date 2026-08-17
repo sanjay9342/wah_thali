@@ -32,7 +32,7 @@ function identityFromSearchParams(searchParams: URLSearchParams) {
 
 export async function GET(request: Request) {
   if (!isDatabaseConfigured()) {
-    return NextResponse.json({ error: "DATABASE_URL is not configured." }, { status: 503 });
+    return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
 
   const { searchParams } = new URL(request.url);
@@ -61,7 +61,7 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   if (!isDatabaseConfigured()) {
-    return NextResponse.json({ error: "DATABASE_URL is not configured." }, { status: 503 });
+    return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
 
   const parsed = updateSchema.safeParse(await request.json());

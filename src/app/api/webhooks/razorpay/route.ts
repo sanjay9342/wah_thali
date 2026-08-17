@@ -44,7 +44,7 @@ function getPaymentStatus(event: string | undefined) {
 
 export async function POST(request: NextRequest) {
   if (!isDatabaseConfigured()) {
-    return NextResponse.json({ error: "DATABASE_URL is not configured." }, { status: 503 });
+    return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
 
   const rawBody = await request.text();
