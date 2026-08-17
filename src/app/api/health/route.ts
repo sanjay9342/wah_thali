@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isDatabaseConfigured, prisma } from "@/lib/prisma";
+import { getConfiguredDatabaseUrlKey, isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { isSupabaseConfigured } from "@/lib/supabase";
 
 type Check = {
@@ -56,6 +56,10 @@ export async function GET(request: Request) {
     NEXT_PUBLIC_SITE_URL: configured(process.env.NEXT_PUBLIC_SITE_URL),
     DATABASE_URL: configured(process.env.DATABASE_URL),
     DIRECT_URL: configured(process.env.DIRECT_URL),
+    POSTGRES_PRISMA_URL: configured(process.env.POSTGRES_PRISMA_URL),
+    POSTGRES_URL: configured(process.env.POSTGRES_URL),
+    POSTGRES_URL_NON_POOLING: configured(process.env.POSTGRES_URL_NON_POOLING),
+    SUPABASE_DB_URL: configured(process.env.SUPABASE_DB_URL),
     SUPABASE_URL: configured(process.env.SUPABASE_URL),
     NEXT_PUBLIC_SUPABASE_URL: configured(process.env.NEXT_PUBLIC_SUPABASE_URL),
     SUPABASE_SERVICE_ROLE_KEY: configured(process.env.SUPABASE_SERVICE_ROLE_KEY),
@@ -87,6 +91,7 @@ export async function GET(request: Request) {
         message: domainOk ? "Request host matches configured site URL." : "Request host does not match NEXT_PUBLIC_SITE_URL.",
       },
       database,
+      databaseUrlKey: getConfiguredDatabaseUrlKey(),
       supabase: {
         ok: supabaseConfigured,
         configured: supabaseConfigured,

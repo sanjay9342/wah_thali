@@ -47,3 +47,14 @@ The response should show `"ok": true`. If it is false, check the failing section
 - `domain.ok` false means `NEXT_PUBLIC_SITE_URL` does not match the live host.
 
 Do not put secret values in source code. Set them only in the hosting provider environment variables.
+
+For database connection, set at least one of these in the deployed site's environment variables:
+
+- `DATABASE_URL` preferred for runtime
+- `DIRECT_URL`
+- `POSTGRES_PRISMA_URL`
+- `POSTGRES_URL`
+- `POSTGRES_URL_NON_POOLING`
+- `SUPABASE_DB_URL`
+
+If login shows a database unavailable message on `https://wahthali.in`, the deployed host is missing these variables or the latest code has not been redeployed.

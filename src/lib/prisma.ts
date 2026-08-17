@@ -7,10 +7,26 @@ const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
 
+const databaseUrlKeys = [
+  "DATABASE_URL",
+  "DIRECT_URL",
+  "POSTGRES_PRISMA_URL",
+  "POSTGRES_URL",
+  "POSTGRES_URL_NON_POOLING",
+  "SUPABASE_DB_URL",
+] as const;
+
+function cleanDatabaseUrl(raw: string) {
+  return raw.trim().replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
+}
+
 function getDatabaseUrl() {
-  const raw = process.env.DATABASE_URL?.trim();
-  if (!raw) return "postgresql://postgres:postgres@localhost:5432/wah_thali";
-  return raw.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
+  for (const key of databaseUrlKeys) {
+    const raw = process.env[key]?.trim();
+    if (raw) return cleanDatabaseUrl(raw);
+  }
+
+  return "postgresql://postgres:postgres@localhost:5432/wah_thali";
 }
 
 export const prisma =
@@ -27,5 +43,9 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 export function isDatabaseConfigured() {
-  return Boolean(process.env.DATABASE_URL?.trim());
+  return databaseUrlKeys.some((key) => Boolean(process.env[key]?.trim()));
+}
+
+export function getConfiguredDatabaseUrlKey() {
+  return databaseUrlKeys.find((key) => Boolean(process.env[key]?.trim())) ?? null;
 }

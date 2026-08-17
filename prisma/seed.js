@@ -5,9 +5,18 @@ require("dotenv").config();
 const { PrismaPg } = require("@prisma/adapter-pg");
 const { PrismaClient } = require("@prisma/client");
 
+const databaseUrl =
+  process.env.DATABASE_URL ||
+  process.env.DIRECT_URL ||
+  process.env.POSTGRES_PRISMA_URL ||
+  process.env.POSTGRES_URL ||
+  process.env.POSTGRES_URL_NON_POOLING ||
+  process.env.SUPABASE_DB_URL ||
+  "postgresql://postgres:postgres@localhost:5432/wah_thali";
+
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
-    connectionString: process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/wah_thali",
+    connectionString: databaseUrl,
   }),
 });
 
