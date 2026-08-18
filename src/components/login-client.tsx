@@ -19,6 +19,17 @@ type ApiCustomer = {
   email?: string | null;
 };
 
+type ApiError = {
+  error?: unknown;
+  message?: unknown;
+  code?: string;
+};
+
+type ApiResponse = ApiError & {
+  customer?: ApiCustomer;
+  devOtp?: string;
+};
+
 function cleanMobile(value: string) {
   return value.replace(/\D/g, "").slice(-10);
 }
@@ -33,6 +44,31 @@ function cleanApiMessage(value: unknown, fallback: string) {
     return "Service is temporarily unavailable. Please contact support.";
   }
   return message;
+}
+
+async function readApiJson(response: Response): Promise<ApiResponse> {
+  return response.json().catch(() => ({}));
+}
+
+function otpErrorMessage(data: ApiError, fallback: string) {
+  switch (data.code) {
+    case "DATABASE_NOT_CONFIGURED":
+      return "Login and registration are offline because the live server is missing its database connection.";
+    case "WHATSAPP_NOT_CONFIGURED":
+      return "WhatsApp OTP is not configured on this server. Please contact support.";
+    case "WHATSAPP_AUTH_FAILED":
+      return "WhatsApp OTP credentials were rejected. Please contact support.";
+    case "WHATSAPP_TEMPLATE_FAILED":
+      return "WhatsApp OTP template or language is not approved correctly. Please contact support.";
+    case "WHATSAPP_TEMPLATE_PARAMETERS_FAILED":
+      return "WhatsApp OTP template button or parameter setup is incorrect. Please contact support.";
+    case "WHATSAPP_SEND_FAILED":
+      return "WhatsApp could not deliver the OTP right now. Please contact support.";
+    case "OTP_CREATE_FAILED":
+      return "Could not create OTP. Please try again.";
+    default:
+      return cleanApiMessage(data.error, fallback);
+  }
 }
 
 export function LoginClient() {
@@ -104,9 +140,13 @@ export function LoginClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ method: "password", email, password: form.password }),
       });
-      const data = await response.json();
+      const data = await readApiJson(response);
       if (!response.ok) {
         setMessage(cleanApiMessage(data.error, "Invalid email or password."));
+        return;
+      }
+      if (!data.customer) {
+        setMessage("Could not read your account details. Please try again.");
         return;
       }
 
@@ -133,7 +173,7 @@ export function LoginClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
-      const data = await response.json();
+      const data = await readApiJson(response);
       setMessage(cleanApiMessage(data.message || data.error, response.ok ? "Password reset request recorded." : "Could not request password reset."));
     } catch {
       setMessage("Could not connect. Please try again.");
@@ -169,15 +209,15 @@ export function LoginClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mobile, purpose: screen === "signup" ? "signup" : "signin" }),
       });
-      const data = await response.json();
+      const data = await readApiJson(response);
       if (!response.ok) {
-        setMessage(cleanApiMessage(data.error, "Could not send WhatsApp OTP."));
+        setMessage(otpErrorMessage(data, "Could not send WhatsApp OTP."));
         return;
       }
 
       setForm((current) => ({ ...current, mobile, otp: "" }));
       setStep("otp");
-      setMessage(data.devOtp ? `${data.message} Dev OTP: ${data.devOtp}` : data.message);
+      setMessage(data.devOtp ? `${cleanApiMessage(data.message, "WhatsApp OTP sent.")} Dev OTP: ${data.devOtp}` : cleanApiMessage(data.message, "WhatsApp OTP sent."));
     } catch {
       setMessage("Could not connect. Please try again.");
     } finally {
@@ -201,9 +241,13 @@ export function LoginClient() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ method: "whatsapp_otp", mobile: cleanMobile(form.mobile), otp: form.otp.trim() }),
         });
-        const data = await response.json();
+        const data = await readApiJson(response);
         if (!response.ok) {
-          setMessage(cleanApiMessage(data.error, "Could not sign in with WhatsApp OTP."));
+          setMessage(otpErrorMessage(data, "Could not sign in with WhatsApp OTP."));
+          return;
+        }
+        if (!data.customer) {
+          setMessage("Could not read your account details. Please try again.");
           return;
         }
 
@@ -222,9 +266,13 @@ export function LoginClient() {
           otp: form.otp.trim(),
         }),
       });
-      const data = await response.json();
+      const data = await readApiJson(response);
       if (!response.ok) {
-        setMessage(cleanApiMessage(data.error, "Could not create account. Please try again."));
+        setMessage(otpErrorMessage(data, "Could not create account. Please try again."));
+        return;
+      }
+      if (!data.customer) {
+        setMessage("Could not read your new account details. Please try again.");
         return;
       }
 

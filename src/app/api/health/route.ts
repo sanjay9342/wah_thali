@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getConfiguredDatabaseUrlKey, isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { isSupabaseConfigured } from "@/lib/supabase";
+import { getWhatsAppOtpConfigStatus } from "@/lib/whatsapp";
 
 type Check = {
   ok: boolean;
@@ -19,6 +20,11 @@ function getExpectedHost() {
   } catch {
     return "wahthali.in";
   }
+}
+
+function getRequestHost(request: Request) {
+  const forwardedHost = request.headers.get("x-forwarded-host") || request.headers.get("host");
+  return forwardedHost?.split(",")[0]?.trim() || new URL(request.url).host;
 }
 
 async function checkDatabase(): Promise<Check> {
@@ -48,10 +54,11 @@ async function checkDatabase(): Promise<Check> {
 }
 
 export async function GET(request: Request) {
-  const requestHost = new URL(request.url).host;
+  const requestHost = getRequestHost(request);
   const expectedHost = getExpectedHost();
   const database = await checkDatabase();
   const supabaseConfigured = isSupabaseConfigured();
+  const whatsAppStatus = getWhatsAppOtpConfigStatus();
   const requiredEnv = {
     NEXT_PUBLIC_SITE_URL: configured(process.env.NEXT_PUBLIC_SITE_URL),
     DATABASE_URL: configured(process.env.DATABASE_URL),
@@ -79,9 +86,13 @@ export async function GET(request: Request) {
     META_WHATSAPP_VERIFY_TOKEN: configured(process.env.META_WHATSAPP_VERIFY_TOKEN),
     META_WHATSAPP_OTP_TEMPLATE_NAME: configured(process.env.META_WHATSAPP_OTP_TEMPLATE_NAME || process.env.WHATSAPP_OTP_TEMPLATE_NAME || process.env.META_WHATSAPP_TEMPLATE_NAME),
     META_WHATSAPP_LANGUAGE_CODE: configured(process.env.META_WHATSAPP_LANGUAGE_CODE),
+    META_WHATSAPP_DEFAULT_COUNTRY_CODE: configured(process.env.META_WHATSAPP_DEFAULT_COUNTRY_CODE),
+    META_GRAPH_API_VERSION: configured(process.env.META_GRAPH_API_VERSION),
+    META_WHATSAPP_OTP_BUTTON_SUB_TYPE: configured(process.env.META_WHATSAPP_OTP_BUTTON_SUB_TYPE),
+    META_WHATSAPP_OTP_BUTTON_INDEX: configured(process.env.META_WHATSAPP_OTP_BUTTON_INDEX),
   };
   const domainOk = requestHost === expectedHost || requestHost === `www.${expectedHost}` || requestHost.startsWith("localhost:");
-  const ok = database.ok && supabaseConfigured && requiredEnv.NEXT_PUBLIC_SITE_URL && domainOk;
+  const ok = database.ok && supabaseConfigured && requiredEnv.NEXT_PUBLIC_SITE_URL && domainOk && whatsAppStatus.configured;
 
   return NextResponse.json(
     {
@@ -103,6 +114,14 @@ export async function GET(request: Request) {
       requiredEnv,
       paymentEnv,
       whatsappEnv,
+      whatsapp: {
+        ok: whatsAppStatus.configured,
+        configured: whatsAppStatus.configured,
+        missing: whatsAppStatus.missing,
+        message: whatsAppStatus.configured
+          ? "WhatsApp OTP credentials are configured."
+          : "WhatsApp OTP credentials are missing in the deployment.",
+      },
       webhooks: {
         razorpay: `https://${expectedHost}/api/webhooks/razorpay`,
         meta: `https://${expectedHost}/api/webhooks/meta`,

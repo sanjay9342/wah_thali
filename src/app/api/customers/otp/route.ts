@@ -11,9 +11,27 @@ const otpSchema = z.object({
   purpose: z.enum(["signin", "signup"]),
 });
 
+function otpServiceUnavailable(message: string, code: string) {
+  return NextResponse.json({ error: message, code }, { status: 503 });
+}
+
+function getWhatsAppFailureCode(message: string, status?: number) {
+  const normalized = message.toLowerCase();
+  if (status === 401 || status === 403 || normalized.includes("token") || normalized.includes("permission")) {
+    return "WHATSAPP_AUTH_FAILED";
+  }
+  if (normalized.includes("template") || normalized.includes("language")) {
+    return "WHATSAPP_TEMPLATE_FAILED";
+  }
+  if (normalized.includes("parameter") || normalized.includes("component") || normalized.includes("button")) {
+    return "WHATSAPP_TEMPLATE_PARAMETERS_FAILED";
+  }
+  return "WHATSAPP_SEND_FAILED";
+}
+
 export async function POST(request: Request) {
   if (!isDatabaseConfigured()) {
-    return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
+    return otpServiceUnavailable("Login and registration are temporarily offline because the live server is missing its database connection.", "DATABASE_NOT_CONFIGURED");
   }
 
   const parsed = otpSchema.safeParse(await request.json());
@@ -33,9 +51,21 @@ export async function POST(request: Request) {
     }
   }
 
-  const otp = await createCustomerOtp(mobile, parsed.data.purpose);
   const whatsAppConfig = getWhatsAppOtpConfigStatus();
   const canSkipSend = process.env.NODE_ENV !== "production" && !whatsAppConfig.configured;
+  if (!canSkipSend && !whatsAppConfig.configured) {
+    console.error("WhatsApp OTP is not configured.", { missing: whatsAppConfig.missing });
+    return otpServiceUnavailable("WhatsApp OTP is not configured on this server. Please contact support.", "WHATSAPP_NOT_CONFIGURED");
+  }
+
+  let otp: Awaited<ReturnType<typeof createCustomerOtp>>;
+  try {
+    otp = await createCustomerOtp(mobile, parsed.data.purpose);
+  } catch (error) {
+    console.error("Customer OTP creation failed.", error);
+    return NextResponse.json({ error: "Could not create OTP. Please try again.", code: "OTP_CREATE_FAILED" }, { status: 500 });
+  }
+
   let messageId: string | undefined;
 
   if (!canSkipSend) {
@@ -46,7 +76,13 @@ export async function POST(request: Request) {
         status: sendResult.status,
         message: sendResult.message,
       });
-      return NextResponse.json({ error: "Could not send WhatsApp OTP. Please try again." }, { status: 502 });
+      return NextResponse.json(
+        {
+          error: "Could not send WhatsApp OTP. Please contact support.",
+          code: getWhatsAppFailureCode(sendResult.message, sendResult.status),
+        },
+        { status: 502 },
+      );
     }
     messageId = sendResult.messageId;
   }
