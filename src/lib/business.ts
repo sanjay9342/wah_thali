@@ -209,6 +209,57 @@ export const policies: Policy[] = [
       },
     ],
   },
+  {
+    slug: "data-deletion",
+    title: "User Data Deletion Instructions",
+    effectiveDate: "18-08-2026",
+    summary:
+      "How customers can request deletion of their Wah Thali account data collected through the website, WhatsApp, Meta integrations, orders, and support.",
+    sections: [
+      {
+        heading: "How to request deletion",
+        body: [
+          `To request deletion of your Wah Thali account or personal data, email ${business.legalEmail} from your registered email address with the subject line "Data Deletion Request".`,
+          `You may also call or WhatsApp Wah Thali support at ${business.phone} and ask for a data deletion request to be recorded.`,
+        ],
+      },
+      {
+        heading: "Information to include",
+        body: [
+          "Please include your full name, registered mobile number, registered email address, and a short note confirming that you want your Wah Thali account data deleted.",
+          "For security, we may contact you on your registered mobile number or email address to verify the request before deletion is processed.",
+        ],
+      },
+      {
+        heading: "What we delete",
+        body: [
+          "After verification, we delete or anonymize account profile details, saved addresses, marketing preferences, support notes, and WhatsApp or website identifiers linked to your account where deletion is legally permitted.",
+          "If you used WhatsApp login, OTP, or Meta messaging features, related contact identifiers and message records used only for account access or support will be deleted or anonymized where permitted.",
+        ],
+      },
+      {
+        heading: "Records we may retain",
+        body: [
+          "Some order, invoice, payment, tax, fraud-prevention, dispute, and compliance records may be retained for the period required by law or legitimate business obligations.",
+          "Retained records are restricted to the minimum information needed for accounting, legal compliance, payment reconciliation, refunds, chargebacks, and dispute resolution.",
+        ],
+      },
+      {
+        heading: "Processing timeline",
+        body: [
+          "We aim to acknowledge deletion requests within 7 business days after receiving sufficient details.",
+          "Verified deletion or anonymization requests are generally completed within 30 days, unless a longer period is required because of legal, security, or operational obligations.",
+        ],
+      },
+      {
+        heading: "Contact for privacy requests",
+        body: [
+          `${business.legalName} can be contacted at ${business.legalEmail}.`,
+          `Business address: ${business.address}.`,
+        ],
+      },
+    ],
+  },
 ];
 
 export function getPolicy(slug: string) {
