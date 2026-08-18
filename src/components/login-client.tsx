@@ -23,6 +23,7 @@ type ApiError = {
   error?: unknown;
   message?: unknown;
   code?: string;
+  missing?: string[];
 };
 
 type ApiResponse = ApiError & {
@@ -55,7 +56,9 @@ function otpErrorMessage(data: ApiError, fallback: string) {
     case "DATABASE_NOT_CONFIGURED":
       return "Login and registration are offline because the live server is missing its database connection.";
     case "WHATSAPP_NOT_CONFIGURED":
-      return "WhatsApp OTP is not configured on this server. Please contact support.";
+      return data.missing?.length
+        ? `WhatsApp OTP is missing on the live server: ${data.missing.join(", ")}.`
+        : "WhatsApp OTP is not configured on this server. Please contact support.";
     case "WHATSAPP_AUTH_FAILED":
       return "WhatsApp OTP credentials were rejected. Please contact support.";
     case "WHATSAPP_TEMPLATE_FAILED":

@@ -34,7 +34,7 @@ function toWhatsAppPhone(mobile: string) {
   const digits = mobile.replace(/\D/g, "");
   if (digits.length > 10) return digits;
 
-  const countryCode = readEnv("META_WHATSAPP_DEFAULT_COUNTRY_CODE") || "91";
+  const countryCode = readServerEnv("META_WHATSAPP_DEFAULT_COUNTRY_CODE", ["WHATSAPP_DEFAULT_COUNTRY_CODE"]) || "91";
   return `${countryCode.replace(/\D/g, "")}${digits.slice(-10)}`;
 }
 
@@ -46,12 +46,12 @@ function getTemplateComponents(code: string) {
     },
   ];
 
-  const buttonSubType = readEnv("META_WHATSAPP_OTP_BUTTON_SUB_TYPE");
+  const buttonSubType = readServerEnv("META_WHATSAPP_OTP_BUTTON_SUB_TYPE", ["WHATSAPP_OTP_BUTTON_SUB_TYPE"]);
   if (buttonSubType) {
     components.push({
       type: "button",
       sub_type: buttonSubType,
-      index: readEnv("META_WHATSAPP_OTP_BUTTON_INDEX") || "0",
+      index: readServerEnv("META_WHATSAPP_OTP_BUTTON_INDEX", ["WHATSAPP_OTP_BUTTON_INDEX"]) || "0",
       parameters: [{ type: "text", text: code }],
     });
   }

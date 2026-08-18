@@ -11,8 +11,8 @@ const otpSchema = z.object({
   purpose: z.enum(["signin", "signup"]),
 });
 
-function otpServiceUnavailable(message: string, code: string) {
-  return NextResponse.json({ error: message, code }, { status: 503 });
+function otpServiceUnavailable(message: string, code: string, missing?: string[]) {
+  return NextResponse.json({ error: message, code, missing }, { status: 503 });
 }
 
 function getWhatsAppFailureCode(message: string, status?: number) {
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
   const canSkipSend = process.env.NODE_ENV !== "production" && !whatsAppConfig.configured;
   if (!canSkipSend && !whatsAppConfig.configured) {
     console.error("WhatsApp OTP is not configured.", { missing: whatsAppConfig.missing });
-    return otpServiceUnavailable("WhatsApp OTP is not configured on this server. Please contact support.", "WHATSAPP_NOT_CONFIGURED");
+    return otpServiceUnavailable("WhatsApp OTP is not configured on this server. Please contact support.", "WHATSAPP_NOT_CONFIGURED", whatsAppConfig.missing);
   }
 
   let otp: Awaited<ReturnType<typeof createCustomerOtp>>;
