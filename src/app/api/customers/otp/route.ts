@@ -98,6 +98,8 @@ export async function POST(request: Request) {
         status: "SENT",
       },
       update: { status: "SENT" },
+    }).catch((error) => {
+      console.error("WhatsApp OTP message log failed.", error);
     });
   }
 
