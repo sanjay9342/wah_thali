@@ -48,10 +48,58 @@ The response should show `"ok": true`. If it is false, check the failing section
 
 Do not put secret values in source code. Set them only in the hosting provider environment variables.
 
-For database connection, set at least one of these in the deployed site's environment variables:
+## GoDaddy Node.js Hosting Fix
 
-- `DATABASE_URL` preferred for runtime
+The live `wahthali.in` deployment currently runs on GoDaddy Node.js Hosting. If `/api/health` shows every environment variable as `false`, the app was uploaded without production environment variables.
+
+Open the GoDaddy Node.js Hosting app settings and add the same keys from local `.env.local` into the app's Environment Variables section, then redeploy/restart the app. Do not paste these values into `netlify.toml`, GitHub, or source files.
+
+In the GoDaddy UI, enter each variable as a separate key/value row:
+
+- Key: `DATABASE_URL`
+- Value: paste only the connection string value, without `DATABASE_URL=`
+- Do not add wrapping quotes in the GoDaddy value field.
+- Do not add spaces before or after the key name.
+
+Example format:
+
+```txt
+Key: DATABASE_URL
+Value: postgresql://...
+```
+
+Minimum required values for login, registration, and WhatsApp OTP:
+
+- `DATABASE_URL`
 - `DIRECT_URL`
+- `NEXT_PUBLIC_SITE_URL`
+- `SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_STORAGE_BUCKET`
+- `META_WHATSAPP_PHONE_NUMBER_ID`
+- `META_WHATSAPP_ACCESS_TOKEN`
+- `META_WHATSAPP_VERIFY_TOKEN`
+- `META_WHATSAPP_OTP_TEMPLATE_NAME`
+- `META_WHATSAPP_LANGUAGE_CODE`
+- `META_WHATSAPP_DEFAULT_COUNTRY_CODE`
+- `META_GRAPH_API_VERSION`
+- `META_WHATSAPP_OTP_BUTTON_SUB_TYPE`
+- `META_WHATSAPP_OTP_BUTTON_INDEX`
+
+For the current approved WhatsApp OTP template, these button values are required:
+
+- `META_WHATSAPP_OTP_BUTTON_SUB_TYPE=url`
+- `META_WHATSAPP_OTP_BUTTON_INDEX=0`
+
+After redeploy/restart, `https://wahthali.in/api/health` must return `"ok": true`. If `database.configured` is still `false`, the host still has no `DATABASE_URL`.
+
+If `database.configured` is `true` but `database.ok` is `false`, the app sees `DATABASE_URL` but cannot use it. Re-paste the `DATABASE_URL` and `DIRECT_URL` values from local `.env.local`, making sure the password, host, port, and query string are complete.
+
+For database connection, set at least one of these in the deployed site's environment variables. The app tries them in this order:
+
+- `DIRECT_URL`
+- `DATABASE_URL`
 - `POSTGRES_PRISMA_URL`
 - `POSTGRES_URL`
 - `POSTGRES_URL_NON_POOLING`

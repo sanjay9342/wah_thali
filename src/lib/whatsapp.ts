@@ -1,12 +1,13 @@
 import "server-only";
 
+import { readServerEnv } from "@/lib/server-env";
+
 type WhatsAppSendResult =
   | { ok: true; messageId?: string }
   | { ok: false; status?: number; message: string };
 
 function readEnv(key: string) {
-  const raw = process.env[key]?.trim();
-  return raw?.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1") ?? "";
+  return readServerEnv(key);
 }
 
 function readFirstEnv(keys: string[]) {
@@ -20,7 +21,7 @@ function readFirstEnv(keys: string[]) {
 
 export function getWhatsAppOtpConfigStatus() {
   const missing = [
-    readEnv("META_WHATSAPP_PHONE_NUMBER_ID") ? "" : "META_WHATSAPP_PHONE_NUMBER_ID",
+    readServerEnv("META_WHATSAPP_PHONE_NUMBER_ID", ["WHATSAPP_PHONE_NUMBER_ID", "META_PHONE_NUMBER_ID"]) ? "" : "META_WHATSAPP_PHONE_NUMBER_ID",
     readEnv("META_WHATSAPP_ACCESS_TOKEN") ? "" : "META_WHATSAPP_ACCESS_TOKEN",
     readFirstEnv(["META_WHATSAPP_OTP_TEMPLATE_NAME", "WHATSAPP_OTP_TEMPLATE_NAME", "META_WHATSAPP_TEMPLATE_NAME"])
       ? ""
@@ -68,7 +69,7 @@ export async function sendWhatsAppOtp(mobile: string, code: string): Promise<Wha
   }
 
   const graphApiVersion = readEnv("META_GRAPH_API_VERSION") || "v23.0";
-  const phoneNumberId = readEnv("META_WHATSAPP_PHONE_NUMBER_ID");
+  const phoneNumberId = readServerEnv("META_WHATSAPP_PHONE_NUMBER_ID", ["WHATSAPP_PHONE_NUMBER_ID", "META_PHONE_NUMBER_ID"]);
   const accessToken = readEnv("META_WHATSAPP_ACCESS_TOKEN");
   const templateName = readFirstEnv(["META_WHATSAPP_OTP_TEMPLATE_NAME", "WHATSAPP_OTP_TEMPLATE_NAME", "META_WHATSAPP_TEMPLATE_NAME"]);
   const languageCode = readEnv("META_WHATSAPP_LANGUAGE_CODE") || "en_US";

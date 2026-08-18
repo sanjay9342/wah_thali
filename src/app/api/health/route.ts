@@ -1,20 +1,22 @@
 import { NextResponse } from "next/server";
 import { getConfiguredDatabaseUrlKey, isDatabaseConfigured, prisma } from "@/lib/prisma";
+import { hasServerEnv, readServerEnv } from "@/lib/server-env";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { getWhatsAppOtpConfigStatus } from "@/lib/whatsapp";
 
 type Check = {
   ok: boolean;
   configured?: boolean;
+  code?: string;
   message: string;
 };
 
-function configured(value: string | undefined) {
-  return Boolean(value?.trim());
+function envConfigured(key: string, aliases: string[] = []) {
+  return hasServerEnv(key, aliases);
 }
 
 function getExpectedHost() {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://wahthali.in";
+  const siteUrl = readServerEnv("NEXT_PUBLIC_SITE_URL") || "https://wahthali.in";
   try {
     return new URL(siteUrl).host;
   } catch {
@@ -45,10 +47,15 @@ async function checkDatabase(): Promise<Check> {
     };
   } catch (error) {
     console.error("Health check database connection failed.", error);
+    const code = typeof error === "object" && error && "code" in error ? String(error.code) : undefined;
+    const errorMessage = error instanceof Error ? error.message : "";
     return {
       ok: false,
       configured: true,
-      message: "Database environment variable exists, but the app could not connect.",
+      code,
+      message: errorMessage
+        ? `Database environment variable exists, but the app could not connect: ${errorMessage}`
+        : "Database environment variable exists, but the app could not connect.",
     };
   }
 }
@@ -60,36 +67,36 @@ export async function GET(request: Request) {
   const supabaseConfigured = isSupabaseConfigured();
   const whatsAppStatus = getWhatsAppOtpConfigStatus();
   const requiredEnv = {
-    NEXT_PUBLIC_SITE_URL: configured(process.env.NEXT_PUBLIC_SITE_URL),
-    DATABASE_URL: configured(process.env.DATABASE_URL),
-    DIRECT_URL: configured(process.env.DIRECT_URL),
-    POSTGRES_PRISMA_URL: configured(process.env.POSTGRES_PRISMA_URL),
-    POSTGRES_URL: configured(process.env.POSTGRES_URL),
-    POSTGRES_URL_NON_POOLING: configured(process.env.POSTGRES_URL_NON_POOLING),
-    SUPABASE_DB_URL: configured(process.env.SUPABASE_DB_URL),
-    SUPABASE_URL: configured(process.env.SUPABASE_URL),
-    NEXT_PUBLIC_SUPABASE_URL: configured(process.env.NEXT_PUBLIC_SUPABASE_URL),
-    SUPABASE_SERVICE_ROLE_KEY: configured(process.env.SUPABASE_SERVICE_ROLE_KEY),
-    SUPABASE_STORAGE_BUCKET: configured(process.env.SUPABASE_STORAGE_BUCKET),
-    ADMIN_MOBILES: configured(process.env.ADMIN_MOBILES),
-    ADMIN_EMAILS: configured(process.env.ADMIN_EMAILS),
-    ADMIN_BOOTSTRAP_PASSWORD: configured(process.env.ADMIN_BOOTSTRAP_PASSWORD),
+    NEXT_PUBLIC_SITE_URL: envConfigured("NEXT_PUBLIC_SITE_URL"),
+    DATABASE_URL: envConfigured("DATABASE_URL"),
+    DIRECT_URL: envConfigured("DIRECT_URL"),
+    POSTGRES_PRISMA_URL: envConfigured("POSTGRES_PRISMA_URL"),
+    POSTGRES_URL: envConfigured("POSTGRES_URL"),
+    POSTGRES_URL_NON_POOLING: envConfigured("POSTGRES_URL_NON_POOLING"),
+    SUPABASE_DB_URL: envConfigured("SUPABASE_DB_URL"),
+    SUPABASE_URL: envConfigured("SUPABASE_URL"),
+    NEXT_PUBLIC_SUPABASE_URL: envConfigured("NEXT_PUBLIC_SUPABASE_URL"),
+    SUPABASE_SERVICE_ROLE_KEY: envConfigured("SUPABASE_SERVICE_ROLE_KEY"),
+    SUPABASE_STORAGE_BUCKET: envConfigured("SUPABASE_STORAGE_BUCKET"),
+    ADMIN_MOBILES: envConfigured("ADMIN_MOBILES"),
+    ADMIN_EMAILS: envConfigured("ADMIN_EMAILS"),
+    ADMIN_BOOTSTRAP_PASSWORD: envConfigured("ADMIN_BOOTSTRAP_PASSWORD"),
   };
   const paymentEnv = {
-    RAZORPAY_KEY_ID: configured(process.env.RAZORPAY_KEY_ID),
-    RAZORPAY_KEY_SECRET: configured(process.env.RAZORPAY_KEY_SECRET),
-    RAZORPAY_WEBHOOK_SECRET: configured(process.env.RAZORPAY_WEBHOOK_SECRET),
+    RAZORPAY_KEY_ID: envConfigured("RAZORPAY_KEY_ID"),
+    RAZORPAY_KEY_SECRET: envConfigured("RAZORPAY_KEY_SECRET"),
+    RAZORPAY_WEBHOOK_SECRET: envConfigured("RAZORPAY_WEBHOOK_SECRET"),
   };
   const whatsappEnv = {
-    META_WHATSAPP_PHONE_NUMBER_ID: configured(process.env.META_WHATSAPP_PHONE_NUMBER_ID),
-    META_WHATSAPP_ACCESS_TOKEN: configured(process.env.META_WHATSAPP_ACCESS_TOKEN),
-    META_WHATSAPP_VERIFY_TOKEN: configured(process.env.META_WHATSAPP_VERIFY_TOKEN),
-    META_WHATSAPP_OTP_TEMPLATE_NAME: configured(process.env.META_WHATSAPP_OTP_TEMPLATE_NAME || process.env.WHATSAPP_OTP_TEMPLATE_NAME || process.env.META_WHATSAPP_TEMPLATE_NAME),
-    META_WHATSAPP_LANGUAGE_CODE: configured(process.env.META_WHATSAPP_LANGUAGE_CODE),
-    META_WHATSAPP_DEFAULT_COUNTRY_CODE: configured(process.env.META_WHATSAPP_DEFAULT_COUNTRY_CODE),
-    META_GRAPH_API_VERSION: configured(process.env.META_GRAPH_API_VERSION),
-    META_WHATSAPP_OTP_BUTTON_SUB_TYPE: configured(process.env.META_WHATSAPP_OTP_BUTTON_SUB_TYPE),
-    META_WHATSAPP_OTP_BUTTON_INDEX: configured(process.env.META_WHATSAPP_OTP_BUTTON_INDEX),
+    META_WHATSAPP_PHONE_NUMBER_ID: envConfigured("META_WHATSAPP_PHONE_NUMBER_ID", ["WHATSAPP_PHONE_NUMBER_ID", "META_PHONE_NUMBER_ID"]),
+    META_WHATSAPP_ACCESS_TOKEN: envConfigured("META_WHATSAPP_ACCESS_TOKEN"),
+    META_WHATSAPP_VERIFY_TOKEN: envConfigured("META_WHATSAPP_VERIFY_TOKEN"),
+    META_WHATSAPP_OTP_TEMPLATE_NAME: envConfigured("META_WHATSAPP_OTP_TEMPLATE_NAME", ["WHATSAPP_OTP_TEMPLATE_NAME", "META_WHATSAPP_TEMPLATE_NAME"]),
+    META_WHATSAPP_LANGUAGE_CODE: envConfigured("META_WHATSAPP_LANGUAGE_CODE"),
+    META_WHATSAPP_DEFAULT_COUNTRY_CODE: envConfigured("META_WHATSAPP_DEFAULT_COUNTRY_CODE"),
+    META_GRAPH_API_VERSION: envConfigured("META_GRAPH_API_VERSION"),
+    META_WHATSAPP_OTP_BUTTON_SUB_TYPE: envConfigured("META_WHATSAPP_OTP_BUTTON_SUB_TYPE"),
+    META_WHATSAPP_OTP_BUTTON_INDEX: envConfigured("META_WHATSAPP_OTP_BUTTON_INDEX"),
   };
   const domainOk = requestHost === expectedHost || requestHost === `www.${expectedHost}` || requestHost.startsWith("localhost:");
   const ok = database.ok && supabaseConfigured && requiredEnv.NEXT_PUBLIC_SITE_URL && domainOk && whatsAppStatus.configured;

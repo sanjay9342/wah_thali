@@ -2,14 +2,15 @@ import "server-only";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
+import { hasServerEnv, readServerEnv } from "@/lib/server-env";
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
 
 const databaseUrlKeys = [
-  "DATABASE_URL",
   "DIRECT_URL",
+  "DATABASE_URL",
   "POSTGRES_PRISMA_URL",
   "POSTGRES_URL",
   "POSTGRES_URL_NON_POOLING",
@@ -22,7 +23,7 @@ function cleanDatabaseUrl(raw: string) {
 
 function getDatabaseUrl() {
   for (const key of databaseUrlKeys) {
-    const raw = process.env[key]?.trim();
+    const raw = readServerEnv(key);
     if (raw) return cleanDatabaseUrl(raw);
   }
 
@@ -43,9 +44,9 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 export function isDatabaseConfigured() {
-  return databaseUrlKeys.some((key) => Boolean(process.env[key]?.trim()));
+  return databaseUrlKeys.some((key) => hasServerEnv(key));
 }
 
 export function getConfiguredDatabaseUrlKey() {
-  return databaseUrlKeys.find((key) => Boolean(process.env[key]?.trim())) ?? null;
+  return databaseUrlKeys.find((key) => hasServerEnv(key)) ?? null;
 }
