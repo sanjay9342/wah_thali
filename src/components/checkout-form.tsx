@@ -11,13 +11,18 @@ import { saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-locati
 import { getDeliveryCoverage } from "@/lib/delivery-radius";
 import { getStoreOrderingStatus } from "@/lib/store-hours";
 import { useStoredCart } from "@/lib/use-stored-cart";
+import { OrderPlacingOverlay } from "@/components/order-placing-overlay";
 import type { RestaurantSettings } from "@/lib/types";
+
+function wait(durationMs: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, durationMs));
+}
 
 export function CheckoutForm({ restaurantSettings }: { restaurantSettings: RestaurantSettings }) {
   const router = useRouter();
   const paymentMethods = [
     ...(restaurantSettings.codEnabled ? ["Cash on Delivery"] : []),
-    ...(restaurantSettings.onlinePaymentsEnabled ? ["Razorpay", "UPI", "Cards and wallets"] : []),
+    ...(restaurantSettings.onlinePaymentsEnabled ? ["Online Pay"] : []),
   ];
   const deliveryLocation = useDeliveryLocation();
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
@@ -26,6 +31,7 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
   const [paymentMethod, setPaymentMethod] = useState(paymentMethods[0] ?? "No payment method");
   const [locating, setLocating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [placingStage, setPlacingStage] = useState<string | null>(null);
   const [address, setAddress] = useState({
     name: "",
     phone: "",
@@ -84,7 +90,9 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
     }
 
     setSubmitting(true);
+    setPlacingStage("Creating your order and sending it to the kitchen.");
     setMessage("Creating your order...");
+    let keepOverlay = false;
 
     try {
       const response = await fetch("/api/orders", {
@@ -93,6 +101,11 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
         body: JSON.stringify({
           customerName: address.name.trim(),
           customerMobile: address.phone.trim(),
+          receiverName: address.name.trim(),
+          receiverMobile: address.phone.trim(),
+          deliveryAddress: [address.area.trim(), address.landmark.trim()].filter(Boolean).join(", "),
+          deliveryLabel: "Checkout",
+          restaurantNote: address.instructions.trim(),
           pinCode: address.pinCode.trim(),
           latitude: String(address.latitude || deliveryLocation.latitude || ""),
           longitude: String(address.longitude || deliveryLocation.longitude || ""),
@@ -107,11 +120,17 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
       }
 
       writeStoredCart([], customerSession?.mobile);
-      router.push(`/order/${data.order.orderNumber}/confirmed`);
+      setPlacingStage("Order placed successfully. Opening your live tracker.");
+      await wait(850);
+      keepOverlay = true;
+      router.push(`/order/${data.order.orderNumber}/track`);
     } catch {
       setMessage("Order could not be created. Please check your connection and try again.");
     } finally {
-      setSubmitting(false);
+      if (!keepOverlay) {
+        setSubmitting(false);
+        setPlacingStage(null);
+      }
     }
   }
 
@@ -167,6 +186,7 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
 
   return (
     <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_340px]">
+      {placingStage ? <OrderPlacingOverlay message={placingStage} /> : null}
       <section className="space-y-5">
         <div className="surface rounded-2xl p-5">
           <h2 className="flex items-center gap-2 text-xl font-black text-maroon">

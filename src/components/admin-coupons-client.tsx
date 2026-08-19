@@ -13,6 +13,8 @@ type AdminCoupon = {
   value: number;
   minOrder: number;
   maxDiscount?: number | null;
+  audience?: "ALL" | "VIP" | "POINTS";
+  minPoints?: number;
   startsAt: string;
   endsAt: string;
   active: boolean;
@@ -25,6 +27,8 @@ const emptyCoupon: AdminCoupon = {
   value: 50,
   minOrder: 149,
   maxDiscount: null,
+  audience: "ALL",
+  minPoints: 0,
   startsAt: new Date().toISOString().slice(0, 10),
   endsAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString().slice(0, 10),
   active: true,
@@ -160,7 +164,7 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
               <h2 className="flex items-center gap-2 text-xl font-black text-maroon">
                 <Sparkles className="text-red" size={20} /> Customer offer preview
               </h2>
-              <p className="mt-1 text-sm font-semibold text-muted">Every active valid coupon below appears automatically on the Offers page with matching varied colors.</p>
+            <p className="mt-1 text-sm font-semibold text-muted">Every active valid coupon below appears automatically on the Offers page with matching varied colors.</p>
             </div>
             <span className="rounded-lg bg-[#fff4f5] px-3 py-2 text-xs font-black text-red">{liveCoupons.length} live</span>
           </div>
@@ -192,7 +196,7 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
             <table className="w-full min-w-[840px] text-left text-sm">
               <thead className="bg-cream text-maroon">
                 <tr>
-                  {["Code", "Label", "Discount", "Minimum", "Dates", "Status", "Actions"].map((head) => (
+                  {["Code", "Label", "Discount", "Eligible customers", "Minimum", "Dates", "Status", "Actions"].map((head) => (
                     <th key={head} className="p-4">{head}</th>
                   ))}
                 </tr>
@@ -205,6 +209,7 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
                       <td className="p-4"><span className="rounded-lg bg-maroon px-3 py-2 font-black text-white">{coupon.code}</span></td>
                       <td className="p-4 font-black">{coupon.label}</td>
                       <td className="p-4">{coupon.type === "FIXED" ? formatRupees(coupon.value) : `${coupon.value}%`}</td>
+                      <td className="p-4"><EligibilityPill coupon={coupon} /></td>
                       <td className="p-4">{formatRupees(coupon.minOrder)}</td>
                       <td className="p-4 text-xs font-bold text-muted">{coupon.startsAt} to {coupon.endsAt}</td>
                       <td className="p-4">
@@ -261,6 +266,15 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
                 <Field label={editing.type === "FIXED" ? "Amount off" : "Percent off"} value={String(editing.value)} onChange={(value) => setEditing({ ...editing, value: Number(value) })} />
                 <Field label="Minimum order" value={String(editing.minOrder)} onChange={(value) => setEditing({ ...editing, minOrder: Number(value) })} />
                 <Field label="Max discount" value={editing.maxDiscount ? String(editing.maxDiscount) : ""} onChange={(value) => setEditing({ ...editing, maxDiscount: value ? Number(value) : null })} />
+                <label className="grid gap-2 text-sm font-black text-charcoal">
+                  Eligible customers
+                  <select value={editing.audience ?? "ALL"} onChange={(event) => setEditing({ ...editing, audience: event.target.value as AdminCoupon["audience"] })} className="h-11 rounded-lg border border-border bg-cream px-3">
+                    <option value="ALL">All customers</option>
+                    <option value="VIP">VIP customers only</option>
+                    <option value="POINTS">Points based</option>
+                  </select>
+                </label>
+                <Field label="Minimum points" value={String(editing.minPoints ?? 0)} onChange={(value) => setEditing({ ...editing, minPoints: Number(value) })} />
                 <Field label="Start date" type="date" value={editing.startsAt} onChange={(value) => setEditing({ ...editing, startsAt: value })} />
                 <Field label="End date" type="date" value={editing.endsAt} onChange={(value) => setEditing({ ...editing, endsAt: value })} />
               </div>
@@ -338,6 +352,7 @@ function AdminCouponPreview({
 
         <h3 className="mt-4 line-clamp-1 text-[17px] font-black leading-tight text-charcoal">{coupon.label || "Coupon label"}</h3>
         <p className="mt-2 line-clamp-2 text-[13px] font-semibold leading-5 text-charcoal/85">{getCouponDescription(coupon)}</p>
+        <div className="mt-3"><EligibilityPill coupon={coupon} /></div>
         <div className="mt-3 grid gap-1 border-t border-[#eef1f6] pt-3 text-[11px] font-bold leading-4 text-muted sm:grid-cols-2">
           <span>{coupon.minOrder > 0 ? `Min. Order: ${formatRupees(coupon.minOrder)}` : "No minimum order"}</span>
           <span>Expires: {formatCouponDate(coupon.endsAt)}</span>
@@ -346,6 +361,17 @@ function AdminCouponPreview({
       </div>
     </article>
   );
+}
+
+function EligibilityPill({ coupon }: { coupon: Pick<AdminCoupon, "audience" | "minPoints"> }) {
+  const audience = coupon.audience ?? "ALL";
+  const label = audience === "VIP"
+    ? "VIP only"
+    : audience === "POINTS"
+      ? `${coupon.minPoints ?? 0}+ points`
+      : "All customers";
+
+  return <span className="inline-flex rounded-lg bg-[#fff4f5] px-3 py-2 text-xs font-black text-maroon">{label}</span>;
 }
 
 function getCouponPalette(code: string) {

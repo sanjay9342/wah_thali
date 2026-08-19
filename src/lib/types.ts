@@ -53,8 +53,12 @@ export type AdminOrder = {
   customerName: string;
   customerMobile: string;
   status: OrderStatus;
+  subtotal: number;
+  discount: number;
+  gst: number;
   amount: number;
   itemSummary: string;
+  items: { name: string; quantity: number; price: number }[];
   paymentSummary: string;
   createdAt: string;
   timeline: { toStatus: string; note?: string | null; createdAt: string }[];
@@ -65,6 +69,7 @@ export type AdminCustomer = {
   name: string;
   mobile: string;
   email?: string;
+  isVip: boolean;
   orders: number;
   ltv: number;
   points: number;
@@ -90,6 +95,8 @@ export type Coupon = {
   value: number;
   minOrder: number;
   maxDiscount?: number;
+  audience?: "ALL" | "VIP" | "POINTS";
+  minPoints?: number;
   startsAt?: string;
   endsAt?: string;
 };

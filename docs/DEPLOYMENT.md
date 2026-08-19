@@ -98,12 +98,14 @@ If `database.configured` is `true` but `database.ok` is `false`, the app sees `D
 
 For database connection, set at least one of these in the deployed site's environment variables. The app tries them in this order:
 
-- `DIRECT_URL`
 - `DATABASE_URL`
+- `DIRECT_URL`
 - `POSTGRES_PRISMA_URL`
 - `POSTGRES_URL`
 - `POSTGRES_URL_NON_POOLING`
 - `SUPABASE_DB_URL`
+
+On shared hosting, prefer the Supabase pooler URL in `DATABASE_URL` because direct Postgres port `5432` can be blocked. Keep `DIRECT_URL` for migration/admin tasks only if the host can connect to it.
 
 If login shows a database unavailable message on `https://wahthali.in`, the deployed host is missing these variables or the latest code has not been redeployed.
 

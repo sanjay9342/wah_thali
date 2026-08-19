@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { logActivity } from "@/lib/db";
+import { deleteCouponRule, logActivity, saveCouponRule } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
 const couponSchema = z.object({
@@ -13,6 +13,8 @@ const couponSchema = z.object({
   startsAt: z.coerce.date().optional(),
   endsAt: z.coerce.date().optional(),
   active: z.boolean().optional(),
+  audience: z.enum(["ALL", "VIP", "POINTS"]).optional(),
+  minPoints: z.coerce.number().int().nonnegative().optional(),
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ code: string }> }) {
@@ -26,10 +28,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
     return NextResponse.json({ error: "Invalid coupon update", issues: parsed.error.flatten() }, { status: 400 });
   }
 
+  const { audience, minPoints, ...couponData } = parsed.data;
   const coupon = await prisma.coupon.update({
     where: { code: code.toUpperCase() },
-    data: parsed.data,
+    data: couponData,
   });
+  if (audience !== undefined || minPoints !== undefined) {
+    await saveCouponRule(coupon.code, { audience: audience ?? "ALL", minPoints: minPoints ?? 0 });
+  }
 
   await logActivity({
     type: "COUPON_UPDATED",
@@ -48,5 +54,6 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
 
   const { code } = await params;
   const coupon = await prisma.coupon.delete({ where: { code: code.toUpperCase() } });
+  await deleteCouponRule(code);
   return NextResponse.json({ deleted: true, coupon });
 }

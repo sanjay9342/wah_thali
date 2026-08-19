@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Chewy, Nunito } from "next/font/google";
+import { LegacyStorageCleanup } from "@/components/legacy-storage-cleanup";
 import "./globals.css";
 
 const nunito = Nunito({
@@ -42,7 +43,10 @@ export default function RootLayout({
       lang="en"
       className={`${nunito.variable} ${chewy.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <LegacyStorageCleanup />
+        {children}
+      </body>
     </html>
   );
 }

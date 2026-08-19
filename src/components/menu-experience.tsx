@@ -17,13 +17,9 @@ import {
   Search,
   ShoppingBag,
   ShoppingCart,
-  SlidersHorizontal,
   Star,
   Store,
-  ThumbsUp,
   TimerReset,
-  TrendingDown,
-  TrendingUp,
   Truck,
   X,
   Zap,
@@ -163,154 +159,8 @@ function DietMark({ type, compact = false }: { type: Product["dietaryType"]; com
   );
 }
 
-type DietFilter = "ALL" | "VEG" | "NON_VEG";
-type PriceSort = "NONE" | "RATING_HIGH" | "LOW_HIGH" | "HIGH_LOW";
-
-function matchesDietFilter(product: Product, filter: DietFilter) {
-  if (filter === "ALL") return true;
-  if (filter === "VEG") return product.dietaryType !== "NON_VEG";
-  return product.dietaryType === "NON_VEG";
-}
-
-function sortProductsByPrice(products: Product[], sort: PriceSort) {
-  if (sort === "NONE") return products;
-  if (sort === "RATING_HIGH") return [...products].sort((left, right) => right.rating - left.rating);
-  return [...products].sort((left, right) => sort === "LOW_HIGH" ? left.price - right.price : right.price - left.price);
-}
-
 function needsDishDetail(product: Product) {
   return product.addons.length > 0 || product.variants.length > 1;
-}
-
-function DietFilterToggle({ value, onChange }: { value: DietFilter; onChange: (value: DietFilter) => void }) {
-  const items: Array<{ value: DietFilter; label: string; activeClass: string; idleClass: string }> = [
-    { value: "ALL", label: "All", activeClass: "bg-charcoal text-white", idleClass: "bg-white text-charcoal ring-1 ring-[#e8edf3]" },
-    { value: "VEG", label: "Veg", activeClass: "bg-[#078b52] text-white", idleClass: "bg-[#f0fbf5] text-[#078b52] ring-1 ring-[#b8e6cf]" },
-    { value: "NON_VEG", label: "Non veg", activeClass: "bg-maroon text-white", idleClass: "bg-[#fff4f5] text-maroon ring-1 ring-[#efc8d1]" },
-  ];
-
-  return (
-    <div className="inline-flex items-center gap-1.5 rounded-full bg-white p-1 shadow-[0_6px_16px_rgba(17,24,39,0.055)] ring-1 ring-[#e8edf3]" aria-label="Diet filter">
-      {items.map((item) => (
-        <button
-          key={item.value}
-          type="button"
-          onClick={() => onChange(item.value)}
-          className={`h-7 rounded-full px-3 text-[10px] font-black transition-colors ${value === item.value ? item.activeClass : item.idleClass}`}
-        >
-          {item.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function SortFilterSheet({
-  dietFilter,
-  priceSort,
-  onDietChange,
-  onSortChange,
-  onReset,
-  onClose,
-}: {
-  dietFilter: DietFilter;
-  priceSort: PriceSort;
-  onDietChange: (value: DietFilter) => void;
-  onSortChange: (value: PriceSort) => void;
-  onReset: () => void;
-  onClose: () => void;
-}) {
-  const sortOptions: Array<{ value: PriceSort; label: string; icon: typeof Star }> = [
-    { value: "NONE", label: "Popularity (Default)", icon: Star },
-    { value: "RATING_HIGH", label: "Customer Rating", icon: ThumbsUp },
-    { value: "LOW_HIGH", label: "Price: Low to High", icon: TrendingUp },
-    { value: "HIGH_LOW", label: "Price: High to Low", icon: TrendingDown },
-  ];
-
-  const vegOnly = dietFilter === "VEG";
-
-  return (
-    <div className="fixed inset-0 z-[75] flex items-end bg-charcoal/55 backdrop-blur-[2px]" onClick={onClose}>
-      <section
-        className="w-full rounded-t-[28px] bg-white px-5 pb-[calc(env(safe-area-inset-bottom)+22px)] pt-5 shadow-[0_-18px_48px_rgba(17,24,39,0.25)] sm:mx-auto sm:mb-6 sm:max-w-lg sm:rounded-[28px]"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="sort-filter-title"
-      >
-        <div className="flex items-center justify-between gap-4 border-b border-[#eef1f6] pb-5">
-          <h2 id="sort-filter-title" className="foodie-display text-[30px] leading-none text-charcoal sm:font-sans sm:text-xl sm:font-black">
-            Sort & Filter
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="grid h-11 w-11 place-items-center rounded-full bg-[#f4f5f7] text-[#5f6875]"
-            aria-label="Close filters"
-          >
-            <X size={24} strokeWidth={2.5} />
-          </button>
-        </div>
-
-        <div className="py-5">
-          <p className="text-[12px] font-black uppercase tracking-[0.12em] text-[#a0a6b0]">Dietary Preference</p>
-          <div className="mt-4 flex items-center justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-3">
-              <DietMark type="VEG" />
-              <span className="min-w-0">
-                <span className="block text-[15px] font-black leading-5 text-charcoal">Veg Only</span>
-                <span className="mt-0.5 block text-[11px] font-bold text-muted">Show vegetarian dishes only</span>
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => onDietChange(vegOnly ? "ALL" : "VEG")}
-              className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${vegOnly ? "bg-maroon" : "bg-[#e2e4e8]"}`}
-              aria-pressed={vegOnly}
-              aria-label="Toggle veg only"
-            >
-              <span className={`absolute top-1 grid h-6 w-6 place-items-center rounded-full bg-white shadow-sm transition-transform ${vegOnly ? "translate-x-7" : "translate-x-1"}`} />
-            </button>
-          </div>
-        </div>
-
-        <div className="pb-5">
-          <p className="text-[12px] font-black uppercase tracking-[0.12em] text-[#a0a6b0]">Sort By</p>
-          <div className="mt-3 grid gap-2.5">
-            {sortOptions.map((option) => {
-              const Icon = option.icon;
-              const active = priceSort === option.value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => onSortChange(option.value)}
-                  className={`grid min-h-[58px] grid-cols-[34px_1fr_26px] items-center gap-3 rounded-[16px] border bg-white px-4 text-left transition-colors ${
-                    active ? "border-maroon text-maroon shadow-[0_8px_18px_rgba(141,0,33,0.08)]" : "border-[#eef1f6] text-[#9aa1ad] shadow-[0_5px_14px_rgba(17,24,39,0.035)]"
-                  }`}
-                >
-                  <Icon size={20} strokeWidth={2.2} />
-                  <span className={`text-[14px] font-black leading-5 ${active ? "text-charcoal" : "text-[#2f3642]"}`}>{option.label}</span>
-                  <span className={`grid h-6 w-6 place-items-center rounded-full border-2 ${active ? "border-maroon" : "border-[#d7dbe2]"}`}>
-                    {active ? <span className="h-3 w-3 rounded-full bg-maroon" /> : null}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-[1fr_1.2fr] gap-3 border-t border-[#eef1f6] pt-5">
-          <button type="button" onClick={onReset} className="h-13 rounded-[15px] bg-[#f3f4f6] text-[14px] font-black text-charcoal">
-            Reset
-          </button>
-          <button type="button" onClick={onClose} className="h-13 rounded-[15px] bg-maroon text-[14px] font-black text-white shadow-[0_12px_24px_rgba(141,0,33,0.22)]">
-            Apply Filters
-          </button>
-        </div>
-      </section>
-    </div>
-  );
 }
 
 function ProductCard({
@@ -458,7 +308,6 @@ function DesktopSearchPage({
   validCart,
   savedProductIds,
   orderingDisabled,
-  onFilter,
   onAdd,
   onDecrease,
   onOpen,
@@ -471,7 +320,6 @@ function DesktopSearchPage({
   validCart: CartLine[];
   savedProductIds: string[];
   orderingDisabled: boolean;
-  onFilter: () => void;
   onAdd: (product: Product) => void;
   onDecrease: (product: Product) => void;
   onOpen: (product: Product) => void;
@@ -488,7 +336,7 @@ function DesktopSearchPage({
                 What are you looking for today?
               </h1>
             </div>
-            <label className="grid h-14 grid-cols-[50px_1fr_86px] items-center rounded-[18px] border border-[#f0e2e4] bg-white px-2 shadow-[0_8px_18px_rgba(17,24,39,0.05)]">
+            <label className="grid h-14 grid-cols-[50px_1fr] items-center rounded-[18px] border border-[#f0e2e4] bg-white px-2 shadow-[0_8px_18px_rgba(17,24,39,0.05)]">
               <Search size={23} className="mx-auto text-[#68707c]" strokeWidth={2.4} />
               <input
                 value={query}
@@ -496,14 +344,6 @@ function DesktopSearchPage({
                 className="min-w-0 bg-transparent text-[15px] font-semibold text-[#111827] outline-none placeholder:text-[#a8adb7]"
                 placeholder="Search fresh dishes"
               />
-              <button
-                type="button"
-                onClick={onFilter}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border-l border-[#eef1f6] text-[11px] font-black text-[#68707c]"
-              >
-                <SlidersHorizontal size={17} strokeWidth={2.5} />
-                Filter
-              </button>
             </label>
           </div>
         </div>
@@ -553,10 +393,6 @@ function DesktopTrustFooter({ categories }: { categories: string[] }) {
             <p className="mt-5 max-w-[360px] text-sm font-semibold leading-7 text-muted">
               Fresh homestyle meals delivered straight to your doorstep. Simple ordering, clean food, and fast delivery.
             </p>
-            <div className="mt-6 flex gap-4 text-muted">
-              <a href="https://www.facebook.com/wahthali21" aria-label="Facebook" className="text-4xl font-black hover:text-maroon">f</a>
-              <a href="https://www.instagram.com/wahthali/" aria-label="Instagram" className="grid h-11 w-11 place-items-center rounded-xl border-[3px] border-current text-xl font-black hover:text-maroon">◎</a>
-            </div>
           </div>
 
           <FooterColumn title="Top Categories">
@@ -918,14 +754,11 @@ export function MenuExperience({
     if (!initialActiveCategory || initialActiveCategory === "All") return "All";
     return categories.includes(initialActiveCategory) ? initialActiveCategory : "All";
   });
-  const [activePopup, setActivePopup] = useState<"filters" | null>(null);
   const [activeSlide, setActiveSlide] = useState(0);
   const [savedProductIds, setSavedProductIds] = useState<string[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [mobileMenuView, setMobileMenuView] = useState<"home" | "categories" | "category">("home");
   const [mobileCategory, setMobileCategory] = useState("All");
-  const [dietFilter, setDietFilter] = useState<DietFilter>("ALL");
-  const [priceSort, setPriceSort] = useState<PriceSort>("NONE");
   const [hiddenCartCount, setHiddenCartCount] = useState(0);
   const [cartBarClosing, setCartBarClosing] = useState(false);
   const cartOwnerId = customerSession?.mobile;
@@ -945,16 +778,15 @@ export function MenuExperience({
     return products.filter((product) => {
       const categoryMatch = activeCategory === "All" || product.category === activeCategory;
       const textMatch = !needle || `${product.name} ${product.category} ${product.description}`.toLowerCase().includes(needle);
-      return product.available && categoryMatch && textMatch && matchesDietFilter(product, dietFilter);
+      return product.available && categoryMatch && textMatch;
     });
-  }, [activeCategory, dietFilter, products, query]);
+  }, [activeCategory, products, query]);
 
   const popularProducts = useMemo(() => {
     const bestsellers = visibleProducts.filter((product) => product.bestseller);
     const otherProducts = visibleProducts.filter((product) => !bestsellers.some((item) => item.id === product.id));
-    const sortedProducts = [...bestsellers, ...otherProducts];
-    return sortProductsByPrice(sortedProducts, priceSort);
-  }, [priceSort, visibleProducts]);
+    return [...bestsellers, ...otherProducts];
+  }, [visibleProducts]);
 
   const promoSlides = useMemo(() => {
     const slides = initialSlides?.length ? initialSlides : [
@@ -1073,8 +905,8 @@ export function MenuExperience({
     const source = mobileCategory === "All"
       ? products
       : products.filter((product) => product.category === mobileCategory);
-    return sortProductsByPrice(source.filter((product) => product.available && matchesDietFilter(product, dietFilter)), priceSort);
-  }, [dietFilter, mobileCategory, priceSort, products]);
+    return source.filter((product) => product.available);
+  }, [mobileCategory, products]);
   const searchGroups = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return allProductCategories
@@ -1082,12 +914,12 @@ export function MenuExperience({
         const items = products.filter((product) => {
           const matchesCategory = product.category === category;
           const matchesText = !needle || `${product.name} ${product.category} ${product.description}`.toLowerCase().includes(needle);
-          return product.available && matchesCategory && matchesText && matchesDietFilter(product, dietFilter);
+          return product.available && matchesCategory && matchesText;
         });
-        return { category, items: sortProductsByPrice(items, priceSort) };
+        return { category, items };
       })
       .filter((group) => group.items.length > 0);
-  }, [allProductCategories, dietFilter, priceSort, products, query]);
+  }, [allProductCategories, products, query]);
   const cartCount = validCart.reduce((total, line) => total + line.quantity, 0);
   const cartSubtotal = useMemo(
     () => validCart.reduce((total, line) => total + getProductPrice(line, products), 0),
@@ -1100,7 +932,7 @@ export function MenuExperience({
   if (storeClosed) {
     return (
       <main className="min-h-screen bg-white pb-24 text-charcoal">
-        <Header />
+        <Header showLocation />
 
         <section className="mx-auto flex min-h-[calc(100vh-170px)] max-w-xl flex-col items-center justify-center px-8 pb-28 text-center lg:min-h-[calc(100vh-74px)]">
           <div className="grid h-24 w-24 place-items-center rounded-full bg-[#fff4f5] text-maroon">
@@ -1131,7 +963,7 @@ export function MenuExperience({
   if (!serviceable) {
     return (
       <main className="min-h-screen bg-white pb-24 text-charcoal">
-        <Header />
+        <Header showLocation />
 
         <section className="flex min-h-[calc(100vh-170px)] flex-col items-center justify-center px-8 pb-28 text-center lg:min-h-[calc(100vh-74px)]">
           <div className="grid h-24 w-24 place-items-center rounded-full bg-[#fff4f5] text-maroon">
@@ -1154,7 +986,7 @@ export function MenuExperience({
   return (
     <main className="min-h-screen bg-white pb-24 text-charcoal lg:pb-0">
       <div className={mobileMenuView === "category" || isSearchPage ? "hidden lg:block" : undefined}>
-        <Header />
+        <Header showLocation={isHomePage && mobileMenuView === "home"} />
       </div>
 
       {isSearchPage ? (
@@ -1164,7 +996,7 @@ export function MenuExperience({
               What are you
               <span className="block">looking for today?</span>
             </h1>
-            <label className="mt-6 grid h-12 grid-cols-[42px_1fr_58px] items-center rounded-[16px] border border-[#eef1f6] bg-white px-2 shadow-[0_6px_16px_rgba(17,24,39,0.05)]">
+            <label className="mt-6 grid h-12 grid-cols-[42px_1fr] items-center rounded-[16px] border border-[#eef1f6] bg-white px-2 shadow-[0_6px_16px_rgba(17,24,39,0.05)]">
               <Search size={21} className="mx-auto text-[#68707c]" strokeWidth={2.4} />
               <input
                 value={query}
@@ -1172,15 +1004,6 @@ export function MenuExperience({
                 className="min-w-0 bg-transparent text-[13px] font-semibold text-[#111827] outline-none placeholder:text-[#a8adb7]"
                 placeholder="Search fresh dishes"
               />
-              <button
-                type="button"
-                onClick={() => setActivePopup("filters")}
-                className="grid h-full min-w-[52px] place-items-center border-l border-[#eef1f6] px-1 text-[#68707c]"
-                aria-label="Open filters"
-              >
-                <SlidersHorizontal size={18} strokeWidth={2.5} />
-                <span className="-mt-1 text-[7px] font-black leading-none">Filter</span>
-              </button>
             </label>
           </div>
 
@@ -1233,7 +1056,6 @@ export function MenuExperience({
           validCart={validCart}
           savedProductIds={savedProductIds}
           orderingDisabled={orderingDisabled}
-          onFilter={() => setActivePopup("filters")}
           onAdd={(product) => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
           onDecrease={decreaseProduct}
           onOpen={setSelectedProduct}
@@ -1282,14 +1104,11 @@ export function MenuExperience({
 
       {mobileMenuView === "category" ? (
         <section className="min-h-screen bg-[#f7f8fc] pb-24 lg:hidden">
-          <div className="sticky top-0 z-40 grid h-[58px] grid-cols-[46px_1fr_46px_46px] items-center border-b border-[#e7ebf2] bg-white px-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)]">
+          <div className="sticky top-0 z-40 grid h-[58px] grid-cols-[46px_1fr_46px] items-center border-b border-[#e7ebf2] bg-white px-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)]">
             <button className="grid h-10 w-10 place-items-center text-maroon" onClick={() => setMobileMenuView("categories")} aria-label="Back to categories">
               <ArrowLeft size={25} strokeWidth={2.7} />
             </button>
             <h1 className="text-center text-[25px] font-black leading-none text-maroon">{shortCategoryName(mobileCategory)}</h1>
-            <button className="grid h-10 w-10 place-items-center rounded-full bg-white text-maroon shadow-[0_8px_22px_rgba(34,31,32,0.08)] ring-1 ring-[#eef1f6]" onClick={() => setActivePopup("filters")} aria-label="Filters">
-              <SlidersHorizontal size={23} strokeWidth={2.6} />
-            </button>
             <Link href="/cart" className="relative grid h-10 w-10 place-items-center text-maroon" aria-label="Cart">
               <ShoppingCart size={27} strokeWidth={2.6} />
               {cartCount ? <span className="absolute right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
@@ -1299,9 +1118,6 @@ export function MenuExperience({
             <div className="mb-7 flex items-center justify-between">
               <h2 className="text-[25px] font-bold text-[#111827]">{shortCategoryName(mobileCategory)} Products</h2>
               <span className="text-[25px] font-bold text-[#111827]">{mobileCategoryProducts.length} {mobileCategoryProducts.length === 1 ? "item" : "items"}</span>
-            </div>
-            <div className="mb-5 flex justify-center">
-              <DietFilterToggle value={dietFilter} onChange={setDietFilter} />
             </div>
             <div className="grid grid-cols-2 gap-5">
               {mobileCategoryProducts.map((product) => (
@@ -1430,7 +1246,7 @@ export function MenuExperience({
           </section>
 
           <section className={`${isHomePage ? "block" : "block"} mt-5 rounded-[16px] border border-[#eef1f6] bg-white px-2 py-1.5 shadow-[0_8px_22px_rgba(34,31,32,0.05)] lg:mt-6`}>
-            <label className="grid h-11 grid-cols-[42px_1fr_58px] items-center lg:h-11 lg:grid-cols-[42px_1fr_66px]">
+            <label className="grid h-11 grid-cols-[42px_1fr] items-center lg:h-11">
               <Search size={20} className="mx-auto text-[#68707c]" />
               <input
                 value={query}
@@ -1438,10 +1254,6 @@ export function MenuExperience({
                 className="min-w-0 bg-transparent text-[12px] font-semibold text-charcoal outline-none placeholder:text-muted lg:text-sm"
                 placeholder="Search dishes or cuisines"
               />
-              <button type="button" onClick={() => setActivePopup("filters")} className="flex h-full flex-col items-center justify-center gap-0.5 border-l border-[#eef1f6] text-[8px] font-black text-[#68707c] lg:flex-row lg:gap-1.5 lg:text-[10px]">
-                <SlidersHorizontal size={18} className="lg:size-[17px]" />
-                <span>Filter</span>
-              </button>
             </label>
           </section>
 
@@ -1690,19 +1502,6 @@ export function MenuExperience({
         />
       ) : null}
 
-      {activePopup === "filters" ? (
-        <SortFilterSheet
-          dietFilter={dietFilter}
-          priceSort={priceSort}
-          onDietChange={setDietFilter}
-          onSortChange={setPriceSort}
-          onReset={() => {
-            setDietFilter("ALL");
-            setPriceSort("NONE");
-          }}
-          onClose={() => setActivePopup(null)}
-        />
-      ) : null}
     </main>
   );
 }

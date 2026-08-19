@@ -1,14 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { BellRing, CheckCircle2, Clock, MessageCircle, Printer, RefreshCw, XCircle } from "lucide-react";
+import { BellRing, CheckCircle2, Clock, MapPin, MessageCircle, Printer, ReceiptText, RefreshCw, Timer, UserRound, Utensils, XCircle } from "lucide-react";
 import { AdminSectionNav } from "@/components/admin-section-nav";
+import { business } from "@/lib/business";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 import { formatRupees } from "@/lib/pricing";
 import { canTransitionOrder } from "@/lib/state-machines";
 
-const liveStatuses: OrderStatus[] = ["NEW", "CONFIRMED", "PREPARING", "PACKED", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"];
-const nextStatuses: OrderStatus[] = ["CONFIRMED", "PREPARING", "PACKED", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY", "DELIVERED"];
 const declineReasons = [
   "Item unavailable",
   "Kitchen closed for today",
@@ -27,6 +26,16 @@ const statusCopy: Record<OrderStatus, { label: string; customer: string }> = {
   OUT_FOR_DELIVERY: { label: "Dispatched", customer: "Your order is on the way." },
   DELIVERED: { label: "Delivered", customer: "Your order has been delivered. Please rate your food." },
   CANCELLED: { label: "Declined", customer: "Your order was declined by the restaurant." },
+};
+
+const actionCopy: Partial<Record<OrderStatus, string>> = {
+  CONFIRMED: "Accept order",
+  PREPARING: "Start preparing",
+  PACKED: "Mark prepared",
+  READY_FOR_PICKUP: "Ready for pickup",
+  OUT_FOR_DELIVERY: "Dispatch",
+  DELIVERED: "Mark delivered",
+  CANCELLED: "Decline",
 };
 
 export function AdminOrdersClient({
@@ -48,7 +57,7 @@ export function AdminOrdersClient({
   const [isPending, startTransition] = useTransition();
   const knownOrders = useRef(new Set(initialOrders.map((order) => order.orderNumber)));
 
-  const newOrders = orders.filter((order) => order.status === "NEW");
+  const incomingOrders = orders.filter((order) => order.status === "NEW" || order.status === "PENDING_PAYMENT");
 
   const playNewOrderSound = useCallback(async () => {
     const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -69,6 +78,15 @@ export function AdminOrdersClient({
     }
   }, []);
 
+  const notifyAdmin = useCallback((order: AdminOrder) => {
+    document.title = `New order ${order.orderNumber} - Wah Thali Admin`;
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification(`New order ${order.orderNumber}`, {
+        body: `${order.customerName} - ${formatRupees(order.amount)} - ${order.itemSummary}`,
+      });
+    }
+  }, []);
+
   const refresh = useCallback(async (silent = false) => {
     const response = await fetch("/api/orders", { cache: "no-store" });
     const data = await response.json();
@@ -81,8 +99,11 @@ export function AdminOrdersClient({
       orderNumber: string;
       customer: { name: string; mobile: string };
       status: OrderStatus;
+      subtotal: number;
+      discount: number;
+      gst: number;
       grandTotal: number;
-      items: { quantity: number; name: string }[];
+      items: { quantity: number; name: string; price: number }[];
       payments: { provider: string; status: string }[];
       createdAt: string;
       timeline: { toStatus: string; note?: string | null; createdAt: string }[];
@@ -91,20 +112,27 @@ export function AdminOrdersClient({
       customerName: order.customer.name,
       customerMobile: order.customer.mobile,
       status: order.status,
+      subtotal: order.subtotal,
+      discount: order.discount,
+      gst: order.gst,
       amount: order.grandTotal,
+      items: order.items.map((item) => ({ name: item.name, quantity: item.quantity, price: item.price })),
       itemSummary: order.items.map((item) => `${item.quantity} x ${item.name}`).join(", "),
-      paymentSummary: order.payments[0]?.status ? `${order.payments[0].provider} ${order.payments[0].status}` : "COD pending",
+      paymentSummary: getPaymentSummary(order.payments[0]),
       createdAt: order.createdAt,
       timeline: order.timeline,
     }));
 
-    const hasNewOrder = nextOrders.some((order) => !knownOrders.current.has(order.orderNumber) && order.status === "NEW");
+    const newIncoming = nextOrders.find((order) => !knownOrders.current.has(order.orderNumber) && (order.status === "NEW" || order.status === "PENDING_PAYMENT"));
     setOrders(nextOrders);
     knownOrders.current = new Set(nextOrders.map((order) => order.orderNumber));
     setLastSyncedAt(new Date());
-    if (hasNewOrder && newOrderSoundEnabled) await playNewOrderSound();
+    if (newIncoming) {
+      notifyAdmin(newIncoming);
+      if (newOrderSoundEnabled) await playNewOrderSound();
+    }
     return true;
-  }, [newOrderSoundEnabled, playNewOrderSound]);
+  }, [newOrderSoundEnabled, notifyAdmin, playNewOrderSound]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -129,6 +157,11 @@ export function AdminOrdersClient({
         setMessage(data.error ?? "Order update failed.");
         return;
       }
+      setOrders((current) => current.map((item) => item.orderNumber === order.orderNumber ? {
+        ...item,
+        status,
+        timeline: data.order?.timeline ?? item.timeline,
+      } : item));
       await refresh(true);
       setDeclineOrder(null);
       setReason("");
@@ -142,6 +175,88 @@ export function AdminOrdersClient({
       const refreshed = await refresh(false);
       if (refreshed) setMessage("Kitchen board refreshed from live orders.");
     });
+  }
+
+  async function enableDesktopAlerts() {
+    if (!("Notification" in window)) {
+      setMessage("This browser does not support desktop notifications.");
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    setMessage(permission === "granted" ? "Desktop order notifications enabled." : "Desktop notifications were not enabled.");
+  }
+
+  function printBill(order: AdminOrder) {
+    const details = getOrderDetails(order);
+    const rows = order.items.map((item) => `
+      <tr>
+        <td>${escapeHtml(item.name)}</td>
+        <td class="num">${item.quantity}</td>
+        <td class="num">${formatRupees(item.price)}</td>
+        <td class="num">${formatRupees(item.price * item.quantity)}</td>
+      </tr>
+    `).join("");
+    const win = window.open("", "_blank", "width=420,height=720");
+    if (!win) {
+      setMessage("Popup blocked. Please allow popups to print the bill.");
+      return;
+    }
+
+    win.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>${order.orderNumber} bill</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 0; padding: 18px; color: #111; }
+            h1, h2, p { margin: 0; }
+            .center { text-align: center; }
+            .muted { color: #555; font-size: 12px; line-height: 1.45; }
+            .rule { border-top: 1px dashed #999; margin: 12px 0; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th, td { padding: 6px 0; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
+            .num { text-align: right; }
+            .total { font-weight: 800; font-size: 16px; }
+            .box { border: 1px solid #ddd; padding: 8px; border-radius: 8px; margin-top: 8px; }
+            @media print { body { padding: 0; } button { display: none; } }
+          </style>
+        </head>
+        <body>
+          <div class="center">
+            <h1>${business.brandName}</h1>
+            <p class="muted">${business.legalName}</p>
+            <p class="muted">${business.address}</p>
+            <p class="muted">GSTIN: ${business.gstin} | Phone: ${business.phone}</p>
+          </div>
+          <div class="rule"></div>
+          <p><strong>Order:</strong> ${order.orderNumber}</p>
+          <p><strong>Customer:</strong> ${escapeHtml(order.customerName)} (${order.customerMobile})</p>
+          <p><strong>Date:</strong> ${new Date(order.createdAt).toLocaleString("en-IN")}</p>
+          <p><strong>Payment:</strong> ${escapeHtml(order.paymentSummary)}</p>
+          ${details.address ? `<div class="box"><strong>Delivery:</strong><br>${escapeHtml(details.address)}${details.gps ? `<br>GPS: ${escapeHtml(details.gps)}` : ""}</div>` : ""}
+          ${details.customerNote ? `<div class="box"><strong>Restaurant note:</strong><br>${escapeHtml(details.customerNote)}</div>` : ""}
+          <div class="rule"></div>
+          <table>
+            <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Amt</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <div class="rule"></div>
+          <table>
+            <tr><td>Subtotal</td><td class="num">${formatRupees(order.subtotal)}</td></tr>
+            <tr><td>Discount</td><td class="num">-${formatRupees(order.discount)}</td></tr>
+            <tr><td>GST</td><td class="num">${formatRupees(order.gst)}</td></tr>
+            <tr class="total"><td>Total payable</td><td class="num">${formatRupees(order.amount)}</td></tr>
+          </table>
+          <div class="rule"></div>
+          <p class="center"><strong>Thank you for ordering from ${business.brandName}.</strong></p>
+          <p class="center muted">Fresh homely meals, made with care.</p>
+          <button onclick="window.print()" style="margin-top:16px;width:100%;height:40px;font-weight:800">Print bill</button>
+          <script>window.onload = () => window.print();</script>
+        </body>
+      </html>
+    `);
+    win.document.close();
   }
 
   const counters = useMemo(
@@ -162,6 +277,9 @@ export function AdminOrdersClient({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={enableDesktopAlerts} className="inline-flex h-11 min-w-36 items-center justify-center gap-2 rounded-lg border border-border px-4 font-black text-maroon">
+              <BellRing size={18} /> Alerts
+            </button>
             <button disabled={isPending} onClick={handleRefresh} className="inline-flex h-11 min-w-36 items-center justify-center gap-2 rounded-lg bg-maroon px-4 font-black text-white disabled:opacity-60">
               <RefreshCw size={18} className={isPending ? "animate-spin" : ""} /> {isPending ? "Refreshing..." : "Refresh"}
             </button>
@@ -169,9 +287,9 @@ export function AdminOrdersClient({
         </div>
         <AdminSectionNav />
 
-        {newOrders.length ? (
+        {incomingOrders.length ? (
           <div className="mt-4 flex items-center gap-3 rounded-xl border border-red/20 bg-red/10 px-4 py-3 font-black text-maroon">
-            <BellRing size={18} /> {newOrders.length} new order{newOrders.length > 1 ? "s" : ""} waiting for accept or decline
+            <BellRing size={18} /> {incomingOrders.length} incoming order{incomingOrders.length > 1 ? "s" : ""} waiting for attention
           </div>
         ) : null}
         {message ? <p className="mt-4 rounded-lg border border-border bg-cream px-4 py-3 text-sm font-black text-maroon">{message}</p> : null}
@@ -189,6 +307,10 @@ export function AdminOrdersClient({
         <section className="mt-6 grid gap-4">
           {orders.length ? orders.map((order) => (
             <article key={order.orderNumber} className="surface rounded-2xl p-5">
+              {(() => {
+                const details = getOrderDetails(order);
+                return (
+                  <>
               <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -201,20 +323,47 @@ export function AdminOrdersClient({
                     <span className="inline-flex items-center gap-1"><Clock size={16} /> {new Date(order.createdAt).toLocaleString("en-IN")}</span>
                     <span>{order.paymentSummary}</span>
                   </div>
-                  {order.timeline.at(-1)?.note ? <p className="mt-3 rounded-lg bg-cream px-3 py-2 text-sm font-bold text-muted">Note: {order.timeline.at(-1)?.note}</p> : null}
+                  {details.customerNote ? <p className="mt-3 rounded-lg bg-[#fff4f5] px-3 py-2 text-sm font-black text-maroon">Customer note: {details.customerNote}</p> : null}
                 </div>
                 <div className="flex flex-wrap gap-2 lg:justify-end">
-                  <button onClick={() => window.print()} className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm font-black">
-                    <Printer size={16} /> KOT
+                  <button onClick={() => printBill(order)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm font-black">
+                    <Printer size={16} /> Print bill
                   </button>
                   <a href={`https://wa.me/91${order.customerMobile}?text=${encodeURIComponent(buildCustomerMessage(order, order.status))}`} className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm font-black">
                     <MessageCircle size={16} /> Message
                   </a>
                 </div>
               </div>
+              <div className="mt-4 grid gap-3 lg:grid-cols-4">
+                <div className="rounded-xl bg-cream p-3">
+                  <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-muted"><UserRound size={15} /> Receiver</p>
+                  <p className="mt-2 text-sm font-black text-charcoal">{details.receiver || `${order.customerName}, ${order.customerMobile}`}</p>
+                </div>
+                <div className="rounded-xl bg-cream p-3 lg:col-span-2">
+                  <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-muted"><MapPin size={15} /> Delivery location</p>
+                  <p className="mt-2 text-sm font-black leading-5 text-charcoal">{details.address || details.location || "Location not provided"}</p>
+                  {details.gps ? <p className="mt-1 text-xs font-bold text-muted">GPS: {details.gps}</p> : null}
+                </div>
+                <div className="rounded-xl bg-cream p-3">
+                  <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-muted"><ReceiptText size={15} /> Bill</p>
+                  <p className="mt-2 text-sm font-black text-charcoal">Subtotal {formatRupees(order.subtotal)}</p>
+                  <p className="mt-1 text-xs font-bold text-muted">GST {formatRupees(order.gst)} | Discount {formatRupees(order.discount)}</p>
+                </div>
+              </div>
+              <div className="mt-4 rounded-xl bg-white p-3 ring-1 ring-border">
+                <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-muted"><Utensils size={15} /> Items</p>
+                <div className="mt-2 grid gap-2">
+                  {order.items.map((item) => (
+                    <div key={`${order.orderNumber}-${item.name}`} className="flex items-center justify-between rounded-lg bg-cream px-3 py-2 text-sm">
+                      <span className="font-black text-charcoal">{item.quantity} x {item.name}</span>
+                      <span className="font-black text-maroon">{formatRupees(item.price * item.quantity)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
               <div className="mt-4 grid gap-3 rounded-xl border border-border bg-cream p-3 sm:grid-cols-2">
                 <label className="grid gap-2 text-xs font-black uppercase tracking-wide text-muted">
-                  Order timing
+                  <span className="flex items-center gap-2"><Timer size={15} /> Order timing</span>
                   <input
                     type="number"
                     min={1}
@@ -225,7 +374,7 @@ export function AdminOrdersClient({
                   />
                 </label>
                 <label className="grid gap-2 text-xs font-black uppercase tracking-wide text-muted">
-                  Delivery location / rider note
+                  <span className="flex items-center gap-2"><MapPin size={15} /> Rider note</span>
                   <input
                     value={locationByOrder[order.orderNumber] ?? ""}
                     onChange={(event) => setLocationByOrder((current) => ({ ...current, [order.orderNumber]: event.target.value }))}
@@ -235,30 +384,24 @@ export function AdminOrdersClient({
                 </label>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                {order.status === "NEW" ? (
-                  <>
-                    <button disabled={isPending} onClick={() => updateOrder(order, "CONFIRMED", "Restaurant accepted the order.")} className="inline-flex items-center gap-2 rounded-lg bg-maroon px-3 py-2 text-xs font-black text-white">
-                      <CheckCircle2 size={15} /> Accept
+                {getNextOrderActions(order.status).map((next) => (
+                  next === "CANCELLED" ? (
+                    <button key={next} disabled={isPending} onClick={() => setDeclineOrder(order)} className="inline-flex items-center gap-2 rounded-lg bg-red px-4 py-2 text-xs font-black text-white disabled:opacity-60">
+                      <XCircle size={15} /> {actionCopy[next]}
                     </button>
-                    <button disabled={isPending} onClick={() => setDeclineOrder(order)} className="inline-flex items-center gap-2 rounded-lg bg-red px-3 py-2 text-xs font-black text-white">
-                      <XCircle size={15} /> Decline
+                  ) : (
+                    <button key={next} disabled={isPending} onClick={() => updateOrder(order, next, next === "CONFIRMED" ? "Restaurant accepted the order." : undefined)} className="inline-flex items-center gap-2 rounded-lg bg-maroon px-4 py-2 text-xs font-black text-white disabled:opacity-60">
+                      <CheckCircle2 size={15} /> {actionCopy[next] ?? statusCopy[next].label}
                     </button>
-                  </>
+                  )
+                ))}
+                {!getNextOrderActions(order.status).length ? (
+                  <span className="rounded-lg bg-cream px-4 py-2 text-xs font-black text-muted">No further status action</span>
                 ) : null}
-                {nextStatuses.map((next) => {
-                  const canMove = canTransitionOrder(order.status, next);
-                  return (
-                    <button
-                      key={next}
-                      disabled={isPending || !liveStatuses.includes(order.status) || !canMove}
-                      onClick={() => updateOrder(order, next)}
-                      className={`rounded-lg px-3 py-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-60 ${canMove ? "bg-maroon text-white" : "bg-cream text-muted"}`}
-                    >
-                      {statusCopy[next].label}
-                    </button>
-                  );
-                })}
               </div>
+                  </>
+                );
+              })()}
             </article>
           )) : (
             <div className="surface rounded-2xl p-8 text-center">
@@ -302,4 +445,44 @@ function buildCustomerMessage(order: AdminOrder, status: OrderStatus) {
   const ratingText = status === "DELIVERED" ? " Thank you for ordering from Wah Thali. Please give your rating for the food, it helps us serve you better." : "";
   const reasonText = status === "CANCELLED" && latestNote ? ` Reason: ${latestNote}` : "";
   return `Hi ${order.customerName}, ${statusCopy[status].customer} Order ${order.orderNumber}: ${statusCopy[status].label}.${reasonText}${ratingText}`;
+}
+
+function getNextOrderActions(status: OrderStatus): OrderStatus[] {
+  return (["CONFIRMED", "PREPARING", "PACKED", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"] as OrderStatus[])
+    .filter((next) => canTransitionOrder(status, next));
+}
+
+function getPaymentSummary(payment?: { provider: string; status: string }) {
+  if (!payment) return "Cash on Delivery";
+  if (payment.provider === "COD") return "Cash on Delivery";
+  if (payment.status === "PAID" || payment.status === "AUTHORIZED") return "Online payment received";
+  if (payment.status === "CREATED") return "Online payment pending";
+  return "Online payment";
+}
+
+function getOrderDetails(order: AdminOrder) {
+  const parts = order.timeline.flatMap((event) => (event.note ?? "").split("|").map((part) => part.trim()).filter(Boolean));
+  return {
+    receiver: readPart(parts, "Receiver"),
+    address: readPart(parts, "Address"),
+    addressType: readPart(parts, "Address type"),
+    customerNote: readPart(parts, "Customer note"),
+    location: readPart(parts, "Location"),
+    gps: readPart(parts, "GPS"),
+    distance: readPart(parts, "Distance"),
+  };
+}
+
+function readPart(parts: string[], label: string) {
+  const prefix = `${label}:`;
+  return parts.find((part) => part.toLowerCase().startsWith(prefix.toLowerCase()))?.slice(prefix.length).trim() ?? "";
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }

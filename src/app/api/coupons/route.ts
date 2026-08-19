@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getCouponsFromDb, logActivity } from "@/lib/db";
+import { getAdminCouponsFromDb, getCouponsFromDb, logActivity, saveCouponRule } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
 const couponSchema = z.object({
@@ -13,11 +13,13 @@ const couponSchema = z.object({
   startsAt: z.coerce.date().default(new Date()),
   endsAt: z.coerce.date().default(new Date(Date.now() + 1000 * 60 * 60 * 24 * 30)),
   active: z.boolean().default(true),
+  audience: z.enum(["ALL", "VIP", "POINTS"]).default("ALL"),
+  minPoints: z.coerce.number().int().nonnegative().default(0),
 });
 
 export async function GET() {
   if (isDatabaseConfigured()) {
-    const coupons = await prisma.coupon.findMany({ orderBy: { code: "asc" } });
+    const coupons = await getAdminCouponsFromDb();
     return NextResponse.json({ coupons });
   }
 
@@ -35,11 +37,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid coupon payload", issues: parsed.error.flatten() }, { status: 400 });
   }
 
+  const { audience, minPoints, ...couponData } = parsed.data;
   const coupon = await prisma.coupon.upsert({
-    where: { code: parsed.data.code },
-    create: parsed.data,
-    update: parsed.data,
+    where: { code: couponData.code },
+    create: couponData,
+    update: couponData,
   });
+  await saveCouponRule(coupon.code, { audience, minPoints });
 
   await logActivity({
     type: "COUPON_SAVED",

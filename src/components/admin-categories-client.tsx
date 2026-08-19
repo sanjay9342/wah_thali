@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CheckCircle2, EyeOff, ImagePlus, Plus, Trash2 } from "lucide-react";
+import { CheckCircle2, EyeOff, ImagePlus, Plus, Tag, Trash2, Upload } from "lucide-react";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 
 type AdminCategory = {
@@ -126,16 +126,20 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
             <div className="mt-4 grid gap-3 rounded-xl border border-border bg-cream p-4">
               <input value={newCategory} onChange={(event) => setNewCategory(event.target.value)} className="h-11 rounded-lg border border-border bg-white px-3 text-sm font-bold" placeholder="New category name" />
               <input value={newCategoryImage} onChange={(event) => setNewCategoryImage(event.target.value)} className="h-11 rounded-lg border border-border bg-white px-3 text-sm font-bold" placeholder="Image URL or /public path" />
-              <input value={newCategoryOffer} onChange={(event) => setNewCategoryOffer(event.target.value)} className="h-11 rounded-lg border border-border bg-white px-3 text-sm font-bold" placeholder="Category offer, e.g. 30% OFF up to Rs 75" />
-              <p className="text-xs font-bold text-muted">Shown on dishes in this category unless that dish has its own offer.</p>
+              <label className="grid gap-1.5">
+                <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-maroon">
+                  <Tag size={14} /> Category offer
+                </span>
+                <input value={newCategoryOffer} onChange={(event) => setNewCategoryOffer(event.target.value)} className="h-11 rounded-lg border border-border bg-white px-3 text-sm font-bold" placeholder="30% OFF up to Rs 75" />
+              </label>
               {newCategoryImage ? (
                 <div className="h-32 overflow-hidden rounded-xl bg-white ring-1 ring-border">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={safeImage(newCategoryImage)} alt="" className="h-full w-full object-cover" />
                 </div>
               ) : null}
-              <label className="inline-flex h-11 cursor-pointer items-center justify-center rounded-lg bg-maroon px-4 text-sm font-black text-white">
-                Upload using your device
+              <label className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-maroon px-4 text-sm font-black text-white">
+                <Upload size={17} /> Upload image
                 <input
                   type="file"
                   accept="image/*"
@@ -164,13 +168,13 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
             </div>
             <div className="grid gap-3 p-5 md:grid-cols-2">
               {categories.map((category) => (
-                <article key={category.id} className="rounded-xl border border-border bg-white p-3">
-                  <div className="grid grid-cols-[84px_1fr] gap-3">
-                    <div className="h-20 w-20 overflow-hidden rounded-xl bg-cream ring-1 ring-border">
+                <article key={category.id} className="grid gap-4 rounded-xl border border-border bg-white p-3">
+                  <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-3">
+                    <div className="h-24 w-24 overflow-hidden rounded-xl bg-cream ring-1 ring-border">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={safeImage(category.image)} alt="" className="h-full w-full object-cover" />
                     </div>
-                    <div className="grid gap-2">
+                    <div className="grid min-w-0 gap-2">
                       <input className="h-10 min-w-0 rounded-lg border border-border bg-cream px-3 text-sm font-black" defaultValue={category.name} onBlur={(event) => {
                         const name = event.target.value.trim();
                         if (name && name !== category.name) updateCategory(category, { name });
@@ -178,41 +182,55 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
                       <input className="h-10 min-w-0 rounded-lg border border-border bg-cream px-3 text-xs font-bold" defaultValue={category.image ?? ""} placeholder="Image URL" onBlur={(event) => {
                         if (event.target.value !== (category.image ?? "")) updateCategory(category, { image: event.target.value });
                       }} />
-                      <input className="h-10 min-w-0 rounded-lg border border-border bg-cream px-3 text-xs font-bold" defaultValue={category.offer ?? ""} placeholder="Category offer shown on dishes" onBlur={(event) => {
-                        if (event.target.value !== (category.offer ?? "")) updateCategory(category, { offer: event.target.value });
-                      }} />
                     </div>
                   </div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
-                    <div className="flex flex-wrap gap-2">
-                      <span className="rounded-lg bg-cream px-3 py-2 text-xs font-black text-muted">{category._count?.products ?? 0} products</span>
-                      <label className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-maroon px-3 text-xs font-black text-white">
-                        Upload using your device
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={async (event) => {
-                            const file = event.target.files?.[0];
-                            if (!file) return;
-                            try {
-                              updateCategory(category, { image: await uploadImage(file) });
-                            } catch (error) {
-                              setMessage(error instanceof Error ? error.message : "Image upload failed.");
-                            }
-                          }}
-                        />
-                      </label>
+
+                  <div className="rounded-xl border border-border bg-cream p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-maroon">
+                        <Tag size={14} /> Category offer
+                      </span>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-muted ring-1 ring-border">
+                        {category.offer ? category.offer : "No offer"}
+                      </span>
                     </div>
-                    <div className="flex gap-2 sm:justify-end">
-                      <button disabled={isPending} onClick={() => updateCategory(category, { visible: !category.visible })} className={`inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-lg px-3 text-xs font-black disabled:opacity-60 ${category.visible ? "bg-maroon text-white" : "border border-border bg-white text-maroon"}`}>
-                        {category.visible ? <CheckCircle2 size={15} /> : <EyeOff size={15} />}
-                        {category.visible ? "Available" : "Unavailable"}
-                      </button>
-                      <button disabled={isPending} onClick={() => deleteCategory(category)} className="grid h-10 w-10 place-items-center rounded-lg border border-border text-red disabled:opacity-60" aria-label={`Delete ${category.name}`}>
-                        <Trash2 size={16} />
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                      <input className="h-10 min-w-0 rounded-lg border border-border bg-white px-3 text-xs font-bold" defaultValue={category.offer ?? ""} placeholder="30% OFF up to Rs 75" onBlur={(event) => {
+                        const offer = event.target.value.trim();
+                        if (offer !== (category.offer ?? "")) updateCategory(category, { offer });
+                      }} />
+                      <button type="button" disabled={isPending || !category.offer} onClick={() => updateCategory(category, { offer: "" })} className="h-10 rounded-lg border border-border bg-white px-3 text-xs font-black text-maroon disabled:opacity-50">
+                        Clear
                       </button>
                     </div>
+                  </div>
+
+                  <div className="grid items-center gap-2 sm:grid-cols-[auto_minmax(136px,1fr)_minmax(132px,auto)_44px]">
+                    <span className="inline-flex h-10 items-center justify-center rounded-lg bg-cream px-3 text-xs font-black text-muted">{category._count?.products ?? 0} products</span>
+                    <label className="inline-flex h-10 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-lg bg-maroon px-3 text-xs font-black text-white">
+                      <Upload size={15} /> Upload image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (event) => {
+                          const file = event.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            updateCategory(category, { image: await uploadImage(file) });
+                          } catch (error) {
+                            setMessage(error instanceof Error ? error.message : "Image upload failed.");
+                          }
+                        }}
+                      />
+                    </label>
+                    <button disabled={isPending} onClick={() => updateCategory(category, { visible: !category.visible })} className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-xs font-black disabled:opacity-60 ${category.visible ? "bg-maroon text-white" : "border border-border bg-white text-maroon"}`}>
+                      {category.visible ? <CheckCircle2 size={15} /> : <EyeOff size={15} />}
+                      {category.visible ? "Available" : "Unavailable"}
+                    </button>
+                    <button disabled={isPending} onClick={() => deleteCategory(category)} className="grid h-10 w-11 place-items-center rounded-lg border border-border text-red disabled:opacity-60" aria-label={`Delete ${category.name}`}>
+                      <Trash2 size={16} />
+                    </button>
                   </div>
                 </article>
               ))}

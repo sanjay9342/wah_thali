@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { normalizeMobile } from "@/lib/customer-auth";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
 const addressSchema = z.object({
@@ -13,6 +14,27 @@ const addressSchema = z.object({
   landmark: z.string().optional(),
   isDefault: z.boolean().default(false),
 });
+
+export async function GET(request: Request) {
+  if (!isDatabaseConfigured()) {
+    return NextResponse.json({ addresses: [], configured: false }, { status: 503 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const mobile = normalizeMobile(searchParams.get("mobile") ?? "");
+  if (!mobile) return NextResponse.json({ addresses: [], configured: true });
+
+  const customer = await prisma.customer.findUnique({
+    where: { mobile },
+    select: {
+      addresses: {
+        orderBy: [{ isDefault: "desc" }],
+      },
+    },
+  });
+
+  return NextResponse.json({ addresses: customer?.addresses ?? [], configured: true });
+}
 
 export async function POST(request: Request) {
   if (!isDatabaseConfigured()) {
@@ -45,4 +67,24 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ address: saved }, { status: 201 });
+}
+
+export async function DELETE(request: Request) {
+  if (!isDatabaseConfigured()) {
+    return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const mobile = normalizeMobile(searchParams.get("mobile") ?? "");
+  const id = searchParams.get("id") ?? "";
+  if (!mobile || !id) return NextResponse.json({ error: "Mobile and address id are required." }, { status: 400 });
+
+  const customer = await prisma.customer.findUnique({ where: { mobile }, select: { id: true } });
+  if (!customer) return NextResponse.json({ error: "Customer was not found." }, { status: 404 });
+
+  await prisma.customerAddress.deleteMany({
+    where: { id, customerId: customer.id },
+  });
+
+  return NextResponse.json({ ok: true });
 }

@@ -74,6 +74,136 @@ textarea:disabled {
   box-shadow: 0 14px 34px rgba(34, 31, 32, 0.06);
 }
 
+@keyframes wt-order-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes wt-order-pulse {
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+
+@keyframes wt-order-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(2deg);
+  }
+}
+
+@keyframes wt-order-pop {
+  0% {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes wt-order-progress {
+  0% {
+    width: 18%;
+  }
+  55% {
+    width: 72%;
+  }
+  100% {
+    width: 94%;
+  }
+}
+
+@keyframes wt-track-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes wt-track-pulse {
+  0%,
+  100% {
+    transform: scale(0.96);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+
+@keyframes wt-step-active {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(141, 0, 33, 0.22);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(141, 0, 33, 0);
+  }
+}
+
+.wt-order-card {
+  animation: wt-order-card-in 260ms ease-out both;
+}
+
+.wt-order-pulse {
+  animation: wt-order-pulse 1.35s ease-in-out infinite;
+}
+
+.wt-order-float,
+.wt-track-float {
+  animation: wt-track-float 2.2s ease-in-out infinite;
+}
+
+.wt-order-float {
+  animation-name: wt-order-float;
+  animation-duration: 1.5s;
+}
+
+.wt-order-pop {
+  animation: wt-order-pop 460ms ease-out 160ms both;
+}
+
+.wt-order-progress {
+  animation: wt-order-progress 1.05s ease-in-out infinite alternate;
+}
+
+.wt-track-pulse {
+  animation: wt-track-pulse 1.8s ease-in-out infinite;
+}
+
+.wt-track-progress {
+  transition: width 520ms ease;
+}
+
+.wt-step-active {
+  animation: wt-step-active 1.8s ease-in-out infinite;
+}
+
 @media print {
   header,
   footer,

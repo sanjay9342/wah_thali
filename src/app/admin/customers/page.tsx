@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminCustomersPage() {
   const [customers, settings] = await Promise.all([getAdminCustomersFromDb(), getBusinessSettingsFromDb()]);
   const activeCustomers = customers.filter((customer) => customer.orders > 0);
-  const vipCustomers = customers.filter((customer) => customer.ltv >= 10000);
+  const vipCustomers = customers.filter((customer) => customer.isVip);
   const totalPoints = customers.reduce((total, customer) => total + customer.points, 0);
   const avgLtv = customers.length ? Math.round(customers.reduce((total, customer) => total + customer.ltv, 0) / customers.length) : 0;
 
@@ -35,7 +35,7 @@ export default async function AdminCustomersPage() {
         <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             [UserRoundCheck, "Active customers", String(activeCustomers.length), "Customers with orders"],
-            [Star, "VIP customers", String(vipCustomers.length), "LTV above Rs 10k"],
+            [Star, "VIP customers", String(vipCustomers.length), "Marked for private offers"],
             [Gift, "Loyalty points", totalPoints.toLocaleString("en-IN"), "Issued balance"],
             [BadgeIndianRupee, "Avg LTV", formatRupees(avgLtv), "All customers"],
           ].map(([Icon, label, value, detail]) => (

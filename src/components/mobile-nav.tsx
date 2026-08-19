@@ -31,7 +31,7 @@ export function MobileNav() {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-3 lg:hidden" aria-label="Primary navigation">
       <div
-        className={`mx-auto grid h-[50px] w-full grid-cols-5 items-center rounded-t-xl border border-[#eadfd7] bg-white/98 px-2 shadow-[0_-8px_24px_rgba(34,31,32,0.08)] backdrop-blur ${
+        className={`mx-auto grid h-[58px] w-full grid-cols-5 items-center rounded-t-xl border border-[#eadfd7] bg-white/98 px-2 shadow-[0_-8px_24px_rgba(34,31,32,0.08)] backdrop-blur ${
           isHome ? "max-w-xl" : "max-w-[430px]"
         }`}
       >
@@ -43,11 +43,11 @@ export function MobileNav() {
             <Link
               key={href}
               href={resolvedHref}
-              className={`grid min-w-0 place-items-center gap-0.5 text-[9px] font-black ${active ? "text-red" : "text-muted"}`}
+              className={`grid min-w-0 place-items-center gap-1 text-[9px] font-black ${active ? "text-red" : "text-muted"}`}
               aria-current={active ? "page" : undefined}
             >
               <span
-                className="grid h-5 w-5 place-items-center transition-colors"
+                className="grid h-6 w-6 place-items-center transition-colors"
               >
                 <Icon size={active ? 17 : 16} strokeWidth={active ? 3 : 2.3} className={active && label === "Home" ? "fill-red" : ""} />
               </span>

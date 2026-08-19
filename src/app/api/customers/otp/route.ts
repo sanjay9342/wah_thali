@@ -52,8 +52,7 @@ export async function POST(request: Request) {
   }
 
   const whatsAppConfig = getWhatsAppOtpConfigStatus();
-  const canSkipSend = process.env.NODE_ENV !== "production" && !whatsAppConfig.configured;
-  if (!canSkipSend && !whatsAppConfig.configured) {
+  if (!whatsAppConfig.configured) {
     console.error("WhatsApp OTP is not configured.", { missing: whatsAppConfig.missing });
     return otpServiceUnavailable("WhatsApp OTP is not configured on this server. Please contact support.", "WHATSAPP_NOT_CONFIGURED", whatsAppConfig.missing);
   }
@@ -66,26 +65,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Could not create OTP. Please try again.", code: "OTP_CREATE_FAILED" }, { status: 500 });
   }
 
-  let messageId: string | undefined;
-
-  if (!canSkipSend) {
-    const sendResult = await sendWhatsAppOtp(mobile, otp.code);
-    if (!sendResult.ok) {
-      await consumeCustomerOtp(otp.id);
-      console.error("WhatsApp OTP send failed.", {
-        status: sendResult.status,
-        message: sendResult.message,
-      });
-      return NextResponse.json(
-        {
-          error: "Could not send WhatsApp OTP. Please contact support.",
-          code: getWhatsAppFailureCode(sendResult.message, sendResult.status),
-        },
-        { status: 502 },
-      );
-    }
-    messageId = sendResult.messageId;
+  const sendResult = await sendWhatsAppOtp(mobile, otp.code);
+  if (!sendResult.ok) {
+    await consumeCustomerOtp(otp.id);
+    console.error("WhatsApp OTP send failed.", {
+      status: sendResult.status,
+      message: sendResult.message,
+    });
+    return NextResponse.json(
+      {
+        error: "Could not send WhatsApp OTP. Please contact support.",
+        code: getWhatsAppFailureCode(sendResult.message, sendResult.status),
+      },
+      { status: 502 },
+    );
   }
+  const messageId = sendResult.messageId;
 
   if (messageId) {
     await prisma.whatsAppMessage.upsert({
@@ -112,9 +107,6 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({
-    message: canSkipSend
-      ? "WhatsApp OTP created in development mode. Configure Meta env values to send it."
-      : "WhatsApp OTP sent. It expires in 5 minutes.",
-    devOtp: process.env.NODE_ENV === "production" ? undefined : otp.code,
+    message: "WhatsApp OTP sent. It expires in 5 minutes.",
   });
 }

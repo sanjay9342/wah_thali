@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getDeliveryCoverage, type DeliveryCoverageSettings } from "@/lib/delivery-radius";
+import { readCustomerSession, subscribeCustomerSession } from "@/lib/customer-session";
 
 export type DeliveryLocation = {
   label: string;
@@ -11,7 +12,6 @@ export type DeliveryLocation = {
   longitude?: string;
 };
 
-export const deliveryLocationStorageKey = "wah-thali-delivery-location";
 const deliveryLocationEvent = "wah-thali-delivery-location-change";
 
 export const defaultDeliveryLocation: DeliveryLocation = {
@@ -19,33 +19,70 @@ export const defaultDeliveryLocation: DeliveryLocation = {
   address: "Select delivery location",
 };
 
-function readDeliveryLocation(): DeliveryLocation {
-  if (typeof window === "undefined") return defaultDeliveryLocation;
+let currentLocation = defaultDeliveryLocation;
+let loadedForOwner: string | null = null;
 
-  try {
-    const raw = window.localStorage.getItem(deliveryLocationStorageKey);
-    const parsed = raw ? JSON.parse(raw) as Partial<DeliveryLocation> : null;
-    if (parsed?.address) {
-      return {
-        label: parsed.label || "Home",
-        address: parsed.address,
-        pinCode: parsed.pinCode,
-        latitude: parsed.latitude,
-        longitude: parsed.longitude,
-      };
-    }
-  } catch {
-    return defaultDeliveryLocation;
+function dispatchLocationChange() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(deliveryLocationEvent));
+}
+
+function normalizeLocation(value: unknown): DeliveryLocation | null {
+  const location = value as Partial<DeliveryLocation> | null;
+  if (!location?.address) return null;
+
+  return {
+    label: location.label || "Home",
+    address: location.address,
+    pinCode: location.pinCode,
+    latitude: location.latitude,
+    longitude: location.longitude,
+  };
+}
+
+async function loadDeliveryLocation() {
+  if (typeof window === "undefined") return;
+  const session = readCustomerSession();
+  const owner = session?.mobile ?? null;
+  if (loadedForOwner === owner) return;
+  loadedForOwner = owner;
+
+  if (!owner) {
+    currentLocation = defaultDeliveryLocation;
+    dispatchLocationChange();
+    return;
   }
 
-  return defaultDeliveryLocation;
+  try {
+    const response = await fetch("/api/customers/selected-location", { cache: "no-store" });
+    const data = await response.json();
+    currentLocation = normalizeLocation(data.location) ?? defaultDeliveryLocation;
+  } catch {
+    currentLocation = defaultDeliveryLocation;
+  }
+
+  dispatchLocationChange();
+}
+
+export function readDeliveryLocation(): DeliveryLocation {
+  return currentLocation;
 }
 
 export function saveDeliveryLocation(location: DeliveryLocation) {
   if (typeof window === "undefined") return;
 
-  window.localStorage.setItem(deliveryLocationStorageKey, JSON.stringify(location));
-  window.dispatchEvent(new Event(deliveryLocationEvent));
+  currentLocation = location;
+  loadedForOwner = readCustomerSession()?.mobile ?? null;
+  dispatchLocationChange();
+
+  const session = readCustomerSession();
+  if (!session?.mobile) return;
+
+  void fetch("/api/customers/selected-location", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mobile: session.mobile, ...location }),
+  }).catch(() => undefined);
 }
 
 export function extractPinCode(value: string) {
@@ -62,19 +99,24 @@ export function getDeliveryLocationCoverage(location: DeliveryLocation, settings
 }
 
 export function useDeliveryLocation() {
-  const [location, setLocation] = useState<DeliveryLocation>(defaultDeliveryLocation);
+  const [location, setLocation] = useState<DeliveryLocation>(currentLocation);
 
   useEffect(() => {
     function handleChange() {
-      setLocation(readDeliveryLocation());
+      setLocation(currentLocation);
     }
 
     handleChange();
-    window.addEventListener("storage", handleChange);
+    void loadDeliveryLocation();
+    const unsubscribeSession = subscribeCustomerSession(() => {
+      loadedForOwner = null;
+      void loadDeliveryLocation();
+      handleChange();
+    });
     window.addEventListener(deliveryLocationEvent, handleChange);
 
     return () => {
-      window.removeEventListener("storage", handleChange);
+      unsubscribeSession();
       window.removeEventListener(deliveryLocationEvent, handleChange);
     };
   }, []);

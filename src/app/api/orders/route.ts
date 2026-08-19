@@ -6,6 +6,7 @@ import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { createRazorpayOrder } from "@/lib/razorpay";
 import { getStoreOrderingStatus } from "@/lib/store-hours";
 import type { CartLine, RestaurantSettings } from "@/lib/types";
+import { isCouponEligibleForCustomer, type CouponCustomerContext } from "@/lib/pricing";
 
 const orderItemSchema = z.object({
   productId: z.string().min(1),
@@ -18,6 +19,11 @@ const orderSchema = z.object({
   customerMobile: z.string().min(8),
   customerName: z.string().min(1),
   couponCode: z.string().trim().optional(),
+  receiverName: z.string().trim().optional(),
+  receiverMobile: z.string().trim().optional(),
+  deliveryAddress: z.string().trim().optional(),
+  deliveryLabel: z.string().trim().optional(),
+  restaurantNote: z.string().trim().optional(),
   pinCode: z.string().trim().optional(),
   latitude: z.string().trim().optional(),
   longitude: z.string().trim().optional(),
@@ -25,9 +31,9 @@ const orderSchema = z.object({
   items: z.array(orderItemSchema).min(1),
 });
 
-function calculateDiscount(subtotal: number, couponCode: string | undefined, coupons: Awaited<ReturnType<typeof getCouponsFromDb>>) {
+function calculateDiscount(subtotal: number, couponCode: string | undefined, coupons: Awaited<ReturnType<typeof getCouponsFromDb>>, customer?: CouponCustomerContext) {
   const coupon = coupons.find((item) => item.code === couponCode?.toUpperCase());
-  if (!coupon || subtotal < coupon.minOrder) return { coupon: null, discount: 0 };
+  if (!coupon || subtotal < coupon.minOrder || !isCouponEligibleForCustomer(coupon, customer)) return { coupon: null, discount: 0 };
 
   const discount =
     coupon.type === "FIXED"
@@ -37,7 +43,7 @@ function calculateDiscount(subtotal: number, couponCode: string | undefined, cou
   return { coupon, discount };
 }
 
-async function calculateServerOrder(lines: CartLine[], couponCode: string | undefined, settings: RestaurantSettings) {
+async function calculateServerOrder(lines: CartLine[], couponCode: string | undefined, settings: RestaurantSettings, customer?: CouponCustomerContext) {
   const products = await prisma.product.findMany({
     where: { id: { in: lines.map((line) => line.productId) } },
     include: { variants: true, addons: true, inventory: true },
@@ -74,7 +80,7 @@ async function calculateServerOrder(lines: CartLine[], couponCode: string | unde
 
   const subtotal = items.reduce((total, item) => total + item.lineTotal, 0);
   const coupons = await getCouponsFromDb();
-  const { coupon, discount } = calculateDiscount(subtotal, couponCode, coupons);
+  const { coupon, discount } = calculateDiscount(subtotal, couponCode, coupons, customer);
   const packaging = items.length ? settings.packagingFee : 0;
   const delivery = items.length && subtotal - discount < settings.freeDeliveryThreshold ? settings.deliveryFee : 0;
   const taxable = Math.max(subtotal - discount + packaging + delivery, 0);
@@ -101,7 +107,7 @@ export async function GET() {
       customer: { select: { id: true, name: true, mobile: true, email: true } },
       items: true,
       payments: true,
-      timeline: true,
+      timeline: { orderBy: { createdAt: "asc" } },
     },
     take: 100,
   });
@@ -122,6 +128,17 @@ export async function POST(request: Request) {
   const data = parsed.data;
   const settings = await getRestaurantSettingsFromDb();
   const orderingStatus = getStoreOrderingStatus(settings);
+  const existingCustomer = await prisma.customer.findUnique({
+    where: { mobile: data.customerMobile },
+    select: {
+      loyalty: { select: { points: true } },
+      tags: { include: { tag: { select: { name: true } } } },
+    },
+  });
+  const couponCustomer = {
+    isVip: existingCustomer?.tags.some((assignment) => assignment.tag.name === "VIP") ?? false,
+    points: existingCustomer?.loyalty?.points ?? 0,
+  };
 
   if (orderingStatus.unavailable) {
     return NextResponse.json(
@@ -158,13 +175,17 @@ export async function POST(request: Request) {
     }
   }
 
-  const calculated = await calculateServerOrder(data.items, data.couponCode, settings).catch((error) => {
+  const calculated = await calculateServerOrder(data.items, data.couponCode, settings, couponCustomer).catch((error) => {
     console.error("Server order validation failed.", error);
     return null;
   });
 
   if (!calculated) {
     return NextResponse.json({ error: "Some cart items are no longer available. Please refresh your cart." }, { status: 409 });
+  }
+
+  if (data.couponCode && !calculated.couponCode) {
+    return NextResponse.json({ error: "This coupon is not eligible for this customer or order." }, { status: 409 });
   }
 
   if (calculated.subtotal < settings.minimumOrder) {
@@ -242,8 +263,12 @@ export async function POST(request: Request) {
               : settings.autoAcceptOrders ? "CONFIRMED" : "NEW",
             note: [
               data.paymentMethod === "RAZORPAY"
-                ? "Order created and waiting for Razorpay payment."
+                ? "Order created and waiting for online payment."
                 : settings.autoAcceptOrders ? "Order auto accepted from admin settings." : "Order created from website checkout.",
+              data.receiverName || data.receiverMobile ? `Receiver: ${[data.receiverName, data.receiverMobile].filter(Boolean).join(", ")}` : "",
+              data.deliveryAddress ? `Address: ${data.deliveryAddress}` : "",
+              data.deliveryLabel ? `Address type: ${data.deliveryLabel}` : "",
+              data.restaurantNote ? `Customer note: ${data.restaurantNote}` : "",
               calculated.couponCode ? `Coupon ${calculated.couponCode} applied.` : "",
               data.pinCode ? `Location: PIN ${data.pinCode}` : "",
               data.latitude && data.longitude ? `GPS: ${data.latitude}, ${data.longitude}` : "",

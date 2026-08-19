@@ -52,20 +52,16 @@ type PinPosition = {
   y: number;
 };
 
-const storageKey = "wah-thali-addresses";
 const defaultArea = "Select delivery location";
 
-function readSavedAddresses() {
-  if (typeof window === "undefined") return [] as SavedAddress[];
-
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    const parsed = raw ? (JSON.parse(raw) as SavedAddress[]) : [];
-    return Array.isArray(parsed) ? parsed.filter((item) => item.id?.startsWith("address-")) : [];
-  } catch {
-    return [];
-  }
-}
+type DbCustomerAddress = {
+  id: string;
+  label: string;
+  line1: string;
+  area: string;
+  pinCode: string;
+  landmark?: string | null;
+};
 
 function getAddressLabel(tag: AddressTag, customLabel?: string) {
   if (tag !== "Other") return tag;
@@ -104,6 +100,27 @@ function cleanPhone(value: string) {
   return value.replace(/\D/g, "").slice(-10);
 }
 
+function toSavedAddress(address: DbCustomerAddress): SavedAddress {
+  const receiver = address.landmark?.match(/Receiver:\s*([^,|]+)/i)?.[1]?.trim() ?? "";
+  const phone = address.landmark?.match(/Receiver:\s*[^,|]+,\s*([^|]+)/i)?.[1]?.trim() ?? "";
+  const gps = address.landmark?.match(/GPS:\s*([^,]+),\s*([^|]+)/i);
+  const label = getAddressLabel(address.label === "Work" || address.label === "Other" ? address.label : "Home", address.label);
+
+  return {
+    id: address.id,
+    tag: label === "Work" ? "Work" : label === "Home" ? "Home" : "Other",
+    label,
+    area: address.area || address.line1,
+    details: address.line1 || address.area,
+    pinCode: address.pinCode,
+    receiver,
+    phone: cleanPhone(phone),
+    distance: "Saved",
+    latitude: gps?.[1]?.trim(),
+    longitude: gps?.[2]?.trim(),
+  };
+}
+
 export function AddressLocationClient({ restaurantSettings }: { restaurantSettings: RestaurantSettings }) {
   const router = useRouter();
   const deliveryLocation = useDeliveryLocation();
@@ -116,7 +133,6 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
   const [message, setMessage] = useState("");
   const [query, setQuery] = useState("");
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
-  const [savedAddressesLoaded, setSavedAddressesLoaded] = useState(false);
   const [activeAddressActionsId, setActiveAddressActionsId] = useState<string | null>(null);
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -138,25 +154,6 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
   const recentAddresses = useMemo(() => savedAddresses.slice(0, 5), [savedAddresses]);
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      const storedSupportMobile = supportMobileRef.current;
-      setSavedAddresses(readSavedAddresses().map((item) => ({
-        ...item,
-        receiver: item.receiver === "Customer" && cleanPhone(item.phone) === storedSupportMobile ? "" : item.receiver,
-        phone: cleanPhone(item.phone) === storedSupportMobile ? "" : cleanPhone(item.phone),
-      })));
-      setSavedAddressesLoaded(true);
-    }, 0);
-
-    return () => window.clearTimeout(timeoutId);
-  }, []);
-
-  useEffect(() => {
-    if (!savedAddressesLoaded) return;
-    window.localStorage.setItem(storageKey, JSON.stringify(savedAddresses));
-  }, [savedAddresses, savedAddressesLoaded]);
-
-  useEffect(() => {
     function refreshSession() {
       const session = readCustomerSession();
       setCustomerSession(session);
@@ -172,6 +169,39 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
     refreshSession();
     return subscribeCustomerSession(refreshSession);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSavedAddresses() {
+      if (!customerSession?.mobile) {
+        setSavedAddresses([]);
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/customers/addresses?mobile=${encodeURIComponent(customerSession.mobile)}`, { cache: "no-store" });
+        const data = await response.json();
+        if (cancelled) return;
+        const storedSupportMobile = supportMobileRef.current;
+        const next = Array.isArray(data.addresses)
+          ? (data.addresses as DbCustomerAddress[]).map(toSavedAddress).map((item) => ({
+              ...item,
+              receiver: item.receiver === "Customer" && cleanPhone(item.phone) === storedSupportMobile ? "" : item.receiver,
+              phone: cleanPhone(item.phone) === storedSupportMobile ? "" : cleanPhone(item.phone),
+            }))
+          : [];
+        setSavedAddresses(next);
+      } catch {
+        if (!cancelled) setSavedAddresses([]);
+      }
+    }
+
+    void loadSavedAddresses();
+    return () => {
+      cancelled = true;
+    };
+  }, [customerSession?.mobile]);
 
   useEffect(() => {
     if (!message) return;
@@ -249,7 +279,10 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
           city: "",
           state: "",
           pinCode: item.pinCode,
-          landmark: [item.receiver, item.phone].filter(Boolean).length ? `Receiver: ${[item.receiver, item.phone].filter(Boolean).join(", ")}` : undefined,
+          landmark: [
+            [item.receiver, item.phone].filter(Boolean).length ? `Receiver: ${[item.receiver, item.phone].filter(Boolean).join(", ")}` : "",
+            item.latitude && item.longitude ? `GPS: ${item.latitude}, ${item.longitude}` : "",
+          ].filter(Boolean).join(" | ") || undefined,
           isDefault,
         }),
       });
@@ -508,6 +541,11 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
     setActiveAddressActionsId(null);
     if (editingAddressId === item.id) setEditingAddressId(null);
     setMessage(`${item.label || item.tag} location deleted.`);
+    if (customerSession?.mobile) {
+      void fetch(`/api/customers/addresses?mobile=${encodeURIComponent(customerSession.mobile)}&id=${encodeURIComponent(item.id)}`, {
+        method: "DELETE",
+      }).catch(() => undefined);
+    }
   }
 
   function goBack() {

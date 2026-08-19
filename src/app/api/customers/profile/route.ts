@@ -24,6 +24,7 @@ const publicCustomerSelect = {
   updatedAt: true,
   addresses: true,
   loyalty: true,
+  tags: { include: { tag: { select: { name: true } } } },
   orders: {
     orderBy: { createdAt: "desc" as const },
     take: 20,
@@ -32,8 +33,13 @@ const publicCustomerSelect = {
 };
 
 function toPublicCustomer<Customer extends object>(customer: Customer) {
-  const publicCustomer = { ...customer } as Customer & { passwordHash?: string | null };
+  const publicCustomer = { ...customer } as Customer & {
+    passwordHash?: string | null;
+    isVip?: boolean;
+    tags?: Array<{ tag?: { name?: string } }>;
+  };
   delete publicCustomer.passwordHash;
+  publicCustomer.isVip = publicCustomer.tags?.some((assignment) => assignment.tag?.name === "VIP") ?? false;
   return publicCustomer;
 }
 

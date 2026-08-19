@@ -1,33 +1,66 @@
 import type { CartLine } from "./types";
 
-export const cartStorageKey = "wah-thali-cart";
 export const emptyCartSnapshot = "[]";
 
-function getScopedCartStorageKey(ownerId?: string | null) {
-  return ownerId ? `${cartStorageKey}:${ownerId}` : cartStorageKey;
+const cartChangeEvent = "wah-cart-change";
+const snapshots = new Map<string, string>();
+const loadedOwners = new Set<string>();
+
+function ownerKey(ownerId?: string | null) {
+  return ownerId || "guest";
 }
 
-export function readStoredCart(ownerId?: string | null): CartLine[] {
-  if (typeof window === "undefined") return [];
+function dispatchCartChange() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(cartChangeEvent));
+}
+
+function setSnapshot(ownerId: string | null | undefined, lines: CartLine[]) {
+  snapshots.set(ownerKey(ownerId), JSON.stringify(lines));
+  dispatchCartChange();
+}
+
+export async function loadStoredCart(ownerId?: string | null) {
+  if (typeof window === "undefined" || !ownerId) {
+    setSnapshot(ownerId, []);
+    return [];
+  }
+
+  const key = ownerKey(ownerId);
+  if (loadedOwners.has(key)) return parseCartSnapshot(getCartSnapshot(ownerId));
+  loadedOwners.add(key);
 
   try {
-    const raw = window.localStorage.getItem(getScopedCartStorageKey(ownerId));
-    return raw ? (JSON.parse(raw) as CartLine[]) : [];
+    const response = await fetch(`/api/cart?mobile=${encodeURIComponent(ownerId)}`, { cache: "no-store" });
+    const data = await response.json();
+    const items = Array.isArray(data.items) ? data.items as CartLine[] : [];
+    setSnapshot(ownerId, items);
+    return items;
   } catch {
+    setSnapshot(ownerId, []);
     return [];
   }
 }
 
+export function readStoredCart(ownerId?: string | null): CartLine[] {
+  return parseCartSnapshot(getCartSnapshot(ownerId));
+}
+
 export function writeStoredCart(lines: CartLine[], ownerId?: string | null) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(getScopedCartStorageKey(ownerId), JSON.stringify(lines));
-  window.dispatchEvent(new Event("wah-cart-change"));
+  setSnapshot(ownerId, lines);
+
+  if (typeof window === "undefined" || !ownerId) return;
+
+  void fetch("/api/cart", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mobile: ownerId, items: lines }),
+  }).catch(() => undefined);
 }
 
 export function getCartSnapshot(ownerId?: string | null): string {
-  if (typeof window === "undefined") return emptyCartSnapshot;
-  if (!ownerId) return emptyCartSnapshot;
-  return window.localStorage.getItem(getScopedCartStorageKey(ownerId)) ?? emptyCartSnapshot;
+  if (!ownerId) return snapshots.get(ownerKey(ownerId)) ?? emptyCartSnapshot;
+  return snapshots.get(ownerKey(ownerId)) ?? emptyCartSnapshot;
 }
 
 export function getServerCartSnapshot(): string {
@@ -35,18 +68,17 @@ export function getServerCartSnapshot(): string {
 }
 
 export function subscribeToCart(callback: () => void) {
-  window.addEventListener("wah-cart-change", callback);
-  window.addEventListener("storage", callback);
+  window.addEventListener(cartChangeEvent, callback);
 
   return () => {
-    window.removeEventListener("wah-cart-change", callback);
-    window.removeEventListener("storage", callback);
+    window.removeEventListener(cartChangeEvent, callback);
   };
 }
 
 export function parseCartSnapshot(snapshot: string): CartLine[] {
   try {
-    return JSON.parse(snapshot) as CartLine[];
+    const parsed = JSON.parse(snapshot);
+    return Array.isArray(parsed) ? parsed as CartLine[] : [];
   } catch {
     return [];
   }

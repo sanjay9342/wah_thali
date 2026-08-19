@@ -30,7 +30,7 @@ export default async function ConfirmedPage({
 
   if (!order) notFound();
 
-  const paymentSummary = order.payments[0]?.status ? `${order.payments[0].provider} ${order.payments[0].status}` : "COD pending";
+  const paymentSummary = getPaymentSummary(order.payments[0]);
 
   return (
     <>
@@ -75,4 +75,11 @@ export default async function ConfirmedPage({
       <MobileNav />
     </>
   );
+}
+
+function getPaymentSummary(payment?: { provider: string; status: string }) {
+  if (!payment) return "Cash on Delivery";
+  if (payment.provider === "COD") return "Cash on Delivery";
+  if (payment.status === "PAID" || payment.status === "AUTHORIZED") return "Online payment received";
+  return "Online payment pending";
 }

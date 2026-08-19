@@ -184,6 +184,9 @@ function CouponTicket({
         <p className="mt-2 line-clamp-2 text-[12px] font-semibold leading-5 text-charcoal/85">
           {getCouponDescription(coupon)}
         </p>
+        <span className="mt-2 inline-flex rounded-[7px] px-2.5 py-1.5 text-[10px] font-black" style={{ backgroundColor: palette.pill, color: palette.ink }}>
+          {getCouponAudienceLabel(coupon)}
+        </span>
 
         <div className="mt-3 grid gap-1 border-t border-[#eef1f6] pt-3 text-[10px] font-bold leading-4 text-muted sm:grid-cols-2">
           <span>{coupon.minOrder > 0 ? `Min. Order: ${formatRupees(coupon.minOrder)}` : "No minimum order"}</span>
@@ -193,6 +196,12 @@ function CouponTicket({
       </div>
     </article>
   );
+}
+
+function getCouponAudienceLabel(coupon: Coupon) {
+  if (coupon.audience === "VIP") return "VIP customers only";
+  if (coupon.audience === "POINTS") return `${coupon.minPoints ?? 0}+ loyalty points`;
+  return "All customers";
 }
 
 function getCouponPalette(code: string) {

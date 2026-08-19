@@ -10,7 +10,7 @@ import { readCustomerSession, subscribeCustomerSession, type CustomerSession } f
 import { clearNotifications, markNotificationsRead, useNotifications } from "@/lib/notifications";
 import { useEffect, useState } from "react";
 
-export function Header({ showContact = true }: { showContact?: boolean; whatsappNumber?: string }) {
+export function Header({ showContact = true, showLocation = false }: { showContact?: boolean; showLocation?: boolean; whatsappNumber?: string }) {
   const deliveryLocation = useDeliveryLocation();
   const pathname = usePathname();
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
@@ -29,7 +29,7 @@ export function Header({ showContact = true }: { showContact?: boolean; whatsapp
   }, []);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-[#f1e7e4] bg-white/97 shadow-[0_6px_20px_rgba(34,31,32,0.045)] backdrop-blur">
+    <header className="sticky top-0 z-50 w-[100dvw] overflow-x-clip border-b border-[#f1e7e4] bg-white/97 shadow-[0_6px_20px_rgba(34,31,32,0.045)] backdrop-blur">
       <div className="mx-auto hidden h-[74px] max-w-[1250px] items-center gap-5 px-6 lg:flex">
         <Link
           href="/"
@@ -39,11 +39,13 @@ export function Header({ showContact = true }: { showContact?: boolean; whatsapp
           <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill loading="eager" sizes="154px" className="object-contain object-left" />
         </Link>
 
-        <Link href="/address" className="flex min-w-0 max-w-[300px] items-center gap-2 rounded-full border border-[#f1e7e4] bg-[#fff8f9] px-3 py-2 text-[13px] font-black text-charcoal">
-          <MapPin size={17} className="shrink-0 text-red" />
-          <span className="truncate">{deliveryLocation.address}</span>
-          <ChevronDown size={15} className="shrink-0 text-muted" />
-        </Link>
+        {showLocation ? (
+          <Link href="/address" className="flex min-w-0 max-w-[300px] items-center gap-2 rounded-full border border-[#f1e7e4] bg-[#fff8f9] px-3 py-2 text-[13px] font-black text-charcoal">
+            <MapPin size={17} className="shrink-0 text-red" />
+            <span className="truncate">{deliveryLocation.address}</span>
+            <ChevronDown size={15} className="shrink-0 text-muted" />
+          </Link>
+        ) : null}
 
         <nav className="ml-auto flex items-center gap-8 text-[13px] font-black">
           {[
@@ -78,15 +80,15 @@ export function Header({ showContact = true }: { showContact?: boolean; whatsapp
         ) : null}
       </div>
 
-      <div className="px-4 py-2 lg:hidden">
-        <div className="grid h-[44px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
-          <Link href="/" className="relative block h-[42px] w-[118px] overflow-hidden" aria-label="Wah Thali home">
-            <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill loading="eager" sizes="118px" className="object-contain object-left" />
+      <div className="w-screen px-4 py-3 lg:hidden">
+        <div className="grid h-[50px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2.5">
+          <Link href="/" className="relative block h-[46px] w-[130px] overflow-hidden" aria-label="Wah Thali home">
+            <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill loading="eager" sizes="130px" className="object-contain object-left" />
           </Link>
 
           <button
             type="button"
-            className="relative grid h-9 w-9 place-items-center rounded-full bg-[#fff8f9] text-[#374151] ring-1 ring-[#f1e7e4]"
+            className="relative grid h-9 w-9 translate-y-1 place-items-center rounded-full bg-[#fff8f9] text-[#374151] ring-1 ring-[#f1e7e4]"
             onClick={() => {
               setShowNotifications(true);
               markNotificationsRead(customerSession?.mobile);
@@ -100,21 +102,23 @@ export function Header({ showContact = true }: { showContact?: boolean; whatsapp
               </span>
             ) : null}
           </button>
-          <Link href="/cart" className="relative grid h-9 w-9 place-items-center rounded-full bg-[#fff8f9] text-[#374151] ring-1 ring-[#f1e7e4]" aria-label="Cart">
+          <Link href="/cart" className="relative grid h-9 w-9 translate-y-1 place-items-center rounded-full bg-[#fff8f9] text-[#374151] ring-1 ring-[#f1e7e4]" aria-label="Cart">
             <ShoppingCart size={22} strokeWidth={2.4} />
             {cartCount ? <span className="absolute -right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[8px] font-black text-white">{cartCount}</span> : null}
           </Link>
         </div>
 
-        <Link href="/address" className="mt-1.5 grid h-9 min-w-0 grid-cols-[28px_1fr_16px] items-center rounded-full border border-[#f1e7e4] bg-[#fff8f9] px-2.5">
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white text-[#68707c]">
-            <MapPin size={18} strokeWidth={2.5} />
-          </span>
-          <span className="min-w-0 px-2">
-            <span className="block truncate text-[12px] font-black leading-tight text-charcoal">Delivering to {deliveryLocation.address}</span>
-          </span>
-          <ChevronDown size={13} className="shrink-0 text-[#6b7280]" />
-        </Link>
+        {showLocation ? (
+          <Link href="/address" className="mt-2.5 grid h-9 w-[58%] min-w-[190px] max-w-[230px] grid-cols-[28px_1fr_16px] items-center rounded-full border border-[#f1e7e4] bg-[#fff8f9] px-2.5">
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white text-[#68707c]">
+              <MapPin size={18} strokeWidth={2.5} />
+            </span>
+            <span className="min-w-0 px-2">
+              <span className="block truncate text-[12px] font-black leading-tight text-charcoal">Delivering to {deliveryLocation.address}</span>
+            </span>
+            <ChevronDown size={13} className="shrink-0 text-[#6b7280]" />
+          </Link>
+        ) : null}
       </div>
 
       {showNotifications ? (

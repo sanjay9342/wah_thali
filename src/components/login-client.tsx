@@ -28,7 +28,6 @@ type ApiError = {
 
 type ApiResponse = ApiError & {
   customer?: ApiCustomer;
-  devOtp?: string;
 };
 
 function cleanMobile(value: string) {
@@ -220,7 +219,7 @@ export function LoginClient() {
 
       setForm((current) => ({ ...current, mobile, otp: "" }));
       setStep("otp");
-      setMessage(data.devOtp ? `${cleanApiMessage(data.message, "WhatsApp OTP sent.")} Dev OTP: ${data.devOtp}` : cleanApiMessage(data.message, "WhatsApp OTP sent."));
+      setMessage(cleanApiMessage(data.message, "WhatsApp OTP sent."));
     } catch {
       setMessage("Could not connect. Please try again.");
     } finally {

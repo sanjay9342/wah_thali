@@ -12,6 +12,11 @@ export type CartTotals = {
   freeDeliveryGap: number;
 };
 
+export type CouponCustomerContext = {
+  isVip?: boolean;
+  points?: number;
+};
+
 export function getProductPrice(line: CartLine, productCatalog: Product[] = products): number {
   const product = productCatalog.find((item) => item.id === line.productId);
   if (!product) {
@@ -44,8 +49,14 @@ export function getPricableCartLines(lines: CartLine[], productCatalog: Product[
   });
 }
 
-export function applyCoupon(subtotal: number, coupon?: Coupon): number {
-  if (!coupon || subtotal < coupon.minOrder) {
+export function isCouponEligibleForCustomer(coupon: Coupon, customer?: CouponCustomerContext) {
+  if ((coupon.audience ?? "ALL") === "VIP") return Boolean(customer?.isVip);
+  if (coupon.audience === "POINTS") return (customer?.points ?? 0) >= (coupon.minPoints ?? 0);
+  return true;
+}
+
+export function applyCoupon(subtotal: number, coupon?: Coupon, customer?: CouponCustomerContext): number {
+  if (!coupon || subtotal < coupon.minOrder || !isCouponEligibleForCustomer(coupon, customer)) {
     return 0;
   }
 
@@ -62,11 +73,12 @@ export function calculateCartTotals(
   productCatalog: Product[] = products,
   couponCatalog: Coupon[] = coupons,
   activeSettings: BusinessSettings = settings,
+  customer?: CouponCustomerContext,
 ): CartTotals {
   const pricableLines = getPricableCartLines(lines, productCatalog);
   const subtotal = pricableLines.reduce((total, line) => total + getProductPrice(line, productCatalog), 0);
   const coupon = couponCatalog.find((item) => item.code === couponCode?.toUpperCase());
-  const discount = applyCoupon(subtotal, coupon);
+  const discount = applyCoupon(subtotal, coupon, customer);
   const packaging = pricableLines.length > 0 ? activeSettings.packagingFee : 0;
   const delivery =
     pricableLines.length > 0 && subtotal - discount < activeSettings.freeDeliveryThreshold

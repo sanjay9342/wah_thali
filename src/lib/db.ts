@@ -160,34 +160,120 @@ export async function getCategoryOffersFromDb(): Promise<CategoryOfferMap> {
   }
 }
 
-export async function getCouponsFromDb(): Promise<Coupon[]> {
-  if (!isDatabaseConfigured()) return fallbackCoupons;
+type CouponRule = Pick<Coupon, "audience" | "minPoints">;
+type CouponRuleMap = Record<string, CouponRule>;
+
+function isCouponRuleMap(value: unknown): value is CouponRuleMap {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+export async function getCouponRulesFromDb(): Promise<CouponRuleMap> {
+  if (!isDatabaseConfigured()) return {};
 
   try {
-    const now = new Date();
-    const coupons = await prisma.coupon.findMany({
-      where: {
-        active: true,
-        startsAt: { lte: now },
-        endsAt: { gte: now },
-      },
-      orderBy: { code: "asc" },
-    });
+    const row = await prisma.businessSetting.findUnique({ where: { key: "couponEligibility" } });
+    return isCouponRuleMap(row?.value) ? row.value : {};
+  } catch (error) {
+    console.error("Coupon eligibility read failed.", error);
+    return {};
+  }
+}
 
-    return coupons.map((coupon) => ({
+export async function saveCouponRule(code: string, rule: CouponRule) {
+  const rules = await getCouponRulesFromDb();
+  const normalizedCode = code.toUpperCase();
+  const normalizedRule: CouponRule = {
+    audience: rule.audience ?? "ALL",
+    minPoints: rule.audience === "POINTS" ? Math.max(0, Number(rule.minPoints ?? 0)) : 0,
+  };
+
+  if (normalizedRule.audience === "ALL") {
+    delete rules[normalizedCode];
+  } else {
+    rules[normalizedCode] = normalizedRule;
+  }
+
+  await prisma.businessSetting.upsert({
+    where: { key: "couponEligibility" },
+    create: { key: "couponEligibility", value: rules as Prisma.InputJsonValue },
+    update: { value: rules as Prisma.InputJsonValue },
+  });
+}
+
+export async function deleteCouponRule(code: string) {
+  const rules = await getCouponRulesFromDb();
+  delete rules[code.toUpperCase()];
+
+  await prisma.businessSetting.upsert({
+    where: { key: "couponEligibility" },
+    create: { key: "couponEligibility", value: rules as Prisma.InputJsonValue },
+    update: { value: rules as Prisma.InputJsonValue },
+  });
+}
+
+function applyCouponRules(coupons: Array<{
+  code: string;
+  label: string;
+  type: string;
+  value: number;
+  minOrder: number;
+  maxDiscount: number | null;
+  startsAt: Date;
+  endsAt: Date;
+}>, rules: CouponRuleMap): Coupon[] {
+  return coupons.map((coupon) => {
+    const rule = rules[coupon.code] ?? {};
+    return {
       code: coupon.code,
       label: coupon.label,
       type: coupon.type as Coupon["type"],
       value: coupon.value,
       minOrder: coupon.minOrder,
       maxDiscount: coupon.maxDiscount ?? undefined,
+      audience: rule.audience ?? "ALL",
+      minPoints: rule.minPoints ?? 0,
       startsAt: coupon.startsAt.toISOString(),
       endsAt: coupon.endsAt.toISOString(),
-    }));
+    };
+  });
+}
+
+export async function getCouponsFromDb(): Promise<Coupon[]> {
+  if (!isDatabaseConfigured()) return fallbackCoupons;
+
+  try {
+    const now = new Date();
+    const [coupons, rules] = await Promise.all([
+      prisma.coupon.findMany({
+      where: {
+        active: true,
+        startsAt: { lte: now },
+        endsAt: { gte: now },
+      },
+      orderBy: { code: "asc" },
+    }),
+      getCouponRulesFromDb(),
+    ]);
+
+    return applyCouponRules(coupons, rules);
   } catch (error) {
     console.error("Database coupon read failed. Falling back to local coupons.", error);
     return fallbackCoupons;
   }
+}
+
+export async function getAdminCouponsFromDb(): Promise<Array<Coupon & { active: boolean }>> {
+  if (!isDatabaseConfigured()) return [];
+
+  const [coupons, rules] = await Promise.all([
+    prisma.coupon.findMany({ orderBy: { code: "asc" } }),
+    getCouponRulesFromDb(),
+  ]);
+
+  return applyCouponRules(coupons, rules).map((coupon, index) => ({
+    ...coupon,
+    active: coupons[index].active,
+  }));
 }
 
 export async function getBusinessSettingsFromDb(): Promise<BusinessSettings> {
@@ -369,16 +455,28 @@ export async function getAdminOrdersFromDb(): Promise<AdminOrder[]> {
     customerName: order.customer.name,
     customerMobile: order.customer.mobile,
     status: order.status as AdminOrder["status"],
+    subtotal: order.subtotal,
+    discount: order.discount,
+    gst: order.gst,
     amount: order.grandTotal,
+    items: order.items.map((item) => ({ name: item.name, quantity: item.quantity, price: item.price })),
     itemSummary: order.items.map((item) => `${item.quantity} x ${item.name}`).join(", "),
-    paymentSummary: order.payments[0]?.status ? `${order.payments[0].provider} ${order.payments[0].status}` : "COD pending",
+    paymentSummary: getAdminPaymentSummary(order.payments[0]),
     createdAt: order.createdAt.toISOString(),
     timeline: order.timeline.map((event) => ({
       toStatus: event.toStatus,
       note: event.note,
       createdAt: event.createdAt.toISOString(),
     })),
-  }));
+}));
+}
+
+function getAdminPaymentSummary(payment?: { provider: string; status: string }) {
+  if (!payment) return "Cash on Delivery";
+  if (payment.provider === "COD") return "Cash on Delivery";
+  if (payment.status === "PAID" || payment.status === "AUTHORIZED") return "Online payment received";
+  if (payment.status === "CREATED") return "Online payment pending";
+  return "Online payment";
 }
 
 export async function getAdminCustomersFromDb(): Promise<AdminCustomer[]> {
@@ -392,23 +490,30 @@ export async function getAdminCustomersFromDb(): Promise<AdminCustomer[]> {
       email: true,
       updatedAt: true,
       loyalty: true,
+      tags: { include: { tag: { select: { name: true } } } },
       orders: { orderBy: { createdAt: "desc" } },
     },
     orderBy: { updatedAt: "desc" },
     take: 100,
   });
 
-  return customers.map((customer) => ({
+  return customers.map((customer) => {
+    const ltv = customer.orders.reduce((total, order) => total + order.grandTotal, 0);
+    const tagNames = customer.tags.map((assignment) => assignment.tag.name);
+
+    return {
     id: customer.id,
     name: customer.name,
     mobile: customer.mobile,
     email: customer.email ?? undefined,
     orders: customer.orders.length,
-    ltv: customer.orders.reduce((total, order) => total + order.grandTotal, 0),
+    ltv,
     points: customer.loyalty?.points ?? 0,
     tier: customer.loyalty?.tier ?? "Starter",
+    isVip: tagNames.includes("VIP"),
     lastOrder: customer.orders[0]?.createdAt.toISOString(),
-  }));
+    };
+  });
 }
 
 export async function getAdminDashboardMetrics() {

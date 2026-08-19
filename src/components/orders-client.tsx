@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, LogIn, PackageCheck, RotateCcw, Search } from "lucide-react";
+import { ChevronRight, LogIn, PackageCheck, Search } from "lucide-react";
 import Link from "next/link";
+import { OrderReorderButton } from "@/components/order-reorder-button";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 import { formatRupees } from "@/lib/pricing";
 
@@ -11,7 +12,7 @@ type CustomerOrder = {
   orderNumber: string;
   grandTotal: number;
   createdAt: string;
-  items: { id: string; name: string; quantity: number; price: number }[];
+  items: { id: string; productId: string; name: string; quantity: number; price: number }[];
 };
 
 type CustomerProfile = {
@@ -146,9 +147,7 @@ export function OrdersClient() {
               </div>
               <div className="mt-5 flex items-center justify-between border-t border-border pt-4">
                 <span className="text-[17px] font-black text-charcoal">{formatRupees(order.grandTotal)}</span>
-                <Link href="/menu" className="inline-flex h-12 items-center gap-2 rounded-xl bg-maroon px-5 text-[15px] font-black text-white">
-                  <RotateCcw size={18} /> Reorder
-                </Link>
+                <OrderReorderButton items={order.items} />
               </div>
             </div>
           </article>

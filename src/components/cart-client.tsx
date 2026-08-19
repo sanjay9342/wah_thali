@@ -27,16 +27,18 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { calculateCartTotals, formatRupees, getPricableCartLines } from "@/lib/pricing";
+import { calculateCartTotals, formatRupees, getPricableCartLines, isCouponEligibleForCustomer } from "@/lib/pricing";
 import { writeStoredCart } from "@/lib/cart-storage";
 import { readCustomerSession, saveCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 import { extractPinCode, getDeliveryLocationCoverage, saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
 import { addNotification } from "@/lib/notifications";
 import { useStoredCart } from "@/lib/use-stored-cart";
 import { getStoreOrderingStatus } from "@/lib/store-hours";
+import { OrderPlacingOverlay } from "@/components/order-placing-overlay";
 import type { CartLine, Coupon, Product, RestaurantSettings } from "@/lib/types";
 
 type PaymentMethod = "COD" | "RAZORPAY";
+type CouponCustomer = { isVip: boolean; points: number };
 
 declare global {
   interface Window {
@@ -79,6 +81,10 @@ function buildInitialCart(baseCart: CartLine[], addProductId?: string) {
   ];
 }
 
+function wait(durationMs: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, durationMs));
+}
+
 export function CartClient({
   addProductId,
   initialProducts,
@@ -95,12 +101,16 @@ export function CartClient({
   const [cookingRequest, setCookingRequest] = useState("");
   const [cutleryNeeded, setCutleryNeeded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [placingStage, setPlacingStage] = useState<string | null>(null);
   const [showBillSummary, setShowBillSummary] = useState(false);
   const [showReceiverSheet, setShowReceiverSheet] = useState(false);
   const [showLocationSheet, setShowLocationSheet] = useState(false);
   const [showCookingSheet, setShowCookingSheet] = useState(false);
+  const [showCouponSheet, setShowCouponSheet] = useState(false);
+  const [showOrderConfirmSheet, setShowOrderConfirmSheet] = useState(false);
   const [locating, setLocating] = useState(false);
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
+  const [couponCustomer, setCouponCustomer] = useState<CouponCustomer>({ isVip: false, points: 0 });
   const [checkoutMessage, setCheckoutMessage] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
     restaurantSettings.onlinePaymentsEnabled ? "RAZORPAY" : "COD",
@@ -123,10 +133,12 @@ export function CartClient({
   const lines = useStoredCart(cartOwnerId);
   const deliveryLocation = useDeliveryLocation();
   const validLines = useMemo(() => getPricableCartLines(lines, initialProducts), [initialProducts, lines]);
+  const selectedCoupon = initialCoupons.find((item) => item.code === coupon);
+  const couponEligible = selectedCoupon ? isCouponEligibleForCustomer(selectedCoupon, couponCustomer) : true;
 
   const totals = useMemo(
-    () => calculateCartTotals(validLines, coupon, initialProducts, initialCoupons, restaurantSettings),
-    [initialCoupons, initialProducts, validLines, coupon, restaurantSettings],
+    () => calculateCartTotals(validLines, couponEligible ? coupon : undefined, initialProducts, initialCoupons, restaurantSettings, couponCustomer),
+    [couponCustomer, couponEligible, initialCoupons, initialProducts, validLines, coupon, restaurantSettings],
   );
   const deliveryCoverage = getDeliveryLocationCoverage(deliveryLocation, restaurantSettings);
   const serviceable = deliveryCoverage.serviceable;
@@ -135,17 +147,24 @@ export function CartClient({
   const storeOrderingDisabled = orderingStatus.unavailable;
   const statusMessage = orderingStatus.message;
   const showStoreStatus = restaurantSettings.storeMode !== "OPEN" || orderingStatus.outsideOrderingHours;
-  const appliedCoupon = initialCoupons.find((item) => item.code === coupon);
-  const featuredCoupon = initialCoupons[0];
+  const appliedCoupon = couponEligible ? selectedCoupon : undefined;
+  const availableCoupons = useMemo(
+    () =>
+      initialCoupons.filter((item) => (
+        totals.subtotal >= item.minOrder &&
+        isCouponEligibleForCustomer(item, couponCustomer) &&
+        calculateCartTotals(validLines, item.code, initialProducts, initialCoupons, restaurantSettings, couponCustomer).discount > 0
+      )),
+    [couponCustomer, initialCoupons, initialProducts, restaurantSettings, totals.subtotal, validLines],
+  );
+  const featuredCoupon = availableCoupons[0];
   const featuredCouponValue = featuredCoupon ? getCouponBenefitText(featuredCoupon) : "";
   const paymentOptions: PaymentMethod[] = [
     ...(restaurantSettings.onlinePaymentsEnabled ? ["RAZORPAY" as const] : []),
     ...(restaurantSettings.codEnabled ? ["COD" as const] : []),
   ];
   const selectedPaymentMethod = paymentOptions.includes(paymentMethod) ? paymentMethod : paymentOptions[0];
-  const paymentLabel = selectedPaymentMethod === "RAZORPAY"
-    ? "Razorpay"
-    : selectedPaymentMethod === "COD" ? "Cash on Delivery" : "Payment unavailable";
+  const paymentLabel = getPaymentLabel(selectedPaymentMethod);
   const itemSavings = validLines.reduce((total, line) => {
     const product = initialProducts.find((item) => item.id === line.productId);
     if (!product?.originalPrice) return total;
@@ -173,6 +192,7 @@ export function CartClient({
   }, [initialProducts]);
   const receiverName = customerSession?.name || "Customer";
   const receiverMobile = customerSession?.mobile || supportMobile;
+  const hasDeliveryAddress = deliveryLocation.address.trim() !== "" && deliveryLocation.address !== "Select delivery location";
 
   useEffect(() => {
     if (validLines.length !== lines.length) {
@@ -204,6 +224,34 @@ export function CartClient({
     return subscribeCustomerSession(refreshSession);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCouponCustomer() {
+      if (!customerSession?.mobile) {
+        setCouponCustomer({ isVip: false, points: 0 });
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/customers/profile?mobile=${encodeURIComponent(customerSession.mobile)}`, { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok || !data.customer || cancelled) return;
+        setCouponCustomer({
+          isVip: Boolean(data.customer.isVip),
+          points: Number(data.customer.loyalty?.points ?? 0),
+        });
+      } catch {
+        if (!cancelled) setCouponCustomer({ isVip: false, points: 0 });
+      }
+    }
+
+    void loadCouponCustomer();
+    return () => {
+      cancelled = true;
+    };
+  }, [customerSession?.mobile]);
+
   function updateQuantity(index: number, quantity: number) {
     const next = validLines
       .map((line, lineIndex) => (lineIndex === index ? { ...line, quantity } : line))
@@ -231,15 +279,31 @@ export function CartClient({
 
     if (!availableCoupon) {
       setCoupon(undefined);
-      return;
+      setCheckoutMessage("This coupon is not available right now.");
+      return false;
     }
 
     if (totals.subtotal < availableCoupon.minOrder) {
       setCoupon(undefined);
-      return;
+      setCheckoutMessage(`Add ${formatRupees(availableCoupon.minOrder - totals.subtotal)} more to use ${availableCoupon.code}.`);
+      return false;
+    }
+
+    if (!isCouponEligibleForCustomer(availableCoupon, couponCustomer)) {
+      setCoupon(undefined);
+      setCheckoutMessage(getCouponEligibilityMessage(availableCoupon));
+      return false;
     }
 
     setCoupon(availableCoupon.code);
+    setCheckoutMessage("");
+    return true;
+  }
+
+  function selectCoupon(code: string) {
+    if (applyCommonCoupon(code)) {
+      setShowCouponSheet(false);
+    }
   }
 
   function openReceiverSheet() {
@@ -394,7 +458,7 @@ export function CartClient({
   }) {
     const loaded = await loadRazorpayCheckout();
     if (!loaded || !window.Razorpay) {
-      throw new Error("Razorpay Checkout could not be loaded.");
+      throw new Error("Online payment could not be loaded.");
     }
 
     const checkout = new window.Razorpay({
@@ -416,7 +480,9 @@ export function CartClient({
       },
       handler: async (response) => {
         setSubmitting(true);
+        setPlacingStage("Verifying your payment and saving the kitchen ticket.");
         setCheckoutMessage("Verifying payment...");
+        let keepOverlay = false;
         try {
           await verifyRazorpayPayment({
             orderNumber: input.orderNumber,
@@ -430,22 +496,30 @@ export function CartClient({
             title: "Payment received",
             body: `Your order ${input.orderNumber} is confirmed. We will update you as it moves ahead.`,
           });
-          router.push(`/order/${input.orderNumber}/confirmed`);
+          setPlacingStage("Payment received. Opening your live order tracker.");
+          await wait(850);
+          keepOverlay = true;
+          router.push(`/order/${input.orderNumber}/track`);
         } catch (error) {
           setCheckoutMessage(error instanceof Error ? error.message : "Payment verification failed.");
         } finally {
-          setSubmitting(false);
+          if (!keepOverlay) {
+            setSubmitting(false);
+            setPlacingStage(null);
+          }
         }
       },
       modal: {
         ondismiss: () => {
           setSubmitting(false);
+          setPlacingStage(null);
           setCheckoutMessage("Payment was not completed. Your order is waiting for payment.");
         },
       },
     });
 
     checkout.open();
+    setPlacingStage(null);
   }
 
   async function placeOrder() {
@@ -468,8 +542,12 @@ export function CartClient({
       return;
     }
 
+    setShowOrderConfirmSheet(false);
     setSubmitting(true);
+    setPlacingStage(selectedPaymentMethod === "RAZORPAY" ? "Starting secure payment for your order." : "Creating your order and sending it to the kitchen.");
     setCheckoutMessage(selectedPaymentMethod === "RAZORPAY" ? "Starting secure payment..." : "Creating your order...");
+    let keepOverlay = false;
+    let keepRazorpaySubmitting = false;
 
     try {
       const response = await fetch("/api/orders", {
@@ -478,7 +556,12 @@ export function CartClient({
         body: JSON.stringify({
           customerName: receiverName,
           customerMobile: receiverMobile,
-          couponCode: coupon,
+          receiverName,
+          receiverMobile,
+          deliveryAddress: deliveryLocation.address,
+          deliveryLabel: deliveryLocation.label,
+          restaurantNote: cookingRequest,
+          couponCode: appliedCoupon?.code,
           pinCode: deliveryLocation.pinCode,
           latitude: deliveryLocation.latitude,
           longitude: deliveryLocation.longitude,
@@ -495,7 +578,7 @@ export function CartClient({
 
       if (selectedPaymentMethod === "RAZORPAY") {
         if (!data.razorpay) {
-          setCheckoutMessage("Razorpay could not be started for this order.");
+          setCheckoutMessage("Online payment could not be started for this order.");
           return;
         }
 
@@ -506,6 +589,7 @@ export function CartClient({
           currency: data.razorpay.currency,
           orderNumber: data.order.orderNumber,
         });
+        keepRazorpaySubmitting = true;
         return;
       }
 
@@ -515,12 +599,41 @@ export function CartClient({
         title: "Order placed",
         body: `Your order ${data.order.orderNumber} was placed successfully. We will update you as it moves ahead.`,
       });
-      router.push(`/order/${data.order.orderNumber}/confirmed`);
+      setPlacingStage("Order placed successfully. Opening your live tracker.");
+      await wait(850);
+      keepOverlay = true;
+      router.push(`/order/${data.order.orderNumber}/track`);
     } catch (error) {
       setCheckoutMessage(error instanceof Error ? error.message : "Checkout could not be completed.");
     } finally {
-      if (selectedPaymentMethod !== "RAZORPAY") setSubmitting(false);
+      if (!keepOverlay && !keepRazorpaySubmitting) {
+        setSubmitting(false);
+        setPlacingStage(null);
+      }
     }
+  }
+
+  function requestPlaceOrderConfirmation() {
+    if (storeOrderingDisabled || submitting) return;
+
+    setCheckoutMessage("");
+    if (!validLines.length) {
+      return;
+    }
+    if (!customerSession?.mobile) {
+      router.push("/login?next=/cart");
+      return;
+    }
+    if (!hasDeliveryAddress || !serviceable) {
+      openLocationSheet();
+      return;
+    }
+    if (!selectedPaymentMethod) {
+      setCheckoutMessage("No payment method is available right now.");
+      return;
+    }
+
+    setShowOrderConfirmSheet(true);
   }
 
   if (!customerSession?.mobile) {
@@ -537,27 +650,31 @@ export function CartClient({
 
   if (validLines.length === 0) {
     return (
-      <div className="mx-auto max-w-md rounded-[28px] bg-white p-6 text-center shadow-sm ring-1 ring-border">
-        <h1 className="text-2xl font-black text-maroon">Your cart is empty</h1>
-        <p className="mt-3 text-sm text-muted">Add your favourite Wah Thali dishes to continue.</p>
-        {showStoreStatus ? (
-          <div className="mt-4 rounded-2xl border border-red/20 bg-cream p-4 text-left text-sm text-maroon">
-            <p className="flex items-center gap-2 font-black">
-              <Store size={17} className="text-red" />
-              {orderingStatus.title}
-            </p>
-            <p className="mt-1 text-xs font-bold text-muted">{statusMessage}</p>
-          </div>
-        ) : null}
-        <Link prefetch href="/menu" className="mt-6 inline-flex h-12 items-center rounded-2xl bg-red px-5 font-black text-white">
-          Browse menu
-        </Link>
-      </div>
+      <>
+        {placingStage ? <OrderPlacingOverlay message={placingStage} /> : null}
+        <div className="mx-auto max-w-md rounded-[28px] bg-white p-6 text-center shadow-sm ring-1 ring-border">
+          <h1 className="text-2xl font-black text-maroon">Your cart is empty</h1>
+          <p className="mt-3 text-sm text-muted">Add your favourite Wah Thali dishes to continue.</p>
+          {showStoreStatus ? (
+            <div className="mt-4 rounded-2xl border border-red/20 bg-cream p-4 text-left text-sm text-maroon">
+              <p className="flex items-center gap-2 font-black">
+                <Store size={17} className="text-red" />
+                {orderingStatus.title}
+              </p>
+              <p className="mt-1 text-xs font-bold text-muted">{statusMessage}</p>
+            </div>
+          ) : null}
+          <Link prefetch href="/menu" className="mt-6 inline-flex h-12 items-center rounded-2xl bg-red px-5 font-black text-white">
+            Browse menu
+          </Link>
+        </div>
+      </>
     );
   }
 
   return (
     <section className="relative mx-auto min-h-screen max-w-[430px] bg-[#f6f7fb] pb-32 text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-6 sm:min-h-0 sm:overflow-hidden sm:rounded-[28px] lg:max-w-none lg:overflow-visible lg:rounded-none lg:bg-white lg:pb-0 lg:shadow-none">
+      {placingStage ? <OrderPlacingOverlay message={placingStage} /> : null}
       <div className="mx-auto hidden max-w-[1248px] grid-cols-[230px_minmax(0,1fr)_360px] gap-8 px-6 py-9 lg:grid">
         <aside className="sticky top-[88px] h-[calc(100vh-108px)] overflow-hidden rounded-[22px] border border-[#f1e7e4] bg-white shadow-[0_18px_44px_rgba(34,31,32,0.06)]">
           <div className="border-b border-[#f1e7e4] px-5 py-5">
@@ -750,7 +867,7 @@ export function CartClient({
                         : "bg-white text-charcoal ring-border"
                     }`}
                   >
-                    {option === "RAZORPAY" ? "Razorpay" : "COD"}
+                    {getPaymentLabel(option)}
                   </button>
                 ))}
               </div>
@@ -778,7 +895,7 @@ export function CartClient({
             ) : paymentOptions.length ? (
               <button
                 type="button"
-                onClick={placeOrder}
+                onClick={requestPlaceOrderConfirmation}
                 disabled={submitting}
                 className="mt-6 inline-flex h-14 w-full items-center justify-center gap-3 rounded-2xl bg-maroon text-lg font-black text-white shadow-[0_12px_24px_rgba(141,0,33,0.22)] disabled:opacity-60"
               >
@@ -950,7 +1067,7 @@ export function CartClient({
         <h2 className="px-4 pb-3 pt-5 text-[15px] font-black uppercase tracking-[0.22em] text-muted">Savings corner</h2>
         <div className="divide-y divide-border">
           <button
-            onClick={() => featuredCoupon ? applyCommonCoupon(featuredCoupon.code) : undefined}
+            onClick={() => initialCoupons.length ? setShowCouponSheet(true) : setCheckoutMessage("No coupons are available right now.")}
             className="grid w-full grid-cols-[32px_1fr_auto] items-center gap-3 px-4 py-4 text-left"
           >
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-maroon text-white">
@@ -981,18 +1098,24 @@ export function CartClient({
       </div>
 
       {featuredCoupon ? (
-      <div className="mx-5 mt-5 rounded-[18px] bg-[#fff5ef] p-4 shadow-sm ring-1 ring-[#ffe1d1]">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[13px] font-black text-charcoal">Special offer from Wah Thali</p>
-            <p className="mt-2 text-[12px] font-bold text-muted">
-              Use {featuredCoupon.code} to save {featuredCouponValue}
-            </p>
+      <div className="mx-5 mt-5">
+        <button
+          type="button"
+          onClick={() => selectCoupon(featuredCoupon.code)}
+          className="block w-full rounded-[18px] bg-[#fff5ef] p-4 text-left shadow-sm ring-1 ring-[#ffe1d1]"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[13px] font-black text-charcoal">Special offer from Wah Thali</p>
+              <p className="mt-2 text-[12px] font-bold text-muted">
+                Use {featuredCoupon.code} to save {featuredCouponValue}
+              </p>
+            </div>
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-maroon shadow-sm">
+              <Gift size={22} />
+            </span>
           </div>
-          <span className="grid h-10 w-10 place-items-center rounded-full bg-white text-maroon shadow-sm">
-            <Gift size={22} />
-          </span>
-        </div>
+        </button>
       </div>
       ) : null}
 
@@ -1042,7 +1165,7 @@ export function CartClient({
                 selectedPaymentMethod === option ? "bg-maroon text-white" : "bg-[#f6f7fb] text-charcoal"
               }`}
             >
-              {option === "RAZORPAY" ? "Razorpay" : "COD"}
+              {getPaymentLabel(option)}
             </button>
           ))}
         </div>
@@ -1097,7 +1220,7 @@ export function CartClient({
                 </div>
                 {totals.discount > 0 ? (
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-[17px] font-black text-[#1769c2]">Limited Time Offer</dt>
+                  <dt className="text-[17px] font-black text-[#1769c2]">{appliedCoupon ? `Coupon ${appliedCoupon.code}` : "Limited Time Offer"}</dt>
                   <dd className="font-black text-[#1769c2]">-{formatRupees(totals.discount)}</dd>
                 </div>
                 ) : null}
@@ -1222,6 +1345,42 @@ export function CartClient({
         </BottomSheet>
       ) : null}
 
+      {showCouponSheet ? (
+        <CouponSheet
+          coupons={initialCoupons}
+          selectedCode={appliedCoupon?.code}
+          subtotal={totals.subtotal}
+          customer={couponCustomer}
+          products={initialProducts}
+          lines={validLines}
+          restaurantSettings={restaurantSettings}
+          onClose={() => setShowCouponSheet(false)}
+          onSelect={selectCoupon}
+        />
+      ) : null}
+
+      {showOrderConfirmSheet ? (
+        <OrderConfirmationSheet
+          addressLabel={deliveryLocation.label}
+          address={deliveryLocation.address}
+          receiverName={receiverName}
+          receiverMobile={receiverMobile}
+          paymentLabel={paymentLabel}
+          total={totals.grandTotal}
+          submitting={submitting}
+          onClose={() => setShowOrderConfirmSheet(false)}
+          onEditLocation={() => {
+            setShowOrderConfirmSheet(false);
+            openLocationSheet();
+          }}
+          onEditReceiver={() => {
+            setShowOrderConfirmSheet(false);
+            openReceiverSheet();
+          }}
+          onConfirm={placeOrder}
+        />
+      ) : null}
+
       {showCookingSheet ? (
         <CookingNoteSheet
           initialNote={cookingRequest}
@@ -1259,7 +1418,7 @@ export function CartClient({
           ) : paymentOptions.length ? (
             <button
               type="button"
-              onClick={placeOrder}
+              onClick={requestPlaceOrderConfirmation}
               disabled={submitting}
               className="flex h-16 items-center justify-center rounded-2xl bg-maroon text-[20px] font-black text-white shadow-[0_10px_24px_rgba(141,0,33,0.28)] disabled:opacity-60"
             >
@@ -1305,6 +1464,213 @@ function BottomSheet({
         {children}
       </section>
     </div>
+  );
+}
+
+function OrderConfirmationSheet({
+  addressLabel,
+  address,
+  receiverName,
+  receiverMobile,
+  paymentLabel,
+  total,
+  submitting,
+  onClose,
+  onEditLocation,
+  onEditReceiver,
+  onConfirm,
+}: {
+  addressLabel: string;
+  address: string;
+  receiverName: string;
+  receiverMobile: string;
+  paymentLabel: string;
+  total: number;
+  submitting: boolean;
+  onClose: () => void;
+  onEditLocation: () => void;
+  onEditReceiver: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <BottomSheet title="Confirm order details" onClose={onClose}>
+      <p className="mt-2 text-[14px] font-bold leading-5 text-muted">
+        Please check your delivery address and receiver details before we place your order.
+      </p>
+
+      <div className="mt-6 overflow-hidden rounded-[20px] bg-white shadow-sm ring-1 ring-border">
+        <ConfirmDetailRow
+          icon={<MapPin size={20} />}
+          title={`Delivery at ${addressLabel}`}
+          body={address}
+          action="Change"
+          onAction={onEditLocation}
+        />
+        <ConfirmDetailRow
+          icon={<Phone size={19} />}
+          title={receiverName}
+          body={`+91-${receiverMobile}`}
+          action="Edit"
+          onAction={onEditReceiver}
+        />
+        <ConfirmDetailRow
+          icon={<ReceiptText size={19} />}
+          title="Payment"
+          body={paymentLabel}
+        />
+      </div>
+
+      <div className="mt-5 rounded-[18px] bg-[#fff4f5] px-4 py-4 text-maroon ring-1 ring-[#f0d7dd]">
+        <div className="flex items-center justify-between gap-4">
+          <span>
+            <span className="block text-[12px] font-black uppercase tracking-[0.18em]">To pay</span>
+            <span className="mt-1 block text-[13px] font-bold text-maroon/75">Final bill after offers and charges</span>
+          </span>
+          <span className="text-[24px] font-black text-maroon">{formatRupees(total)}</span>
+        </div>
+      </div>
+
+      <div className="mt-6 grid grid-cols-[1fr_1.5fr] gap-3">
+        <button
+          type="button"
+          onClick={onClose}
+          className="h-13 rounded-xl bg-white text-[15px] font-black text-muted ring-1 ring-border"
+        >
+          Review
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={submitting}
+          className="h-13 rounded-xl bg-maroon text-[15px] font-black text-white shadow-[0_12px_24px_rgba(141,0,33,0.22)] disabled:opacity-60"
+        >
+          {submitting ? "Placing..." : "Confirm & Place Order"}
+        </button>
+      </div>
+    </BottomSheet>
+  );
+}
+
+function ConfirmDetailRow({
+  icon,
+  title,
+  body,
+  action,
+  onAction,
+}: {
+  icon: ReactNode;
+  title: string;
+  body: string;
+  action?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="grid grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-3 border-b border-[#eef1f6] px-4 py-4 last:border-b-0">
+      <span className="grid h-9 w-9 place-items-center rounded-full bg-[#fff4f5] text-maroon">{icon}</span>
+      <span className="min-w-0">
+        <span className="block truncate text-[15px] font-black leading-5 text-charcoal">{title}</span>
+        <span className="mt-1 block line-clamp-2 text-[13px] font-bold leading-5 text-muted">{body}</span>
+      </span>
+      {action && onAction ? (
+        <button type="button" onClick={onAction} className="rounded-lg bg-[#fff4f5] px-3 py-2 text-[12px] font-black text-maroon">
+          {action}
+        </button>
+      ) : <span />}
+    </div>
+  );
+}
+
+function CouponSheet({
+  coupons,
+  selectedCode,
+  subtotal,
+  customer,
+  products,
+  lines,
+  restaurantSettings,
+  onClose,
+  onSelect,
+}: {
+  coupons: Coupon[];
+  selectedCode?: string;
+  subtotal: number;
+  customer: CouponCustomer;
+  products: Product[];
+  lines: CartLine[];
+  restaurantSettings: RestaurantSettings;
+  onClose: () => void;
+  onSelect: (code: string) => void;
+}) {
+  return (
+    <BottomSheet title="Available coupons" onClose={onClose}>
+      <div className="mt-6 grid gap-3">
+        {coupons.length ? coupons.map((coupon) => {
+          const eligibleForCustomer = isCouponEligibleForCustomer(coupon, customer);
+          const minOrderGap = Math.max(coupon.minOrder - subtotal, 0);
+          const available = eligibleForCustomer && minOrderGap === 0;
+          const estimatedDiscount = calculateCartTotals(lines, coupon.code, products, coupons, restaurantSettings, customer).discount;
+          const selected = selectedCode === coupon.code;
+
+          return (
+            <article
+              key={coupon.code}
+              className={`rounded-[18px] bg-white p-4 shadow-sm ring-1 ${selected ? "ring-maroon" : "ring-border"}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="inline-flex max-w-full rounded-lg bg-[#fff4f5] px-3 py-1.5 text-[12px] font-black uppercase tracking-wide text-maroon">
+                    {coupon.code}
+                  </span>
+                  <span className="mt-3 block text-[15px] font-black leading-5 text-charcoal">{coupon.label}</span>
+                  <span className="mt-1.5 block text-[12px] font-bold leading-5 text-muted">{getCouponDescription(coupon)}</span>
+                </span>
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fff4f5] text-maroon">
+                  <Gift size={20} />
+                </span>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-black text-muted">
+                <span className="rounded-md bg-[#f6f7fb] px-2 py-1">
+                  {coupon.minOrder > 0 ? `Min ${formatRupees(coupon.minOrder)}` : "No minimum"}
+                </span>
+                {estimatedDiscount > 0 ? (
+                  <span className="rounded-md bg-[#e9f2ff] px-2 py-1 text-[#1769c2]">
+                    Saves {formatRupees(estimatedDiscount)}
+                  </span>
+                ) : null}
+              </div>
+
+              {!eligibleForCustomer ? (
+                <p className="mt-3 text-[12px] font-black leading-5 text-maroon">{getCouponEligibilityMessage(coupon)}</p>
+              ) : minOrderGap > 0 ? (
+                <p className="mt-3 text-[12px] font-black leading-5 text-maroon">Add {formatRupees(minOrderGap)} more to apply this coupon.</p>
+              ) : null}
+
+              <button
+                type="button"
+                disabled={!available}
+                onClick={() => onSelect(coupon.code)}
+                className={`mt-4 h-11 w-full rounded-xl text-[14px] font-black ${
+                  selected
+                    ? "bg-[#e9f2ff] text-[#1769c2]"
+                    : available
+                      ? "bg-maroon text-white"
+                      : "bg-muted/20 text-muted"
+                }`}
+              >
+                {selected ? "Applied" : available ? "Apply Coupon" : "Unavailable"}
+              </button>
+            </article>
+          );
+        }) : (
+          <div className="rounded-[18px] bg-white p-6 text-center shadow-sm ring-1 ring-border">
+            <Gift className="mx-auto text-maroon" size={30} />
+            <p className="mt-3 text-[17px] font-black text-charcoal">No coupons available</p>
+            <p className="mt-2 text-[13px] font-bold leading-5 text-muted">Please check back later for new Wah Thali offers.</p>
+          </div>
+        )}
+      </div>
+    </BottomSheet>
   );
 }
 
@@ -1381,4 +1747,26 @@ function CartInfoRow({
 function getCouponBenefitText(coupon: Coupon) {
   if (coupon.type === "FIXED") return formatRupees(coupon.value);
   return coupon.maxDiscount ? `${coupon.value}% up to ${formatRupees(coupon.maxDiscount)}` : `${coupon.value}%`;
+}
+
+function getCouponDescription(coupon: Coupon) {
+  if (coupon.type === "FIXED") {
+    return `Use above ${formatRupees(coupon.minOrder)} and save ${formatRupees(coupon.value)}.`;
+  }
+
+  return coupon.maxDiscount
+    ? `Get ${coupon.value}% OFF up to ${formatRupees(coupon.maxDiscount)}.`
+    : `Get ${coupon.value}% OFF.`;
+}
+
+function getCouponEligibilityMessage(coupon: Coupon) {
+  if (coupon.audience === "VIP") return "This coupon is only for VIP customers.";
+  if (coupon.audience === "POINTS") return `This coupon needs at least ${coupon.minPoints ?? 0} loyalty points.`;
+  return "This coupon is not eligible for this account.";
+}
+
+function getPaymentLabel(method?: PaymentMethod) {
+  if (method === "RAZORPAY") return "Online Pay";
+  if (method === "COD") return "Cash on Delivery";
+  return "Payment unavailable";
 }
