@@ -1144,7 +1144,6 @@ export function CartClient({
           <CartInfoRow
             icon={<Clock3 size={18} />}
             title="Delivery in 30-35 mins"
-            body="Want this later? Schedule it"
           />
           <CartInfoRow
             icon={<MapPin size={18} />}
@@ -1747,7 +1746,7 @@ function CartInfoRow({
 }: {
   icon: ReactNode;
   title: string;
-  body: string;
+  body?: string;
   href?: string;
   badge?: string;
   onClick?: () => void;
@@ -1760,7 +1759,7 @@ function CartInfoRow({
           <span className="text-[14px] font-black leading-5 text-charcoal">{title}</span>
           {badge ? <span className="shrink-0 rounded-md bg-[#e9f2ff] px-2 py-0.5 text-[11px] font-black text-[#1769c2]">{badge}</span> : null}
         </span>
-        <span className="mt-1 line-clamp-2 text-[12px] font-semibold leading-5 text-muted">{body}</span>
+        {body ? <span className="mt-1 line-clamp-2 text-[12px] font-semibold leading-5 text-muted">{body}</span> : null}
       </span>
       {href || onClick ? <ChevronRight size={22} className="mt-3 text-muted" /> : <span />}
     </div>

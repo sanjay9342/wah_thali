@@ -30,7 +30,7 @@ const statusCopy: Record<OrderStatus, { label: string; customer: string }> = {
   READY_FOR_PICKUP: { label: "Ready", customer: "Your order is ready for pickup." },
   OUT_FOR_DELIVERY: { label: "Dispatched", customer: "Your order is on the way." },
   DELIVERED: { label: "Delivered", customer: "Your order has been delivered. Please rate your food." },
-  CANCELLED: { label: "Declined", customer: "Your order was declined by the restaurant." },
+  CANCELLED: { label: "Cancelled", customer: "Your order was cancelled." },
 };
 
 const actionCopy: Partial<Record<OrderStatus, string>> = {
@@ -66,10 +66,12 @@ export function AdminOrdersClient({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [message, setMessage] = useState("");
   const [newOrderAlert, setNewOrderAlert] = useState<AdminOrder | null>(null);
+  const [cancelledOrderAlert, setCancelledOrderAlert] = useState<AdminOrder | null>(null);
   const [animatedOrderNumbers, setAnimatedOrderNumbers] = useState<Set<string>>(() => new Set());
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [isPending, startTransition] = useTransition();
   const knownOrders = useRef(new Set(initialOrders.map((order) => order.orderNumber)));
+  const orderStatusByNumber = useRef(new Map(initialOrders.map((order) => [order.orderNumber, order.status])));
   const newOrderTimers = useRef<number[]>([]);
 
   const incomingOrders = orders.filter((order) => order.status === "NEW" || order.status === "PENDING_PAYMENT");
@@ -87,6 +89,20 @@ export function AdminOrdersClient({
       const notification = new Notification(`New order ${order.orderNumber}`, {
         body: `${order.customerName} - ${formatRupees(order.amount)} - ${order.itemSummary}`,
         tag: `wah-thali-${order.orderNumber}`,
+      });
+      notification.onclick = () => {
+        window.focus();
+        window.location.href = `/admin/orders#order-${order.orderNumber}`;
+      };
+    }
+  }, []);
+
+  const notifyAdminCancellation = useCallback((order: AdminOrder) => {
+    document.title = `Cancelled ${order.orderNumber} - Wah Thali Admin`;
+    if ("Notification" in window && Notification.permission === "granted") {
+      const notification = new Notification(`Order cancelled ${order.orderNumber}`, {
+        body: `${order.customerName} - ${formatRupees(order.amount)} - ${order.itemSummary}`,
+        tag: `wah-thali-cancelled-${order.orderNumber}`,
       });
       notification.onclick = () => {
         window.focus();
@@ -142,8 +158,11 @@ export function AdminOrdersClient({
 
     const newIncomingOrders = nextOrders.filter((order) => !knownOrders.current.has(order.orderNumber) && incomingStatuses.has(order.status));
     const newIncoming = newIncomingOrders[0];
+    const newlyCancelledOrders = nextOrders.filter((order) => order.status === "CANCELLED" && orderStatusByNumber.current.get(order.orderNumber) !== "CANCELLED");
+    const newlyCancelled = newlyCancelledOrders[0];
     setOrders(nextOrders);
     knownOrders.current = new Set(nextOrders.map((order) => order.orderNumber));
+    orderStatusByNumber.current = new Map(nextOrders.map((order) => [order.orderNumber, order.status]));
     setLastSyncedAt(new Date());
     if (newIncoming) {
       setNewOrderAlert(newIncoming);
@@ -163,8 +182,14 @@ export function AdminOrdersClient({
       newOrderTimers.current.push(highlightTimer, toastTimer);
       notifyAdmin(newIncoming);
     }
+    if (newlyCancelled) {
+      setCancelledOrderAlert(newlyCancelled);
+      const cancelledTimer = window.setTimeout(() => setCancelledOrderAlert(null), 9000);
+      newOrderTimers.current.push(cancelledTimer);
+      notifyAdminCancellation(newlyCancelled);
+    }
     return true;
-  }, [notifyAdmin]);
+  }, [notifyAdmin, notifyAdminCancellation]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -365,6 +390,33 @@ export function AdminOrdersClient({
             ) : null}
           </div>
         </section>
+        {cancelledOrderAlert ? (
+          <section className="mt-4 rounded-2xl border border-[#f2b6bc] bg-[#fff4f5] p-4 shadow-sm">
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-red text-white">
+                  <XCircle size={20} />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="text-base font-black text-maroon">Order cancelled by customer</h2>
+                  <p className="mt-1 truncate text-sm font-bold text-muted">
+                    {cancelledOrderAlert.orderNumber} - {cancelledOrderAlert.customerName} - {formatRupees(cancelledOrderAlert.amount)}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter("declined");
+                  document.getElementById(`order-${cancelledOrderAlert.orderNumber}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                }}
+                className="inline-flex h-10 items-center justify-center rounded-lg bg-maroon px-4 text-xs font-black text-white"
+              >
+                View cancelled order
+              </button>
+            </div>
+          </section>
+        ) : null}
         {message ? <p className="mt-4 rounded-lg border border-border bg-cream px-4 py-3 text-sm font-black text-maroon">{message}</p> : null}
 
         <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

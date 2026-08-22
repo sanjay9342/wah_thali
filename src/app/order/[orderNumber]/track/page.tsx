@@ -10,7 +10,6 @@ import {
   Navigation,
   PackageCheck,
   Phone,
-  RotateCcw,
   Star,
   User,
   Wallet,
@@ -20,6 +19,7 @@ import {
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MobileNav } from "@/components/mobile-nav";
+import { CustomerOrderCancelButton } from "@/components/customer-order-cancel-button";
 import { OrderTrackAutoRefresh } from "@/components/order-track-auto-refresh";
 import { OrderReviewForm } from "@/components/order-review-form";
 import { OrderReorderButton } from "@/components/order-reorder-button";
@@ -72,7 +72,6 @@ export default async function TrackPage({
   const currentStep = visibleSteps[activeIndex] ?? visibleSteps[0];
   const currentIcon = cancelled ? XCircle : getHeroIcon(order.status, currentStep.icon);
   const palette = getTrackingPalette(order.status);
-  const progress = cancelled ? 0 : Math.round(((activeIndex + 1) / visibleSteps.length) * 100);
   const placedAt = formatIstTime(toIsoTimestamp(order.createdAt));
   const eta = formatEta(extractTimelineValue(notes, "ETA"), restaurantSettings.defaultPrepMinutes);
   const deliveryLocation = extractTimelineValue(notes, "Address") ?? extractTimelineValue(notes, "Location") ?? "Delivery address saved with this order.";
@@ -82,6 +81,9 @@ export default async function TrackPage({
   const latestUpdate = getLatestCustomerUpdate(notes);
   const statusCopy = getStatusCopy(order.status, placedAt, eta);
   const reviewItems = getReviewItems(order.items);
+  const reviewedProductIds = new Set(order.reviews.map((review) => review.productId));
+  const pendingReviewItems = reviewItems.filter((item) => !reviewedProductIds.has(item.productId));
+  const canCustomerCancel = order.status === "NEW" || order.status === "PENDING_PAYMENT";
   const payment = order.payments[0];
   const paymentSummary = getPaymentSummary(payment);
   const whatsappLink = `https://wa.me/${restaurantSettings.whatsappNumber}?text=${encodeURIComponent(`I need help with order ${order.orderNumber}`)}`;
@@ -124,21 +126,13 @@ export default async function TrackPage({
 
                 {!cancelled ? (
                   <div className="relative mt-7">
-                    <div className={`flex items-center justify-between text-[12px] font-black ${palette.progressLabel}`}>
-                      <span>{currentStep.label}</span>
-                      <span>{getProgressLabel(order.status)}</span>
-                    </div>
-                    <div className={`mt-2 h-2 overflow-hidden rounded-full ${palette.progressTrack}`}>
-                      <div className={`h-full rounded-full wt-track-progress ${palette.progressBar}`} style={{ width: `${progress}%` }} aria-hidden="true" />
-                    </div>
+                    <StatusIconStrip steps={visibleSteps} activeIndex={activeIndex} cancelled={cancelled} palette={palette} inHero />
                   </div>
                 ) : null}
               </section>
 
               <section className="px-5 pt-5 lg:px-0">
-                <StatusIconStrip steps={visibleSteps} activeIndex={activeIndex} cancelled={cancelled} palette={palette} />
-
-                <div className="mt-4 overflow-hidden rounded-[22px] bg-white shadow-sm ring-1 ring-[#eadfe3]">
+                <div className="overflow-hidden rounded-[22px] bg-white shadow-sm ring-1 ring-[#eadfe3]">
                   <InfoRow icon={User} title="Customer" body={`${order.customer.name} | ${order.customer.mobile}`} />
                   <InfoRow icon={MapPin} title="Delivery details" body={deliveryLocation} subBody={[deliveryNote, gps, distance].filter(Boolean).join(" | ")} />
                   <InfoRow icon={Wallet} title="Payment" body={paymentSummary} subBody={payment ? `Payment status: ${formatStatus(payment.status)}` : "Cash will be collected on delivery."} />
@@ -223,12 +217,10 @@ export default async function TrackPage({
                   items={order.items}
                   className="mt-3 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#23262f] px-5 text-[15px] font-black text-white"
                 />
-                <Link href="/menu" className="mt-3 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#fff4f5] px-5 text-[15px] font-black text-maroon ring-1 ring-[#f1dce1]">
-                  <RotateCcw size={17} /> Browse menu
-                </Link>
+                {canCustomerCancel ? <CustomerOrderCancelButton orderNumber={order.orderNumber} /> : null}
               </section>
 
-              {order.status === "DELIVERED" && reviewItems.length ? (
+              {order.status === "DELIVERED" && pendingReviewItems.length ? (
                 <section className="mt-5 rounded-[24px] bg-white p-5 shadow-sm ring-1 ring-[#eadfe3]">
                   <h2 className="flex items-center gap-2 text-lg font-black text-charcoal">
                     <Star className="text-maroon" size={19} /> Rate your meal
@@ -236,13 +228,12 @@ export default async function TrackPage({
                   <p className="mt-2 text-sm font-semibold leading-6 text-muted">
                     Your feedback helps Wah Thali serve you better next time.
                   </p>
-                  {reviewItems.map((item) => (
+                  {pendingReviewItems.map((item) => (
                     <OrderReviewForm
                       key={item.productId}
                       orderNumber={order.orderNumber}
                       productId={item.productId}
                       productName={item.name}
-                      existingReview={order.reviews.find((review) => review.productId === item.productId)}
                     />
                   ))}
                 </section>
@@ -261,30 +252,35 @@ function StatusIconStrip({
   activeIndex,
   cancelled,
   palette,
+  inHero = false,
 }: {
   steps: TrackerStep[];
   activeIndex: number;
   cancelled: boolean;
   palette: ReturnType<typeof getTrackingPalette>;
+  inHero?: boolean;
 }) {
   return (
-    <div className="overflow-hidden rounded-[18px] bg-white px-3 py-3 shadow-sm ring-1 ring-[#eadfe3]">
-      <div className="flex items-center gap-2 overflow-x-auto">
+    <div className={`overflow-hidden rounded-[16px] px-2.5 py-2.5 ring-1 ${
+      inHero ? "bg-white/82 shadow-sm ring-white/70 backdrop-blur" : "bg-white shadow-sm ring-[#eadfe3]"
+    }`}>
+      <div className="flex w-full items-center">
         {steps.map((step, index) => {
           const done = !cancelled && index <= activeIndex;
           const active = !cancelled && index === activeIndex;
 
           return (
-            <div key={step.status} className="flex shrink-0 items-center gap-2">
-              <span className={`grid h-9 w-9 place-items-center rounded-xl ${
+            <div key={step.status} className={`flex min-w-0 items-center ${index < steps.length - 1 ? "flex-1" : "shrink-0"}`}>
+              <span
+                className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl ${
                 done ? palette.stepDone : "bg-[#f4f5f8] text-muted"
-              } ${active ? "wt-step-active" : ""}`}>
-                <IconGlyph icon={step.icon} size={16} strokeWidth={2.6} />
+              } ${active ? "wt-step-active" : ""}`}
+                title={step.label}
+                aria-label={step.label}
+              >
+                <IconGlyph icon={step.icon} size={14} strokeWidth={2.7} />
               </span>
-              <span className={`max-w-[78px] truncate text-[11px] font-black ${active ? palette.progressLabel : done ? "text-charcoal" : "text-muted"}`}>
-                {step.label}
-              </span>
-              {index < steps.length - 1 ? <span className={`h-0.5 w-5 rounded-full ${done ? palette.lineDone : "bg-[#e5e7eb]"}`} /> : null}
+              {index < steps.length - 1 ? <span className={`mx-1.5 h-0.5 min-w-2 flex-1 rounded-full ${done ? palette.lineDone : "bg-[#e5e7eb]"}`} /> : null}
             </div>
           );
         })}
@@ -376,17 +372,6 @@ function extractTimelineValue(notes: string[], label: string) {
   const nextLabels = labels.filter((item) => item !== label).join("|");
   const pattern = new RegExp(`${label}:\\s*(.*?)(?=\\s(?:${nextLabels}):|\\sCoupon\\s|\\s\\|\\s|$)`, "i");
   return joined.match(pattern)?.[1]?.trim().replace(/[.]$/, "");
-}
-
-function getProgressLabel(status: string) {
-  if (status === "PENDING_PAYMENT") return "Waiting";
-  if (status === "NEW") return "Placed";
-  if (status === "CONFIRMED") return "Accepted";
-  if (status === "PREPARING") return "Cooking";
-  if (status === "PACKED" || status === "READY_FOR_PICKUP") return "Packed";
-  if (status === "OUT_FOR_DELIVERY") return "On the way";
-  if (status === "DELIVERED") return "Completed";
-  return formatStatus(status);
 }
 
 function formatEta(value: string | undefined, fallbackMinutes: number) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, ChevronDown, MapPin, ShoppingCart, X } from "lucide-react";
+import { Bell, ChevronDown, MapPin, ShoppingCart, UserRound, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -77,8 +77,20 @@ export function Header({ showContact = true, showLocation = false }: { showConta
           {cartCount ? <span className="absolute -right-1 top-0 rounded-full bg-red px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
         </Link>
         {showContact ? (
-          <Link href="/login" className="inline-flex h-10 items-center rounded-[10px] bg-red px-5 text-[12px] font-black text-white shadow-[0_8px_18px_rgba(141,0,33,0.16)]">
-            Sign In
+          <Link
+            href={customerSession ? "/account" : `/login?next=${encodeURIComponent(pathname || "/account")}`}
+            className={`inline-flex h-10 items-center gap-2 rounded-[10px] px-5 text-[12px] font-black shadow-[0_8px_18px_rgba(141,0,33,0.16)] ${
+              customerSession ? "bg-[#fff4f5] text-red ring-1 ring-[#f1dce1]" : "bg-red text-white"
+            }`}
+          >
+            {customerSession ? (
+              <>
+                <UserRound size={16} strokeWidth={2.5} />
+                {customerSession.name}
+              </>
+            ) : (
+              "Sign In"
+            )}
           </Link>
         ) : null}
       </div>

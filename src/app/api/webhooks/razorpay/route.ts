@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
             timeline: { orderBy: { createdAt: "asc" } },
           },
         });
-        if (notifiedOrder) {
+        if (settings.whatsappOrderAlerts && notifiedOrder) {
           await notifyOrderStatus(notifiedOrder, notifiedStatus, notificationNote).catch((error) => {
             console.error("Razorpay webhook WhatsApp/customer notification failed.", error);
           });

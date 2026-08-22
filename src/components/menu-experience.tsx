@@ -39,7 +39,9 @@ import { getDeliveryLocationCoverage, useDeliveryLocation } from "@/lib/delivery
 import { formatRupees, getPricableCartLines, getProductPrice } from "@/lib/pricing";
 import { getStoreOrderingStatus } from "@/lib/store-hours";
 import { useStoredCart } from "@/lib/use-stored-cart";
+import { useStoredWishlist } from "@/lib/use-stored-wishlist";
 import type { CartLine, CategoryOfferMap, Coupon, HomeSlide, Product, RestaurantSettings } from "@/lib/types";
+import { writeStoredWishlist } from "@/lib/wishlist-storage";
 
 function getQuantity(lines: CartLine[], productId: string) {
   return lines
@@ -57,7 +59,6 @@ type MenuFilterId = "veg" | "bestseller" | "offers" | "rating" | "fast" | "under
 
 const menuFilterOptions: { id: MenuFilterId; label: string; helper: string }[] = [
   { id: "veg", label: "Pure Veg", helper: "Veg and Jain dishes" },
-  { id: "bestseller", label: "Bestsellers", helper: "Most ordered dishes" },
   { id: "offers", label: "Offers", helper: "Deals and discounts" },
   { id: "rating", label: "Rating 4.5+", helper: "Top rated items" },
   { id: "fast", label: "Under 30 min", helper: "Quick prep dishes" },
@@ -900,7 +901,6 @@ export function MenuExperience({
     return categories.includes(initialActiveCategory) ? initialActiveCategory : "All";
   });
   const [activeSlide, setActiveSlide] = useState(0);
-  const [savedProductIds, setSavedProductIds] = useState<string[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [mobileMenuView, setMobileMenuView] = useState<"home" | "categories" | "category">("home");
   const [mobileCategory, setMobileCategory] = useState("All");
@@ -908,6 +908,7 @@ export function MenuExperience({
   const [cartBarClosing, setCartBarClosing] = useState(false);
   const cartOwnerId = customerSession?.mobile;
   const cart = useStoredCart(cartOwnerId);
+  const savedProductIds = useStoredWishlist(cartOwnerId);
   const validCart = useMemo(() => getPricableCartLines(cart, products), [cart, products]);
   const storeMode = restaurantSettings?.storeMode ?? "OPEN";
   const orderingStatus = restaurantSettings ? getStoreOrderingStatus(restaurantSettings) : null;
@@ -1028,8 +1029,16 @@ export function MenuExperience({
   }
 
   function toggleSaved(product: Product) {
-    setSavedProductIds((current) =>
-      current.includes(product.id) ? current.filter((id) => id !== product.id) : [...current, product.id],
+    if (!cartOwnerId) {
+      router.push(`/login?next=${encodeURIComponent(pathname)}`);
+      return;
+    }
+
+    writeStoredWishlist(
+      savedProductIds.includes(product.id)
+        ? savedProductIds.filter((id) => id !== product.id)
+        : [...savedProductIds, product.id],
+      cartOwnerId,
     );
   }
 

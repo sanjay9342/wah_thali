@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getConfiguredDatabaseUrlKey, isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { hasServerEnv, readServerEnv } from "@/lib/server-env";
 import { isSupabaseConfigured } from "@/lib/supabase";
-import { getWhatsAppOtpConfigStatus } from "@/lib/whatsapp";
+import { getWhatsAppNotificationConfigStatus, getWhatsAppOtpConfigStatus } from "@/lib/whatsapp";
 
 type Check = {
   ok: boolean;
@@ -66,6 +66,7 @@ export async function GET(request: Request) {
   const database = await checkDatabase();
   const supabaseConfigured = isSupabaseConfigured();
   const whatsAppStatus = getWhatsAppOtpConfigStatus();
+  const whatsAppNotificationStatus = getWhatsAppNotificationConfigStatus();
   const requiredEnv = {
     NEXT_PUBLIC_SITE_URL: envConfigured("NEXT_PUBLIC_SITE_URL"),
     DATABASE_URL: envConfigured("DATABASE_URL"),
@@ -97,6 +98,9 @@ export async function GET(request: Request) {
     META_GRAPH_API_VERSION: envConfigured("META_GRAPH_API_VERSION"),
     META_WHATSAPP_OTP_BUTTON_SUB_TYPE: envConfigured("META_WHATSAPP_OTP_BUTTON_SUB_TYPE", ["WHATSAPP_OTP_BUTTON_SUB_TYPE"]),
     META_WHATSAPP_OTP_BUTTON_INDEX: envConfigured("META_WHATSAPP_OTP_BUTTON_INDEX", ["WHATSAPP_OTP_BUTTON_INDEX"]),
+    META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME: envConfigured("META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"),
+    META_WHATSAPP_COUPON_TEMPLATE_NAME: envConfigured("META_WHATSAPP_COUPON_TEMPLATE_NAME", ["META_WHATSAPP_OFFER_TEMPLATE_NAME"]),
+    META_WHATSAPP_FREEFORM_NOTIFICATIONS: envConfigured("META_WHATSAPP_FREEFORM_NOTIFICATIONS"),
   };
   const domainOk = requestHost === expectedHost || requestHost === `www.${expectedHost}` || requestHost.startsWith("localhost:");
   const ok = database.ok && supabaseConfigured && requiredEnv.NEXT_PUBLIC_SITE_URL && domainOk && whatsAppStatus.configured;
@@ -128,6 +132,16 @@ export async function GET(request: Request) {
         message: whatsAppStatus.configured
           ? "WhatsApp OTP credentials are configured."
           : "WhatsApp OTP credentials are missing in the deployment.",
+      },
+      whatsappNotifications: {
+        ok: whatsAppNotificationStatus.configured,
+        orderNotificationsReady: whatsAppNotificationStatus.orderNotificationsReady,
+        couponNotificationsReady: whatsAppNotificationStatus.couponNotificationsReady,
+        freeformEnabled: whatsAppNotificationStatus.freeformEnabled,
+        missing: whatsAppNotificationStatus.missing,
+        message: whatsAppNotificationStatus.configured
+          ? "WhatsApp customer notification credentials are configured."
+          : "WhatsApp customer notifications need an approved order/coupon template or META_WHATSAPP_FREEFORM_NOTIFICATIONS=true.",
       },
       webhooks: {
         razorpay: `https://${expectedHost}/api/webhooks/razorpay`,

@@ -2,13 +2,13 @@
 
 import { useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Eye, EyeOff, Mail, MessageSquareText, Phone, ShoppingBasket, UserPlus } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, KeyRound, Mail, MessageSquareText, Phone, ShoppingBasket, UserPlus } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { saveCustomerSession } from "@/lib/customer-session";
 import { addNotification } from "@/lib/notifications";
 
-type Screen = "welcome" | "signin" | "signup";
+type Screen = "welcome" | "signin" | "signup" | "reset";
 type Step = "form" | "otp";
 type SignInMethod = "password" | "otp";
 
@@ -78,10 +78,13 @@ export function LoginClient() {
   const searchParams = useSearchParams();
   const next = searchParams.get("next") || "/account";
   const initialMode = searchParams.get("mode");
-  const [screen, setScreen] = useState<Screen>(initialMode === "signup" ? "signup" : initialMode === "signin" ? "signin" : "welcome");
+  const resetToken = searchParams.get("token") || "";
+  const [screen, setScreen] = useState<Screen>(
+    initialMode === "signup" ? "signup" : initialMode === "signin" ? "signin" : initialMode === "reset" ? "reset" : "welcome",
+  );
   const [signInMethod, setSignInMethod] = useState<SignInMethod>("password");
   const [step, setStep] = useState<Step>("form");
-  const [form, setForm] = useState({ name: "", mobile: "", email: "", password: "", otp: "" });
+  const [form, setForm] = useState({ name: "", mobile: "", email: "", password: "", confirmPassword: "", otp: "", resetToken });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -102,6 +105,10 @@ export function LoginClient() {
     if (screen === "signin" && signInMethod === "otp") {
       setSignInMethod("password");
       setMessage("");
+      return;
+    }
+    if (screen === "reset") {
+      openScreen("signin");
       return;
     }
     if (screen !== "welcome") {
@@ -177,6 +184,46 @@ export function LoginClient() {
       });
       const data = await readApiJson(response);
       setMessage(cleanApiMessage(data.message || data.error, response.ok ? "Password reset request recorded." : "Could not request password reset."));
+    } catch {
+      setMessage("Could not connect. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function resetPassword() {
+    if (!form.resetToken) {
+      setMessage("This reset link is missing its token. Please request a new password reset email.");
+      return;
+    }
+    if (form.password.trim().length < 6) {
+      setMessage("Please enter a password with at least 6 characters.");
+      return;
+    }
+    if (form.password !== form.confirmPassword) {
+      setMessage("Both password fields must match.");
+      return;
+    }
+
+    setLoading(true);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/customers/password-reset", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: form.resetToken, password: form.password }),
+      });
+      const data = await readApiJson(response);
+      if (!response.ok) {
+        setMessage(cleanApiMessage(data.error, "Could not reset password."));
+        return;
+      }
+
+      setForm((current) => ({ ...current, password: "", confirmPassword: "", resetToken: "" }));
+      setSignInMethod("password");
+      setScreen("signin");
+      setMessage(cleanApiMessage(data.message, "Your password has been reset. Please log in."));
     } catch {
       setMessage("Could not connect. Please try again.");
     } finally {
@@ -319,6 +366,7 @@ export function LoginClient() {
   }
 
   const isSignup = screen === "signup";
+  const isReset = screen === "reset";
   const isOtpSignIn = screen === "signin" && signInMethod === "otp";
   const otpFlowActive = isSignup || isOtpSignIn;
   const otpInlineMessage = otpFlowActive && /WhatsApp OTP|OTP sent/i.test(message) ? message : "";
@@ -333,18 +381,27 @@ export function LoginClient() {
 
         <div className="mt-5 text-center">
           <div className="mx-auto grid h-[82px] w-[82px] place-items-center rounded-[24px] bg-[#d8f7e9] text-maroon">
-            {isSignup ? <UserPlus size={36} fill="currentColor" /> : <ShoppingBasket size={36} fill="currentColor" />}
+            {isSignup ? <UserPlus size={36} fill="currentColor" /> : isReset ? <KeyRound size={36} /> : <ShoppingBasket size={36} fill="currentColor" />}
           </div>
           <h1 className="mt-7 text-[27px] font-black leading-tight text-charcoal">
-            {isSignup ? "Create Account" : isOtpSignIn ? "WhatsApp Login" : "Welcome Back"}
+            {isSignup ? "Create Account" : isReset ? "Reset Password" : isOtpSignIn ? "WhatsApp Login" : "Welcome Back"}
           </h1>
           <p className="mx-auto mt-3 max-w-[330px] text-[16px] font-semibold leading-6 text-charcoal/85">
-            {isSignup ? "Join Wah Thali and get fresh homely meals fast." : "Sign in to continue your fresh ordering experience."}
+            {isSignup
+              ? "Join Wah Thali and get fresh homely meals fast."
+              : isReset
+                ? "Choose a new password for your Wah Thali account."
+                : "Sign in to continue your fresh ordering experience."}
           </p>
         </div>
 
         <section className="mt-7 grid gap-4">
-          {isSignup ? (
+          {isReset ? (
+            <>
+              <PasswordInput label="New Password" value={form.password} onChange={(password) => setForm({ ...form, password })} showPassword={showPassword} setShowPassword={setShowPassword} autoComplete="new-password" />
+              <PasswordInput label="Confirm Password" value={form.confirmPassword} onChange={(confirmPassword) => setForm({ ...form, confirmPassword })} showPassword={showPassword} setShowPassword={setShowPassword} autoComplete="new-password" />
+            </>
+          ) : isSignup ? (
             <>
               <AuthInput label="Full Name" value={form.name} onChange={(name) => setForm({ ...form, name })} disabled={step === "otp"} autoComplete="name" />
               <AuthInput label="Email Address" value={form.email} onChange={(email) => setForm({ ...form, email })} disabled={step === "otp"} inputMode="email" type="email" autoComplete="email" />
@@ -381,13 +438,15 @@ export function LoginClient() {
 
           <button
             type="button"
-            onClick={isSignup || isOtpSignIn ? (step === "form" ? startOtp : verifyOtp) : loginWithPassword}
+            onClick={isReset ? resetPassword : isSignup || isOtpSignIn ? (step === "form" ? startOtp : verifyOtp) : loginWithPassword}
             disabled={loading}
             className="h-14 w-full rounded-2xl bg-maroon text-[17px] font-black text-white shadow-[0_14px_28px_rgba(141,0,33,0.2)] disabled:opacity-60"
           >
             {loading
               ? "Please wait..."
-              : isSignup
+              : isReset
+                ? "Reset Password"
+                : isSignup
                 ? step === "form" ? "Send WhatsApp OTP" : "Create Account"
                 : isOtpSignIn
                   ? step === "form" ? "Send WhatsApp OTP" : "Sign In"
@@ -399,7 +458,7 @@ export function LoginClient() {
             </p>
           ) : null}
 
-          {!isSignup ? (
+          {!isSignup && !isReset ? (
             <>
               <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-5 text-[17px] font-semibold tracking-[0.18em] text-muted">
                 <span className="h-px bg-muted/40" />
@@ -427,6 +486,12 @@ export function LoginClient() {
               <Link href="/privacy-policy" className="font-black text-maroon">Privacy Policy</Link>.
             </p>
           )}
+
+          {isReset ? (
+            <button type="button" onClick={() => openScreen("signin")} className="text-[16px] font-semibold text-charcoal">
+              Remembered it? <span className="font-black text-maroon">Log In</span>
+            </button>
+          ) : null}
         </section>
 
         {isSignup ? (
@@ -479,6 +544,7 @@ function AuthInput({
 }
 
 function PasswordInput({
+  label = "Password",
   value,
   onChange,
   disabled,
@@ -486,6 +552,7 @@ function PasswordInput({
   setShowPassword,
   autoComplete = "new-password",
 }: {
+  label?: string;
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
@@ -495,7 +562,7 @@ function PasswordInput({
 }) {
   return (
     <label className="relative block">
-      <span className="absolute -top-2.5 left-5 bg-[#f7f8fc] px-1 text-[13px] font-semibold text-muted">Password</span>
+      <span className="absolute -top-2.5 left-5 bg-[#f7f8fc] px-1 text-[13px] font-semibold text-muted">{label}</span>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}

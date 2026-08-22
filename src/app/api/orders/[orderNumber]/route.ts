@@ -101,9 +101,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ or
     summary: `${order.orderNumber} moved to ${order.status}`,
   });
 
-  await notifyOrderStatus(order, parsed.data.status, parsed.data.note).catch((error) => {
-    console.error("Order status WhatsApp/customer notification failed.", error);
-  });
+  if (settings.whatsappOrderAlerts) {
+    await notifyOrderStatus(order, parsed.data.status, parsed.data.note).catch((error) => {
+      console.error("Order status WhatsApp/customer notification failed.", error);
+    });
+  }
 
   return NextResponse.json({ order });
 }

@@ -108,11 +108,25 @@ model Customer {
   leads       Lead[]
   reviews     Review[]
   tickets     SupportTicket[]
+  passwordResetTokens CustomerPasswordResetToken[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
   @@index([mobile])
   @@index([email])
+}
+
+model CustomerPasswordResetToken {
+  id         String    @id @default(cuid())
+  customerId String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+  customer   Customer  @relation(fields: [customerId], references: [id])
+
+  @@index([customerId, expiresAt])
+  @@index([expiresAt])
 }
 
 model CustomerAddress {

@@ -365,9 +365,11 @@ export async function POST(request: Request) {
     metadata: { grandTotal: order.grandTotal, couponCode: calculated.couponCode },
   });
 
-  await notifyOrderStatus(order, order.status as OrderStatus).catch((error) => {
-    console.error("Order WhatsApp/customer notification failed.", error);
-  });
+  if (settings.whatsappOrderAlerts) {
+    await notifyOrderStatus(order, order.status as OrderStatus).catch((error) => {
+      console.error("Order WhatsApp/customer notification failed.", error);
+    });
+  }
 
   const nextRewardOrderCount = await prisma.order.count({
     where: {

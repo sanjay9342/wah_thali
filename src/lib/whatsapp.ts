@@ -49,6 +49,23 @@ export function getWhatsAppMessagingConfigStatus() {
   return { configured: missing.length === 0, missing };
 }
 
+export function getWhatsAppNotificationConfigStatus() {
+  const messaging = getWhatsAppMessagingConfigStatus();
+  const freeformEnabled = ["1", "true", "yes", "on"].includes(readEnv("META_WHATSAPP_FREEFORM_NOTIFICATIONS").toLowerCase());
+  const orderTemplateConfigured = Boolean(readEnv("META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"));
+  const couponTemplateConfigured = Boolean(readEnv("META_WHATSAPP_COUPON_TEMPLATE_NAME") || readEnv("META_WHATSAPP_OFFER_TEMPLATE_NAME"));
+
+  return {
+    configured: messaging.configured && (orderTemplateConfigured || couponTemplateConfigured || freeformEnabled),
+    missing: messaging.missing,
+    freeformEnabled,
+    orderTemplateConfigured,
+    couponTemplateConfigured,
+    orderNotificationsReady: messaging.configured && (orderTemplateConfigured || freeformEnabled),
+    couponNotificationsReady: messaging.configured && (couponTemplateConfigured || freeformEnabled),
+  };
+}
+
 function toWhatsAppPhone(mobile: string) {
   const digits = mobile.replace(/\D/g, "");
   if (digits.length > 10) return digits;

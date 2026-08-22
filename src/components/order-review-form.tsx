@@ -20,6 +20,7 @@ export function OrderReviewForm({
   const [comment, setComment] = useState(existingReview?.comment ?? "");
   const [message, setMessage] = useState(existingReview ? `Saved rating: ${existingReview.rating}/5. You can update it.` : "");
   const [submitting, setSubmitting] = useState(false);
+  const [closed, setClosed] = useState(false);
 
   async function submitReview() {
     setSubmitting(true);
@@ -38,7 +39,10 @@ export function OrderReviewForm({
         return;
       }
 
-      setMessage(`Saved. ${productName} rating updated to ${data.productRating}/5 from ${data.productRatingCount} review${data.productRatingCount === 1 ? "" : "s"}.`);
+      setRating(5);
+      setComment("");
+      setMessage("");
+      setClosed(true);
       router.refresh();
     } catch {
       setMessage("Review could not be saved. Please try again.");
@@ -46,6 +50,8 @@ export function OrderReviewForm({
       setSubmitting(false);
     }
   }
+
+  if (closed) return null;
 
   return (
     <div className="mt-4 rounded-2xl bg-[#fff8f9] p-3 ring-1 ring-[#f1dce1]">
