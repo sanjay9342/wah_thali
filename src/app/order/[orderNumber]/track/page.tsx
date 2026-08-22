@@ -3,7 +3,6 @@ import {
   Bike,
   CheckCircle2,
   ChefHat,
-  Clock,
   CookingPot,
   CreditCard,
   MapPin,
@@ -11,11 +10,8 @@ import {
   Navigation,
   PackageCheck,
   Phone,
-  ReceiptText,
   RotateCcw,
-  Sparkles,
   Star,
-  Timer,
   User,
   Wallet,
   XCircle,
@@ -30,7 +26,7 @@ import { OrderReorderButton } from "@/components/order-reorder-button";
 import { getRestaurantSettingsFromDb } from "@/lib/db";
 import { formatRupees } from "@/lib/pricing";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
-import { formatIstDate, formatIstTime } from "@/lib/time";
+import { formatIstTime } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -78,7 +74,6 @@ export default async function TrackPage({
   const palette = getTrackingPalette(order.status);
   const progress = cancelled ? 0 : Math.round(((activeIndex + 1) / visibleSteps.length) * 100);
   const placedAt = formatIstTime(toIsoTimestamp(order.createdAt));
-  const placedDate = formatIstDate(toIsoTimestamp(order.createdAt), "short");
   const eta = formatEta(extractTimelineValue(notes, "ETA"), restaurantSettings.defaultPrepMinutes);
   const deliveryLocation = extractTimelineValue(notes, "Address") ?? extractTimelineValue(notes, "Location") ?? "Delivery address saved with this order.";
   const deliveryNote = extractTimelineValue(notes, "Customer note");
@@ -86,7 +81,6 @@ export default async function TrackPage({
   const distance = extractTimelineValue(notes, "Distance");
   const latestUpdate = getLatestCustomerUpdate(notes);
   const statusCopy = getStatusCopy(order.status, placedAt, eta);
-  const itemCount = order.items.reduce((total, item) => total + item.quantity, 0);
   const reviewItems = getReviewItems(order.items);
   const payment = order.payments[0];
   const paymentSummary = getPaymentSummary(payment);
@@ -142,12 +136,7 @@ export default async function TrackPage({
               </section>
 
               <section className="px-5 pt-5 lg:px-0">
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <MetricCard icon={Timer} label="ETA" value={eta} />
-                  <MetricCard icon={Sparkles} label="Items" value={`${itemCount} ${itemCount === 1 ? "item" : "items"}`} />
-                  <MetricCard icon={Clock} label="Placed" value={placedAt} subValue={placedDate} />
-                  <MetricCard icon={ReceiptText} label="Total" value={formatRupees(order.grandTotal)} />
-                </div>
+                <StatusIconStrip steps={visibleSteps} activeIndex={activeIndex} cancelled={cancelled} palette={palette} />
 
                 <div className="mt-4 overflow-hidden rounded-[22px] bg-white shadow-sm ring-1 ring-[#eadfe3]">
                   <InfoRow icon={User} title="Customer" body={`${order.customer.name} | ${order.customer.mobile}`} />
@@ -267,25 +256,39 @@ export default async function TrackPage({
   );
 }
 
-function MetricCard({
-  icon,
-  label,
-  value,
-  subValue,
+function StatusIconStrip({
+  steps,
+  activeIndex,
+  cancelled,
+  palette,
 }: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  subValue?: string;
+  steps: TrackerStep[];
+  activeIndex: number;
+  cancelled: boolean;
+  palette: ReturnType<typeof getTrackingPalette>;
 }) {
   return (
-    <div className="min-w-0 rounded-[20px] bg-white p-4 shadow-sm ring-1 ring-[#f1dce1]">
-      <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#fff4f5] text-maroon">
-        <IconGlyph icon={icon} size={18} strokeWidth={2.6} />
-      </span>
-      <p className="mt-3 text-[12px] font-black text-muted">{label}</p>
-      <p className="mt-1 truncate text-[18px] font-black leading-tight text-charcoal">{value}</p>
-      {subValue ? <p className="mt-0.5 text-[11px] font-bold text-muted">{subValue}</p> : null}
+    <div className="overflow-hidden rounded-[18px] bg-white px-3 py-3 shadow-sm ring-1 ring-[#eadfe3]">
+      <div className="flex items-center gap-2 overflow-x-auto">
+        {steps.map((step, index) => {
+          const done = !cancelled && index <= activeIndex;
+          const active = !cancelled && index === activeIndex;
+
+          return (
+            <div key={step.status} className="flex shrink-0 items-center gap-2">
+              <span className={`grid h-9 w-9 place-items-center rounded-xl ${
+                done ? palette.stepDone : "bg-[#f4f5f8] text-muted"
+              } ${active ? "wt-step-active" : ""}`}>
+                <IconGlyph icon={step.icon} size={16} strokeWidth={2.6} />
+              </span>
+              <span className={`max-w-[78px] truncate text-[11px] font-black ${active ? palette.progressLabel : done ? "text-charcoal" : "text-muted"}`}>
+                {step.label}
+              </span>
+              {index < steps.length - 1 ? <span className={`h-0.5 w-5 rounded-full ${done ? palette.lineDone : "bg-[#e5e7eb]"}`} /> : null}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

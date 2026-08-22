@@ -894,7 +894,7 @@ export function MenuExperience({
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
   const [query, setQuery] = useState("");
   const [activeFilters, setActiveFilters] = useState<MenuFilterId[]>([]);
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState(() => {
     if (!initialActiveCategory || initialActiveCategory === "All") return "All";
     return categories.includes(initialActiveCategory) ? initialActiveCategory : "All";
