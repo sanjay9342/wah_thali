@@ -53,6 +53,8 @@ const orderStatusCopy: Record<OrderStatus, { label: string; body: string }> = {
   CANCELLED: { label: "Declined", body: "Your order was declined by the restaurant." },
 };
 
+const whatsAppOrderNotificationStatuses = new Set<OrderStatus>(["NEW", "DELIVERED", "CANCELLED"]);
+
 function truthyEnv(key: string) {
   return ["1", "true", "yes", "on"].includes(readServerEnv(key).toLowerCase());
 }
@@ -147,6 +149,14 @@ export async function notifyCustomer(input: NotifyCustomerInput) {
 }
 
 export async function notifyOrderStatus(order: OrderForMessage, status: OrderStatus = order.status as OrderStatus, note?: string) {
+  if (!whatsAppOrderNotificationStatuses.has(status)) {
+    return {
+      ok: true,
+      channel: "skipped" as const,
+      message: `WhatsApp order notification skipped for ${status}.`,
+    };
+  }
+
   const copy = orderStatusCopy[status] ?? { label: status, body: "Your order status was updated." };
   const latestNote = getLatestNote(order, note);
   const reason = status === "CANCELLED" && latestNote ? `\nReason: ${latestNote}` : latestNote ? `\nNote: ${latestNote}` : "";
