@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAdminCouponsFromDb, getCouponsFromDb, logActivity, saveCouponRule } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
+import { getIstDateInputValue, parseIstDateInput } from "@/lib/time";
+
+function istDateSchema(boundary: "start" | "end") {
+  return z.preprocess((value) => {
+    if (value instanceof Date) return value;
+    if (typeof value === "string") return parseIstDateInput(value, boundary) ?? value;
+    return value;
+  }, z.date());
+}
 
 const couponSchema = z.object({
   code: z.string().min(2).transform((value) => value.toUpperCase()),
@@ -10,8 +19,8 @@ const couponSchema = z.object({
   value: z.coerce.number().int().positive(),
   minOrder: z.coerce.number().int().nonnegative(),
   maxDiscount: z.coerce.number().int().positive().nullable().optional(),
-  startsAt: z.coerce.date().default(new Date()),
-  endsAt: z.coerce.date().default(new Date(Date.now() + 1000 * 60 * 60 * 24 * 30)),
+  startsAt: istDateSchema("start").default(() => parseIstDateInput(getIstDateInputValue(), "start") ?? new Date()),
+  endsAt: istDateSchema("end").default(() => parseIstDateInput(getIstDateInputValue(new Date(), 30), "end") ?? new Date(Date.now() + 1000 * 60 * 60 * 24 * 30)),
   active: z.boolean().default(true),
   audience: z.enum(["ALL", "VIP", "POINTS"]).default("ALL"),
   minPoints: z.coerce.number().int().nonnegative().default(0),

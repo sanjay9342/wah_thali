@@ -1,20 +1,20 @@
 export default function Loading() {
   return (
-    <main className="min-h-screen bg-white px-4 py-5">
+    <main className="min-h-screen bg-white px-4 py-5" aria-live="polite" aria-busy="true">
       <div className="mx-auto max-w-7xl">
-        <div className="rounded-[28px] bg-white p-4 shadow-sm ring-1 ring-border">
+        <div className="rounded-[28px] bg-white p-4 shadow-sm ring-1 ring-border wt-skeleton">
           <div className="h-4 w-24 rounded-full bg-red/15" />
           <div className="mt-3 h-12 rounded-2xl bg-red/10" />
         </div>
-        <div className="mt-4 h-44 rounded-[28px] bg-red/15" />
+        <div className="mt-4 h-44 rounded-[28px] bg-red/15 wt-skeleton" />
         <div className="mt-5 flex gap-3 overflow-hidden">
           {Array.from({ length: 5 }).map((_, index) => (
-            <div key={index} className="h-20 min-w-20 rounded-2xl bg-white shadow-sm ring-1 ring-border" />
+            <div key={index} className="h-20 min-w-20 rounded-2xl bg-white shadow-sm ring-1 ring-border wt-skeleton" />
           ))}
         </div>
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
           {Array.from({ length: 4 }).map((_, index) => (
-            <div key={index} className="h-36 rounded-3xl bg-white shadow-sm ring-1 ring-border" />
+            <div key={index} className="h-36 rounded-3xl bg-white shadow-sm ring-1 ring-border wt-skeleton" />
           ))}
         </div>
       </div>

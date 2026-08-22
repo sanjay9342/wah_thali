@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CheckCircle2, Copy, Edit3, ExternalLink, EyeOff, Plus, Sparkles, TicketPercent, Trash2 } from "lucide-react";
+import { CheckCircle2, Copy, Edit3, ExternalLink, EyeOff, Plus, Send, Sparkles, TicketPercent, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { formatRupees } from "@/lib/pricing";
+import { formatIstDate, getIstDateInputValue, parseIstDateInput } from "@/lib/time";
 
 type AdminCoupon = {
   code: string;
@@ -29,8 +30,8 @@ const emptyCoupon: AdminCoupon = {
   maxDiscount: null,
   audience: "ALL",
   minPoints: 0,
-  startsAt: new Date().toISOString().slice(0, 10),
-  endsAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString().slice(0, 10),
+  startsAt: getIstDateInputValue(),
+  endsAt: getIstDateInputValue(new Date(), 30),
   active: true,
 };
 
@@ -57,8 +58,8 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
     if (!response.ok) throw new Error(data.error ?? "Could not reload coupons.");
     setCoupons(data.coupons.map((coupon: AdminCoupon) => ({
       ...coupon,
-      startsAt: coupon.startsAt ? new Date(coupon.startsAt).toISOString().slice(0, 10) : emptyCoupon.startsAt,
-      endsAt: coupon.endsAt ? new Date(coupon.endsAt).toISOString().slice(0, 10) : emptyCoupon.endsAt,
+      startsAt: coupon.startsAt ? getIstDateInputValue(coupon.startsAt) : emptyCoupon.startsAt,
+      endsAt: coupon.endsAt ? getIstDateInputValue(coupon.endsAt) : emptyCoupon.endsAt,
     })));
   }
 
@@ -117,9 +118,18 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
     });
   }
 
+  function notifyCoupon(coupon: AdminCoupon) {
+    run(async () => {
+      const response = await fetch(`/api/coupons/${coupon.code}/notify`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Coupon notification failed.");
+      setMessage(`${coupon.code} notification queued for ${data.eligible} eligible customers. WhatsApp sent: ${data.sent}, failed/skipped: ${data.failed}.`);
+    });
+  }
+
   const activeCoupons = coupons.filter((coupon) => coupon.active).length;
-  const liveCoupons = coupons.filter((coupon) => coupon.active && new Date(coupon.startsAt) <= new Date() && new Date(coupon.endsAt) >= new Date());
-  const scheduledCoupons = coupons.filter((coupon) => coupon.active && new Date(coupon.startsAt) > new Date()).length;
+  const liveCoupons = coupons.filter((coupon) => isCouponLive(coupon));
+  const scheduledCoupons = coupons.filter((coupon) => coupon.active && isCouponScheduled(coupon)).length;
 
   return (
     <main className="min-h-screen bg-white">
@@ -192,6 +202,12 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
             <h2 className="text-xl font-black text-maroon">Manage coupon campaigns</h2>
             <p className="text-sm font-semibold text-muted">Active coupons inside their date range are used by checkout and shown on the Offers page.</p>
           </div>
+          <div className="border-b border-border bg-[#fff8f9] p-5">
+            <h3 className="text-lg font-black text-maroon">WhatsApp coupon broadcast</h3>
+            <p className="mt-1 text-sm font-semibold leading-6 text-muted">
+              Use Notify eligible for coupons targeted to all customers, VIP customers, or order milestones like 10+ orders. The message includes the coupon code and each customer&apos;s order quantity history.
+            </p>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[840px] text-left text-sm">
               <thead className="bg-cream text-maroon">
@@ -211,7 +227,7 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
                       <td className="p-4">{coupon.type === "FIXED" ? formatRupees(coupon.value) : `${coupon.value}%`}</td>
                       <td className="p-4"><EligibilityPill coupon={coupon} /></td>
                       <td className="p-4">{formatRupees(coupon.minOrder)}</td>
-                      <td className="p-4 text-xs font-bold text-muted">{coupon.startsAt} to {coupon.endsAt}</td>
+                      <td className="p-4 text-xs font-bold text-muted">{formatCouponDate(coupon.startsAt)} to {formatCouponDate(coupon.endsAt)}</td>
                       <td className="p-4">
                         <button
                           disabled={isPending}
@@ -225,6 +241,7 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
                       <td className="p-4">
                         <div className="flex gap-2">
                           <button onClick={() => navigator.clipboard.writeText(coupon.code)} className="grid h-9 w-9 place-items-center rounded-lg border border-border text-maroon" aria-label={`Copy ${coupon.code}`}><Copy size={16} /></button>
+                          <button onClick={() => notifyCoupon(coupon)} disabled={isPending || !coupon.active} className="grid h-9 w-9 place-items-center rounded-lg border border-border text-maroon disabled:opacity-50" aria-label={`Notify eligible customers for ${coupon.code}`}><Send size={16} /></button>
                           <button onClick={() => setEditing(coupon)} className="grid h-9 w-9 place-items-center rounded-lg border border-border text-maroon" aria-label={`Edit ${coupon.code}`}><Edit3 size={16} /></button>
                           <button onClick={() => deleteCoupon(coupon.code)} className="grid h-9 w-9 place-items-center rounded-lg border border-border text-red" aria-label={`Delete ${coupon.code}`}><Trash2 size={16} /></button>
                         </div>
@@ -271,10 +288,10 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
                   <select value={editing.audience ?? "ALL"} onChange={(event) => setEditing({ ...editing, audience: event.target.value as AdminCoupon["audience"] })} className="h-11 rounded-lg border border-border bg-cream px-3">
                     <option value="ALL">All customers</option>
                     <option value="VIP">VIP customers only</option>
-                    <option value="POINTS">Points based</option>
+                    <option value="POINTS">Order count based</option>
                   </select>
                 </label>
-                <Field label="Minimum points" value={String(editing.minPoints ?? 0)} onChange={(value) => setEditing({ ...editing, minPoints: Number(value) })} />
+                <Field label="Minimum orders" value={String(editing.minPoints ?? 0)} onChange={(value) => setEditing({ ...editing, minPoints: Number(value) })} />
                 <Field label="Start date" type="date" value={editing.startsAt} onChange={(value) => setEditing({ ...editing, startsAt: value })} />
                 <Field label="End date" type="date" value={editing.endsAt} onChange={(value) => setEditing({ ...editing, endsAt: value })} />
               </div>
@@ -368,7 +385,7 @@ function EligibilityPill({ coupon }: { coupon: Pick<AdminCoupon, "audience" | "m
   const label = audience === "VIP"
     ? "VIP only"
     : audience === "POINTS"
-      ? `${coupon.minPoints ?? 0}+ points`
+      ? `${coupon.minPoints ?? 0}+ orders`
       : "All customers";
 
   return <span className="inline-flex rounded-lg bg-[#fff4f5] px-3 py-2 text-xs font-black text-maroon">{label}</span>;
@@ -395,11 +412,7 @@ function getCouponDescription(coupon: Pick<AdminCoupon, "type" | "value" | "minO
 }
 
 function formatCouponDate(value: string) {
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(new Date(value));
+  return formatIstDate(parseIstDateInput(value, "start") ?? value);
 }
 
 function getCouponStatus(coupon: AdminCoupon) {
@@ -410,15 +423,14 @@ function getCouponStatus(coupon: AdminCoupon) {
     };
   }
 
-  const now = new Date();
-  if (new Date(coupon.startsAt) > now) {
+  if (isCouponScheduled(coupon)) {
     return {
       label: "Scheduled",
       className: "bg-[#eaf5ff] text-[#064b95]",
     };
   }
 
-  if (new Date(coupon.endsAt) < now) {
+  if (isCouponExpired(coupon)) {
     return {
       label: "Expired",
       className: "bg-[#f3f4f6] text-muted",
@@ -429,4 +441,28 @@ function getCouponStatus(coupon: AdminCoupon) {
     label: "Live",
     className: "bg-maroon text-white",
   };
+}
+
+function getCouponBounds(coupon: Pick<AdminCoupon, "startsAt" | "endsAt">) {
+  return {
+    start: parseIstDateInput(coupon.startsAt, "start") ?? new Date(coupon.startsAt),
+    end: parseIstDateInput(coupon.endsAt, "end") ?? new Date(coupon.endsAt),
+  };
+}
+
+function isCouponLive(coupon: AdminCoupon) {
+  if (!coupon.active) return false;
+  const now = new Date();
+  const bounds = getCouponBounds(coupon);
+  return bounds.start <= now && bounds.end >= now;
+}
+
+function isCouponScheduled(coupon: AdminCoupon) {
+  const bounds = getCouponBounds(coupon);
+  return bounds.start > new Date();
+}
+
+function isCouponExpired(coupon: AdminCoupon) {
+  const bounds = getCouponBounds(coupon);
+  return bounds.end < new Date();
 }

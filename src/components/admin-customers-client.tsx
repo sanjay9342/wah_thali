@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { Crown, MessageCircle, Phone, Search, Star } from "lucide-react";
 import type { AdminCustomer } from "@/lib/types";
 import { formatRupees } from "@/lib/pricing";
+import { formatIstDate } from "@/lib/time";
 
 type Segment = "All customers" | "VIP" | "New" | "Repeat buyers";
 
@@ -102,7 +103,7 @@ export function AdminCustomersClient({
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2 text-xs font-black">
                   <span className="rounded-lg bg-cream px-3 py-2">Points {customer.points}</span>
-                  <span className="rounded-lg bg-cream px-3 py-2">Last order {customer.lastOrder ? new Date(customer.lastOrder).toLocaleDateString("en-IN") : "No orders"}</span>
+                  <span className="rounded-lg bg-cream px-3 py-2">Last order {customer.lastOrder ? formatIstDate(customer.lastOrder) : "No orders"}</span>
                   {customer.email ? <span className="max-w-full truncate rounded-lg bg-cream px-3 py-2">{customer.email}</span> : null}
                 </div>
               </div>

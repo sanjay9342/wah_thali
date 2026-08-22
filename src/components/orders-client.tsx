@@ -6,10 +6,12 @@ import Link from "next/link";
 import { OrderReorderButton } from "@/components/order-reorder-button";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 import { formatRupees } from "@/lib/pricing";
+import { formatIstDateTimeShort } from "@/lib/time";
 
 type CustomerOrder = {
   id: string;
   orderNumber: string;
+  status: string;
   grandTotal: number;
   createdAt: string;
   items: { id: string; productId: string; name: string; quantity: number; price: number }[];
@@ -40,14 +42,14 @@ export function OrdersClient() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadProfile() {
+    async function loadProfile(showLoading = true) {
       if (!session?.mobile) {
         setProfile(null);
         setLoading(false);
         return;
       }
 
-      setLoading(true);
+      if (showLoading) setLoading(true);
       try {
         const response = await fetch(`/api/customers/profile?mobile=${encodeURIComponent(session.mobile)}`, { cache: "no-store" });
         const data = await response.json();
@@ -63,9 +65,13 @@ export function OrdersClient() {
       }
     }
 
-    loadProfile();
+    void loadProfile();
+    const timer = window.setInterval(() => {
+      void loadProfile(false);
+    }, 5000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, [session]);
 
@@ -129,6 +135,9 @@ export function OrdersClient() {
               <div className="min-w-0">
                 <h2 className="text-xl font-black leading-tight text-charcoal">Order #{order.orderNumber}</h2>
                 <p className="mt-1 truncate text-[14px] font-semibold text-muted">{formatOrderDate(order.createdAt)}</p>
+                <span className={`mt-2 inline-flex rounded-lg px-2.5 py-1 text-[11px] font-black ${getOrderStatusTone(order.status)}`}>
+                  {formatStatus(order.status)}
+                </span>
                 <Link href={`/order/${order.orderNumber}/track`} className="mt-1 inline-flex text-[14px] font-black text-maroon">
                   Track order
                   <ChevronRight size={15} />
@@ -167,10 +176,24 @@ export function OrdersClient() {
 }
 
 function formatOrderDate(value: string) {
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
+  return formatIstDateTimeShort(value);
+}
+
+function getOrderStatusTone(status: string) {
+  if (status === "NEW") return "bg-[#fff4f5] text-maroon";
+  if (status === "CONFIRMED") return "bg-[#e9efff] text-[#1e3a8a]";
+  if (status === "PREPARING") return "bg-[#fff4df] text-[#8a4b00]";
+  if (status === "PACKED" || status === "READY_FOR_PICKUP") return "bg-[#dffaf4] text-[#115e59]";
+  if (status === "OUT_FOR_DELIVERY") return "bg-[#e7f5ff] text-[#1769c2]";
+  if (status === "DELIVERED") return "bg-[#e8f8ee] text-[#0f7a45]";
+  if (status === "CANCELLED") return "bg-[#eef2f7] text-[#475569]";
+  return "bg-[#fff7e8] text-[#9a5b00]";
+}
+
+function formatStatus(status: string) {
+  return status
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }

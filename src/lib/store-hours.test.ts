@@ -32,6 +32,7 @@ const baseSettings: RestaurantSettings = {
   onlinePaymentsEnabled: false,
   lowStockAlertThreshold: 5,
   newOrderSoundEnabled: true,
+  newOrderSound: "classic-bell",
   whatsappOrderAlerts: true,
   adminDailyDigestTime: "21:00",
 };

@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
+import type { PaymentStatus } from "@prisma/client";
 import { z } from "zod";
 import { logActivity } from "@/lib/db";
 import { hashPassword, normalizeEmail, normalizeMobile, verifyPassword } from "@/lib/customer-auth";
 import { verifyCustomerOtp } from "@/lib/customer-otp";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
+
+const paidOnlineStatuses: PaymentStatus[] = ["PAID", "AUTHORIZED"];
 
 const authSchema = z.discriminatedUnion("method", [
   z.object({
@@ -26,6 +29,12 @@ const publicCustomerSelect = {
   addresses: true,
   loyalty: true,
   orders: {
+    where: {
+      OR: [
+        { payments: { some: { provider: "COD" } } },
+        { payments: { some: { provider: "RAZORPAY", status: { in: paidOnlineStatuses } } } },
+      ],
+    },
     orderBy: { createdAt: "desc" as const },
     take: 20,
     include: { items: true },

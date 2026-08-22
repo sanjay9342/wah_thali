@@ -1,12 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { BellRing, CheckCircle2, Clock, MapPin, MessageCircle, Printer, ReceiptText, RefreshCw, Timer, UserRound, Utensils, XCircle } from "lucide-react";
+import { BellRing, CalendarDays, CheckCircle2, Clock, Filter, Mail, MapPin, MessageCircle, Printer, ReceiptText, RefreshCw, Star, Timer, UserRound, Utensils, XCircle } from "lucide-react";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { business } from "@/lib/business";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 import { formatRupees } from "@/lib/pricing";
 import { canTransitionOrder } from "@/lib/state-machines";
+import { formatIstDateTime, formatIstTime, getIstDateInputValue } from "@/lib/time";
+
+type DateFilter = "all" | "today" | "yesterday" | "week";
+type PriceFilter = "all" | "under500" | "500to1000" | "above1000";
+type StatusFilter = "all" | "incoming" | "active" | "completed" | "declined";
 
 const declineReasons = [
   "Item unavailable",
@@ -38,13 +43,17 @@ const actionCopy: Partial<Record<OrderStatus, string>> = {
   CANCELLED: "Decline",
 };
 
+const incomingStatuses = new Set<OrderStatus>(["NEW", "PENDING_PAYMENT"]);
+const activeStatuses = new Set<OrderStatus>(["CONFIRMED", "PREPARING", "PACKED", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"]);
+const progressStatuses: OrderStatus[] = ["NEW", "CONFIRMED", "PREPARING", "PACKED", "OUT_FOR_DELIVERY", "DELIVERED"];
+
 export function AdminOrdersClient({
   initialOrders,
-  newOrderSoundEnabled = true,
+  defaultPrepMinutes = 25,
   requireDeclineReason = true,
 }: {
   initialOrders: AdminOrder[];
-  newOrderSoundEnabled?: boolean;
+  defaultPrepMinutes?: number;
   requireDeclineReason?: boolean;
 }) {
   const [orders, setOrders] = useState(initialOrders);
@@ -52,38 +61,37 @@ export function AdminOrdersClient({
   const [reason, setReason] = useState("");
   const [etaByOrder, setEtaByOrder] = useState<Record<string, string>>({});
   const [locationByOrder, setLocationByOrder] = useState<Record<string, string>>({});
+  const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  const [priceFilter, setPriceFilter] = useState<PriceFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [message, setMessage] = useState("");
+  const [newOrderAlert, setNewOrderAlert] = useState<AdminOrder | null>(null);
+  const [animatedOrderNumbers, setAnimatedOrderNumbers] = useState<Set<string>>(() => new Set());
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [isPending, startTransition] = useTransition();
   const knownOrders = useRef(new Set(initialOrders.map((order) => order.orderNumber)));
+  const newOrderTimers = useRef<number[]>([]);
 
   const incomingOrders = orders.filter((order) => order.status === "NEW" || order.status === "PENDING_PAYMENT");
-
-  const playNewOrderSound = useCallback(async () => {
-    const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextClass) return;
-    const audio = new AudioContextClass();
-    for (const [index, frequency] of [784, 988, 1175, 988, 1319].entries()) {
-      const oscillator = audio.createOscillator();
-      const gain = audio.createGain();
-      oscillator.type = index % 2 ? "triangle" : "sine";
-      oscillator.frequency.value = frequency;
-      oscillator.connect(gain);
-      gain.connect(audio.destination);
-      gain.gain.setValueAtTime(0.0001, audio.currentTime + index * 0.13);
-      gain.gain.exponentialRampToValueAtTime(0.24, audio.currentTime + index * 0.13 + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + index * 0.13 + 0.11);
-      oscillator.start(audio.currentTime + index * 0.13);
-      oscillator.stop(audio.currentTime + index * 0.13 + 0.12);
-    }
-  }, []);
+  const filteredOrders = useMemo(() => {
+    return orders.filter((order) => (
+      matchesStatusFilter(order, statusFilter) &&
+      matchesDateFilter(order, dateFilter) &&
+      matchesPriceFilter(order, priceFilter)
+    ));
+  }, [dateFilter, orders, priceFilter, statusFilter]);
 
   const notifyAdmin = useCallback((order: AdminOrder) => {
     document.title = `New order ${order.orderNumber} - Wah Thali Admin`;
     if ("Notification" in window && Notification.permission === "granted") {
-      new Notification(`New order ${order.orderNumber}`, {
+      const notification = new Notification(`New order ${order.orderNumber}`, {
         body: `${order.customerName} - ${formatRupees(order.amount)} - ${order.itemSummary}`,
+        tag: `wah-thali-${order.orderNumber}`,
       });
+      notification.onclick = () => {
+        window.focus();
+        window.location.href = `/admin/orders#order-${order.orderNumber}`;
+      };
     }
   }, []);
 
@@ -97,13 +105,14 @@ export function AdminOrdersClient({
 
     const nextOrders: AdminOrder[] = data.orders.map((order: {
       orderNumber: string;
-      customer: { name: string; mobile: string };
+      customer: { name: string; mobile: string; email?: string | null };
+      reviews?: { id: string; rating: number; comment?: string | null; createdAt: string; product?: { name?: string } }[];
       status: OrderStatus;
       subtotal: number;
       discount: number;
       gst: number;
       grandTotal: number;
-      items: { quantity: number; name: string; price: number }[];
+      items: { productId?: string; quantity: number; name: string; price: number }[];
       payments: { provider: string; status: string }[];
       createdAt: string;
       timeline: { toStatus: string; note?: string | null; createdAt: string }[];
@@ -111,28 +120,51 @@ export function AdminOrdersClient({
       orderNumber: order.orderNumber,
       customerName: order.customer.name,
       customerMobile: order.customer.mobile,
+      customerEmail: order.customer.email ?? undefined,
       status: order.status,
       subtotal: order.subtotal,
       discount: order.discount,
       gst: order.gst,
       amount: order.grandTotal,
-      items: order.items.map((item) => ({ name: item.name, quantity: item.quantity, price: item.price })),
+      items: order.items.map((item) => ({ productId: item.productId, name: item.name, quantity: item.quantity, price: item.price })),
       itemSummary: order.items.map((item) => `${item.quantity} x ${item.name}`).join(", "),
       paymentSummary: getPaymentSummary(order.payments[0]),
       createdAt: order.createdAt,
       timeline: order.timeline,
+      reviews: order.reviews?.map((review) => ({
+        id: review.id,
+        productName: review.product?.name ?? "Dish",
+        rating: review.rating,
+        comment: review.comment ?? undefined,
+        createdAt: review.createdAt,
+      })) ?? [],
     }));
 
-    const newIncoming = nextOrders.find((order) => !knownOrders.current.has(order.orderNumber) && (order.status === "NEW" || order.status === "PENDING_PAYMENT"));
+    const newIncomingOrders = nextOrders.filter((order) => !knownOrders.current.has(order.orderNumber) && incomingStatuses.has(order.status));
+    const newIncoming = newIncomingOrders[0];
     setOrders(nextOrders);
     knownOrders.current = new Set(nextOrders.map((order) => order.orderNumber));
     setLastSyncedAt(new Date());
     if (newIncoming) {
+      setNewOrderAlert(newIncoming);
+      setAnimatedOrderNumbers((current) => {
+        const next = new Set(current);
+        newIncomingOrders.forEach((order) => next.add(order.orderNumber));
+        return next;
+      });
+      const highlightTimer = window.setTimeout(() => {
+        setAnimatedOrderNumbers((current) => {
+          const next = new Set(current);
+          newIncomingOrders.forEach((order) => next.delete(order.orderNumber));
+          return next;
+        });
+      }, 22000);
+      const toastTimer = window.setTimeout(() => setNewOrderAlert(null), 9000);
+      newOrderTimers.current.push(highlightTimer, toastTimer);
       notifyAdmin(newIncoming);
-      if (newOrderSoundEnabled) await playNewOrderSound();
     }
     return true;
-  }, [newOrderSoundEnabled, notifyAdmin, playNewOrderSound]);
+  }, [notifyAdmin]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -140,6 +172,11 @@ export function AdminOrdersClient({
     }, 15000);
     return () => window.clearInterval(timer);
   }, [refresh]);
+
+  useEffect(() => {
+    const timers = newOrderTimers.current;
+    return () => timers.forEach((item) => window.clearTimeout(item));
+  }, []);
 
   function updateOrder(order: AdminOrder, status: OrderStatus, note?: string) {
     startTransition(async () => {
@@ -232,7 +269,7 @@ export function AdminOrdersClient({
           <div class="rule"></div>
           <p><strong>Order:</strong> ${order.orderNumber}</p>
           <p><strong>Customer:</strong> ${escapeHtml(order.customerName)} (${order.customerMobile})</p>
-          <p><strong>Date:</strong> ${new Date(order.createdAt).toLocaleString("en-IN")}</p>
+          <p><strong>Date:</strong> ${formatIstDateTime(order.createdAt)}</p>
           <p><strong>Payment:</strong> ${escapeHtml(order.paymentSummary)}</p>
           ${details.address ? `<div class="box"><strong>Delivery:</strong><br>${escapeHtml(details.address)}${details.gps ? `<br>GPS: ${escapeHtml(details.gps)}` : ""}</div>` : ""}
           ${details.customerNote ? `<div class="box"><strong>Restaurant note:</strong><br>${escapeHtml(details.customerNote)}</div>` : ""}
@@ -244,7 +281,7 @@ export function AdminOrdersClient({
           <div class="rule"></div>
           <table>
             <tr><td>Subtotal</td><td class="num">${formatRupees(order.subtotal)}</td></tr>
-            <tr><td>Discount</td><td class="num">-${formatRupees(order.discount)}</td></tr>
+            <tr><td>Discount${details.coupon ? ` (${escapeHtml(details.coupon)})` : ""}</td><td class="num">-${formatRupees(order.discount)}</td></tr>
             <tr><td>GST</td><td class="num">${formatRupees(order.gst)}</td></tr>
             <tr class="total"><td>Total payable</td><td class="num">${formatRupees(order.amount)}</td></tr>
           </table>
@@ -260,8 +297,13 @@ export function AdminOrdersClient({
   }
 
   const counters = useMemo(
-    () => ["PENDING_PAYMENT", "NEW", "CONFIRMED", "PREPARING"].map((status) => [status, orders.filter((order) => order.status === status).length]),
-    [orders],
+    () => [
+      ["Incoming", incomingOrders.length, "Needs attention"],
+      ["Accepted", orders.filter((order) => order.status === "CONFIRMED").length, "Ready to prepare"],
+      ["Preparing", orders.filter((order) => order.status === "PREPARING").length, "Kitchen active"],
+      ["Filtered", filteredOrders.length, "Shown below"],
+    ],
+    [filteredOrders.length, incomingOrders.length, orders],
   );
 
   return (
@@ -273,7 +315,7 @@ export function AdminOrdersClient({
             <h1 className="text-3xl font-black text-maroon">Orders</h1>
             <p className="mt-1 text-sm font-semibold text-muted">
               Accept, decline with reason, prepare, pack, dispatch, and mark delivered.
-              {lastSyncedAt ? ` Last synced ${lastSyncedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}.` : ""}
+              {lastSyncedAt ? ` Last synced ${formatIstTime(lastSyncedAt)}.` : ""}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -287,81 +329,181 @@ export function AdminOrdersClient({
         </div>
         <AdminSectionNav />
 
-        {incomingOrders.length ? (
-          <div className="mt-4 flex items-center gap-3 rounded-xl border border-red/20 bg-red/10 px-4 py-3 font-black text-maroon">
-            <BellRing size={18} /> {incomingOrders.length} incoming order{incomingOrders.length > 1 ? "s" : ""} waiting for attention
+        <section className={`mt-5 overflow-hidden rounded-2xl border border-[#efd8de] bg-[#fff8f9] ${incomingOrders.length ? "wt-incoming-watch-active" : ""} ${newOrderAlert ? "wt-new-order-toast" : ""}`}>
+          <div className="grid gap-4 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl ${incomingOrders.length ? "wt-new-order-bell bg-red text-white" : "bg-[#effaf4] text-[#0f7a45]"}`}>
+                <BellRing size={21} />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-lg font-black text-maroon">Incoming order watch</h2>
+                <p className="mt-1 text-sm font-bold text-muted">
+                  {incomingOrders.length
+                    ? `${incomingOrders.length} order${incomingOrders.length > 1 ? "s are" : " is"} waiting for accept or payment confirmation.`
+                    : "No new orders waiting right now."}
+                </p>
+              </div>
+            </div>
+            {newOrderAlert ? (
+              <div className="grid gap-2 rounded-xl bg-white px-4 py-3 text-sm font-black text-charcoal ring-1 ring-red/25 sm:grid-cols-[1fr_auto] sm:items-center">
+                <span className="min-w-0 truncate">New: {newOrderAlert.orderNumber} - {formatRupees(newOrderAlert.amount)}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStatusFilter("incoming");
+                    document.getElementById(`order-${newOrderAlert.orderNumber}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }}
+                  className="inline-flex h-10 items-center justify-center rounded-lg bg-maroon px-4 text-xs font-black text-white"
+                >
+                  View order
+                </button>
+              </div>
+            ) : incomingOrders[0] ? (
+              <div className="rounded-xl bg-white px-4 py-3 text-sm font-black text-charcoal ring-1 ring-[#efd8de]">
+                Next: {incomingOrders[0].orderNumber} - {formatRupees(incomingOrders[0].amount)}
+              </div>
+            ) : null}
           </div>
-        ) : null}
+        </section>
         {message ? <p className="mt-4 rounded-lg border border-border bg-cream px-4 py-3 text-sm font-black text-maroon">{message}</p> : null}
 
         <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {counters.map(([status, count]) => (
-            <div key={String(status)} className="surface rounded-2xl p-5">
-              <p className="text-sm font-bold text-muted">{String(status).replaceAll("_", " ")}</p>
+          {counters.map(([label, count, detail]) => (
+            <div key={String(label)} className="surface rounded-2xl p-5">
+              <p className="text-sm font-bold text-muted">{label}</p>
               <p className="mt-2 text-3xl font-black text-maroon">{count}</p>
-              <p className="mt-1 text-xs font-bold text-muted">Live queue</p>
+              <p className="mt-1 text-xs font-bold text-muted">{detail}</p>
             </div>
           ))}
         </section>
 
+        <section className="mt-5 rounded-2xl border border-border bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 className="flex items-center gap-2 text-lg font-black text-maroon">
+                <Filter size={18} className="text-red" /> Filters
+              </h2>
+              <p className="mt-1 text-xs font-bold text-muted">Filter orders by date, bill value, and kitchen status.</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3 lg:w-[760px]">
+              <FilterSelect label="Date" value={dateFilter} onChange={(value) => setDateFilter(value as DateFilter)} options={[
+                ["all", "All dates"],
+                ["today", "Today"],
+                ["yesterday", "Yesterday"],
+                ["week", "Last 7 days"],
+              ]} />
+              <FilterSelect label="Price" value={priceFilter} onChange={(value) => setPriceFilter(value as PriceFilter)} options={[
+                ["all", "All bills"],
+                ["under500", "Below Rs 500"],
+                ["500to1000", "Rs 500 - Rs 1,000"],
+                ["above1000", "Above Rs 1,000"],
+              ]} />
+              <FilterSelect label="Status" value={statusFilter} onChange={(value) => setStatusFilter(value as StatusFilter)} options={[
+                ["all", "All status"],
+                ["incoming", "Incoming"],
+                ["active", "Accepted active"],
+                ["completed", "Delivered"],
+                ["declined", "Declined"],
+              ]} />
+            </div>
+          </div>
+        </section>
+
         <section className="mt-6 grid gap-4">
-          {orders.length ? orders.map((order) => (
-            <article key={order.orderNumber} className="surface rounded-2xl p-5">
+          {filteredOrders.length ? filteredOrders.map((order) => (
+            <article
+              id={`order-${order.orderNumber}`}
+              key={order.orderNumber}
+              className={`wt-order-card relative overflow-hidden rounded-2xl border p-5 shadow-sm ${getOrderCardTone(order.status).card} ${order.status === "NEW" ? "wt-new-order-blink" : ""} ${animatedOrderNumbers.has(order.orderNumber) ? "wt-new-order-arrive" : ""}`}
+            >
+              <div className={`absolute inset-y-0 left-0 w-2 ${getOrderCardTone(order.status).bar}`} />
               {(() => {
                 const details = getOrderDetails(order);
+                const tone = getOrderCardTone(order.status);
                 return (
                   <>
+              <div className={`mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-4 py-2 text-xs font-black uppercase tracking-wide ${tone.banner}`}>
+                <span className="inline-flex items-center gap-2">
+                  {incomingStatuses.has(order.status) ? <BellRing size={15} className="wt-order-pulse" /> : null}
+                  {tone.label}
+                </span>
+                {incomingStatuses.has(order.status) ? <span className="wt-new-order-text">Needs attention now</span> : null}
+              </div>
               <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-xl font-black text-maroon">{order.orderNumber}</h2>
-                    <span className="rounded-lg bg-cream px-3 py-1 text-xs font-black text-charcoal">{statusCopy[order.status].label}</span>
+                    <span className={`rounded-lg px-3 py-1 text-xs font-black ${getStatusTone(order.status)}`}>{statusCopy[order.status].label}</span>
                   </div>
                   <p className="mt-1 font-black text-charcoal">{order.customerName} - {order.customerMobile}</p>
                   <p className="mt-1 text-sm font-semibold text-muted">{order.itemSummary || "Items unavailable"} - {formatRupees(order.amount)}</p>
                   <div className="mt-3 flex flex-wrap gap-3 text-sm font-bold text-muted">
-                    <span className="inline-flex items-center gap-1"><Clock size={16} /> {new Date(order.createdAt).toLocaleString("en-IN")}</span>
+                    <span className="inline-flex items-center gap-1"><Clock size={16} /> {formatIstDateTime(order.createdAt)}</span>
                     <span>{order.paymentSummary}</span>
                   </div>
-                  {details.customerNote ? <p className="mt-3 rounded-lg bg-[#fff4f5] px-3 py-2 text-sm font-black text-maroon">Customer note: {details.customerNote}</p> : null}
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-black text-muted">
+                    {details.email || order.customerEmail ? (
+                      <span className={`inline-flex items-center gap-1 rounded-lg px-3 py-2 ${tone.chip}`}>
+                        <Mail size={14} /> {details.email || order.customerEmail}
+                      </span>
+                    ) : null}
+                    {details.customerNote ? <span className={`rounded-lg px-3 py-2 ${tone.chip}`}>Customer note: {details.customerNote}</span> : null}
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2 lg:justify-end">
-                  <button onClick={() => printBill(order)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm font-black">
+                  <button onClick={() => printBill(order)} className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-black ${tone.action}`}>
                     <Printer size={16} /> Print bill
                   </button>
-                  <a href={`https://wa.me/91${order.customerMobile}?text=${encodeURIComponent(buildCustomerMessage(order, order.status))}`} className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm font-black">
+                  <a href={`https://wa.me/91${order.customerMobile}?text=${encodeURIComponent(buildCustomerMessage(order, order.status))}`} className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-black ${tone.action}`}>
                     <MessageCircle size={16} /> Message
                   </a>
                 </div>
               </div>
               <div className="mt-4 grid gap-3 lg:grid-cols-4">
-                <div className="rounded-xl bg-cream p-3">
+                <div className={`rounded-xl border p-3 ${tone.panel}`}>
                   <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-muted"><UserRound size={15} /> Receiver</p>
                   <p className="mt-2 text-sm font-black text-charcoal">{details.receiver || `${order.customerName}, ${order.customerMobile}`}</p>
                 </div>
-                <div className="rounded-xl bg-cream p-3 lg:col-span-2">
+                <div className={`rounded-xl border p-3 lg:col-span-2 ${tone.panel}`}>
                   <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-muted"><MapPin size={15} /> Delivery location</p>
-                  <p className="mt-2 text-sm font-black leading-5 text-charcoal">{details.address || details.location || "Location not provided"}</p>
-                  {details.gps ? <p className="mt-1 text-xs font-bold text-muted">GPS: {details.gps}</p> : null}
+                  <p className="mt-2 text-sm font-black leading-5 text-charcoal">{details.address || details.location || (details.gps ? `Map pin: ${details.gps}` : "Location not provided")}</p>
+                  {details.gps ? (
+                    <a href={`https://www.google.com/maps?q=${encodeURIComponent(details.gps)}`} target="_blank" rel="noreferrer" className="mt-1 inline-flex text-xs font-black text-red">
+                      Open GPS: {details.gps}
+                    </a>
+                  ) : null}
                 </div>
-                <div className="rounded-xl bg-cream p-3">
+                <div className={`rounded-xl border p-3 ${tone.panel}`}>
                   <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-muted"><ReceiptText size={15} /> Bill</p>
                   <p className="mt-2 text-sm font-black text-charcoal">Subtotal {formatRupees(order.subtotal)}</p>
-                  <p className="mt-1 text-xs font-bold text-muted">GST {formatRupees(order.gst)} | Discount {formatRupees(order.discount)}</p>
+                  <p className="mt-1 text-xs font-bold text-muted">GST {formatRupees(order.gst)} | Discount {formatRupees(order.discount)}{details.coupon ? ` (${details.coupon})` : ""}</p>
                 </div>
               </div>
-              <div className="mt-4 rounded-xl bg-white p-3 ring-1 ring-border">
+              <div className={`mt-4 rounded-xl border bg-white p-3 ${tone.box}`}>
                 <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-muted"><Utensils size={15} /> Items</p>
                 <div className="mt-2 grid gap-2">
                   {order.items.map((item) => (
-                    <div key={`${order.orderNumber}-${item.name}`} className="flex items-center justify-between rounded-lg bg-cream px-3 py-2 text-sm">
+                    <div key={`${order.orderNumber}-${item.name}`} className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${tone.row}`}>
                       <span className="font-black text-charcoal">{item.quantity} x {item.name}</span>
                       <span className="font-black text-maroon">{formatRupees(item.price * item.quantity)}</span>
                     </div>
                   ))}
                 </div>
               </div>
-              <div className="mt-4 grid gap-3 rounded-xl border border-border bg-cream p-3 sm:grid-cols-2">
+              {order.reviews?.length ? (
+                <div className={`mt-4 rounded-xl border bg-white p-3 ${tone.box}`}>
+                  <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-muted"><Star size={15} /> Delivered reviews</p>
+                  <div className="mt-2 grid gap-2">
+                    {order.reviews.map((review) => (
+                      <div key={review.id} className={`rounded-lg px-3 py-2 text-sm ${tone.row}`}>
+                        <p className="font-black text-charcoal">{review.productName} - {review.rating}/5</p>
+                        {review.comment ? <p className="mt-1 font-semibold text-muted">{review.comment}</p> : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <div className={`mt-4 grid gap-3 rounded-xl border p-3 sm:grid-cols-2 ${tone.panel}`}>
                 <label className="grid gap-2 text-xs font-black uppercase tracking-wide text-muted">
                   <span className="flex items-center gap-2"><Timer size={15} /> Order timing</span>
                   <input
@@ -370,8 +512,9 @@ export function AdminOrdersClient({
                     value={etaByOrder[order.orderNumber] ?? ""}
                     onChange={(event) => setEtaByOrder((current) => ({ ...current, [order.orderNumber]: event.target.value }))}
                     className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-black normal-case tracking-normal text-charcoal"
-                    placeholder="ETA minutes"
+                    placeholder={`Default ${defaultPrepMinutes} minutes`}
                   />
+                  <span className="text-[11px] font-bold normal-case tracking-normal text-muted">Leave empty to show default prep time: {defaultPrepMinutes} min.</span>
                 </label>
                 <label className="grid gap-2 text-xs font-black uppercase tracking-wide text-muted">
                   <span className="flex items-center gap-2"><MapPin size={15} /> Rider note</span>
@@ -383,30 +526,22 @@ export function AdminOrdersClient({
                   />
                 </label>
               </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {getNextOrderActions(order.status).map((next) => (
-                  next === "CANCELLED" ? (
-                    <button key={next} disabled={isPending} onClick={() => setDeclineOrder(order)} className="inline-flex items-center gap-2 rounded-lg bg-red px-4 py-2 text-xs font-black text-white disabled:opacity-60">
-                      <XCircle size={15} /> {actionCopy[next]}
-                    </button>
-                  ) : (
-                    <button key={next} disabled={isPending} onClick={() => updateOrder(order, next, next === "CONFIRMED" ? "Restaurant accepted the order." : undefined)} className="inline-flex items-center gap-2 rounded-lg bg-maroon px-4 py-2 text-xs font-black text-white disabled:opacity-60">
-                      <CheckCircle2 size={15} /> {actionCopy[next] ?? statusCopy[next].label}
-                    </button>
-                  )
-                ))}
-                {!getNextOrderActions(order.status).length ? (
-                  <span className="rounded-lg bg-cream px-4 py-2 text-xs font-black text-muted">No further status action</span>
-                ) : null}
-              </div>
+              <OrderStatusPanel
+                order={order}
+                customEta={etaByOrder[order.orderNumber]?.trim() || details.eta}
+                defaultPrepMinutes={defaultPrepMinutes}
+                isPending={isPending}
+                onDecline={() => setDeclineOrder(order)}
+                onMove={(next) => updateOrder(order, next, next === "CONFIRMED" ? "Restaurant accepted the order." : undefined)}
+              />
                   </>
                 );
               })()}
             </article>
           )) : (
             <div className="surface rounded-2xl p-8 text-center">
-              <h2 className="text-xl font-black text-maroon">No live orders yet</h2>
-              <p className="mt-2 text-sm font-semibold text-muted">New customer orders will appear here with a sound alert.</p>
+              <h2 className="text-xl font-black text-maroon">No orders match these filters</h2>
+              <p className="mt-2 text-sm font-semibold text-muted">Change the date, price, or status filter to see more orders.</p>
             </div>
           )}
         </section>
@@ -440,11 +575,303 @@ export function AdminOrdersClient({
   );
 }
 
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: [string, string][];
+}) {
+  return (
+    <label className="grid gap-2 text-xs font-black uppercase tracking-wide text-muted">
+      <span className="flex items-center gap-2"><CalendarDays size={15} /> {label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-11 rounded-lg border border-border bg-cream px-3 text-sm font-black normal-case tracking-normal text-charcoal"
+      >
+        {options.map(([optionValue, optionLabel]) => (
+          <option key={optionValue} value={optionValue}>{optionLabel}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function OrderStatusPanel({
+  order,
+  customEta,
+  defaultPrepMinutes,
+  isPending,
+  onDecline,
+  onMove,
+}: {
+  order: AdminOrder;
+  customEta?: string;
+  defaultPrepMinutes: number;
+  isPending: boolean;
+  onDecline: () => void;
+  onMove: (status: OrderStatus) => void;
+}) {
+  const actions = getNextOrderActions(order.status);
+  const progress = getOrderProgress(order.status);
+  const [statusDraft, setStatusDraft] = useState<{ orderStatus: OrderStatus; value: OrderStatus }>(() => ({
+    orderStatus: order.status,
+    value: getDefaultSelectedStatus(actions, order.status),
+  }));
+  const selectedStatus = statusDraft.orderStatus === order.status ? statusDraft.value : getDefaultSelectedStatus(actions, order.status);
+  const nextPrimary = actions.find((status) => status !== "CANCELLED");
+  const selectedIsValid = actions.includes(selectedStatus);
+
+  function submitStatusChange() {
+    if (!selectedIsValid) return;
+    if (selectedStatus === "CANCELLED") {
+      onDecline();
+      return;
+    }
+    onMove(selectedStatus);
+  }
+
+  return (
+    <section className="mt-4 rounded-xl border border-border bg-white p-4">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,420px)] lg:items-end">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs font-black uppercase tracking-wide text-muted">Status control</p>
+            <span className={`rounded-lg px-3 py-1 text-xs font-black ${getStatusTone(order.status)}`}>Current: {statusCopy[order.status].label}</span>
+            <span className="rounded-lg bg-cream px-3 py-1 text-xs font-black text-muted">
+              ETA {customEta ? `${customEta} min` : `${defaultPrepMinutes} min default`}
+            </span>
+          </div>
+          <div className="mt-4 flex items-center gap-1.5">
+            {progressStatuses.map((status, index) => {
+              const done = order.status === "DELIVERED" ? index <= progress.index : index < progress.index;
+              const active = progress.index === index && order.status !== "DELIVERED" && order.status !== "CANCELLED";
+              return (
+                <span
+                  key={status}
+                  title={statusCopy[status].label}
+                  className={`h-2 flex-1 rounded-full ${done ? "bg-maroon" : active ? "bg-red" : "bg-cream"}`}
+                />
+              );
+            })}
+          </div>
+          <p className="mt-2 text-xs font-bold text-muted">
+            Use the dropdown for exact status changes. Customers see custom ETA when entered, otherwise {defaultPrepMinutes} min.
+          </p>
+        </div>
+
+        {actions.length ? (
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+            <label className="grid gap-2 text-xs font-black uppercase tracking-wide text-muted">
+              Change to
+              <select
+                value={selectedStatus}
+                onChange={(event) => setStatusDraft({ orderStatus: order.status, value: event.target.value as OrderStatus })}
+                className="h-11 rounded-lg border border-border bg-cream px-3 text-sm font-black normal-case tracking-normal text-charcoal"
+              >
+                {actions.map((status) => (
+                  <option key={status} value={status}>{actionCopy[status] ?? statusCopy[status].label}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={isPending || !selectedIsValid}
+              onClick={submitStatusChange}
+              className={`mt-auto inline-flex h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-black text-white disabled:opacity-60 ${selectedStatus === "CANCELLED" ? "bg-red" : "bg-maroon"}`}
+            >
+              {selectedStatus === "CANCELLED" ? <XCircle size={16} /> : <CheckCircle2 size={16} />}
+              Update
+            </button>
+            {nextPrimary ? (
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => onMove(nextPrimary)}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-white px-3 text-xs font-black text-maroon disabled:opacity-60 sm:col-span-2"
+              >
+                <CheckCircle2 size={15} /> Quick next: {actionCopy[nextPrimary] ?? statusCopy[nextPrimary].label}
+              </button>
+            ) : null}
+            <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
+              {actions.map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => status === "CANCELLED" ? onDecline() : onMove(status)}
+                  className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-black disabled:opacity-60 ${getStatusActionTone(status)}`}
+                >
+                  {status === "CANCELLED" ? <XCircle size={15} /> : <CheckCircle2 size={15} />}
+                  {actionCopy[status] ?? statusCopy[status].label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="flex justify-start lg:justify-end">
+            <span className={`inline-flex h-10 items-center rounded-lg px-4 text-xs font-black ${getStatusTone(order.status)}`}>
+              {order.status === "DELIVERED" ? "Order completed" : order.status === "CANCELLED" ? "Order declined" : "No next action"}
+            </span>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function buildCustomerMessage(order: AdminOrder, status: OrderStatus) {
   const latestNote = order.timeline.at(-1)?.note;
   const ratingText = status === "DELIVERED" ? " Thank you for ordering from Wah Thali. Please give your rating for the food, it helps us serve you better." : "";
   const reasonText = status === "CANCELLED" && latestNote ? ` Reason: ${latestNote}` : "";
   return `Hi ${order.customerName}, ${statusCopy[status].customer} Order ${order.orderNumber}: ${statusCopy[status].label}.${reasonText}${ratingText}`;
+}
+
+function matchesStatusFilter(order: AdminOrder, filter: StatusFilter) {
+  if (filter === "all") return true;
+  if (filter === "incoming") return incomingStatuses.has(order.status);
+  if (filter === "active") return activeStatuses.has(order.status);
+  if (filter === "completed") return order.status === "DELIVERED";
+  return order.status === "CANCELLED";
+}
+
+function matchesDateFilter(order: AdminOrder, filter: DateFilter) {
+  if (filter === "all") return true;
+
+  const orderDay = getIstDateInputValue(order.createdAt);
+  if (filter === "today") return orderDay === getIstDateInputValue();
+  if (filter === "yesterday") return orderDay === getIstDateInputValue(new Date(), -1);
+
+  const orderTime = new Date(order.createdAt).getTime();
+  return orderTime >= Date.now() - 7 * 24 * 60 * 60 * 1000;
+}
+
+function matchesPriceFilter(order: AdminOrder, filter: PriceFilter) {
+  if (filter === "all") return true;
+  if (filter === "under500") return order.amount < 500;
+  if (filter === "500to1000") return order.amount >= 500 && order.amount <= 1000;
+  return order.amount > 1000;
+}
+
+function getStatusTone(status: OrderStatus) {
+  if (status === "NEW") return "bg-red/10 text-red";
+  if (status === "PENDING_PAYMENT") return "bg-[#fff7e8] text-[#9a5b00]";
+  if (activeStatuses.has(status)) return "bg-[#fff4f5] text-maroon";
+  if (status === "DELIVERED") return "bg-[#effaf4] text-[#0f7a45]";
+  return "bg-cream text-muted";
+}
+
+function getStatusActionTone(status: OrderStatus) {
+  if (status === "CONFIRMED") return "border-red/25 bg-red text-white hover:bg-maroon";
+  if (status === "PREPARING") return "border-[#cad7ff] bg-[#2563eb] text-white hover:bg-[#1e40af]";
+  if (status === "PACKED") return "border-[#b7e5dd] bg-[#0f766e] text-white hover:bg-[#115e59]";
+  if (status === "READY_FOR_PICKUP") return "border-[#c7ecd2] bg-[#16a34a] text-white hover:bg-[#15803d]";
+  if (status === "OUT_FOR_DELIVERY") return "border-[#f3d7a0] bg-[#f59e0b] text-[#221f20] hover:bg-[#f7c453]";
+  if (status === "DELIVERED") return "border-[#a8d8b8] bg-[#effaf4] text-[#0f7a45] hover:bg-[#dff6e8]";
+  if (status === "CANCELLED") return "border-[#f2b6bc] bg-white text-red hover:bg-[#fff0f3]";
+  return "border-border bg-white text-maroon hover:bg-cream";
+}
+
+function getOrderCardTone(status: OrderStatus) {
+  if (status === "NEW") {
+    return {
+      label: "New order",
+      card: "border-red/45 bg-[#fff7f8] shadow-[0_14px_36px_rgba(141,0,33,0.14)] ring-2 ring-red/20",
+      bar: "bg-red",
+      banner: "border-red/25 bg-red text-white",
+      panel: "border-red/20 bg-white",
+      box: "border-red/20",
+      row: "bg-[#fff0f3]",
+      chip: "bg-white text-maroon ring-1 ring-red/15",
+      action: "border-red/25 bg-white text-maroon hover:bg-[#fff0f3]",
+    };
+  }
+
+  if (status === "PENDING_PAYMENT") {
+    return {
+      label: "Payment pending",
+      card: "border-[#f0b44d]/55 bg-[#fffaf0] shadow-[0_12px_30px_rgba(154,91,0,0.1)]",
+      bar: "bg-[#f59e0b]",
+      banner: "border-[#f7d48a] bg-[#fff3cf] text-[#7a4100]",
+      panel: "border-[#f3d7a0] bg-[#fff7e8]",
+      box: "border-[#f3d7a0]",
+      row: "bg-[#fff4d8]",
+      chip: "bg-[#fff3cf] text-[#7a4100]",
+      action: "border-[#f3d7a0] bg-white text-[#7a4100] hover:bg-[#fff7e8]",
+    };
+  }
+
+  if (status === "CONFIRMED") {
+    return {
+      label: "Accepted",
+      card: "border-[#9db5f7]/60 bg-[#f6f8ff] shadow-[0_12px_30px_rgba(37,99,235,0.08)]",
+      bar: "bg-[#2563eb]",
+      banner: "border-[#cad7ff] bg-[#e9efff] text-[#1e3a8a]",
+      panel: "border-[#d5defb] bg-[#f1f5ff]",
+      box: "border-[#d5defb]",
+      row: "bg-[#eef4ff]",
+      chip: "bg-[#e9efff] text-[#1e3a8a]",
+      action: "border-[#cad7ff] bg-white text-[#1e3a8a] hover:bg-[#f1f5ff]",
+    };
+  }
+
+  if (status === "PREPARING" || status === "PACKED" || status === "READY_FOR_PICKUP" || status === "OUT_FOR_DELIVERY") {
+    return {
+      label: "Kitchen active",
+      card: "border-[#88c8c0]/65 bg-[#f2fffc] shadow-[0_12px_30px_rgba(15,118,110,0.08)]",
+      bar: "bg-[#0f766e]",
+      banner: "border-[#b7e5dd] bg-[#dffaf4] text-[#115e59]",
+      panel: "border-[#b7e5dd] bg-[#ecfffb]",
+      box: "border-[#b7e5dd]",
+      row: "bg-[#e2fbf5]",
+      chip: "bg-[#dffaf4] text-[#115e59]",
+      action: "border-[#b7e5dd] bg-white text-[#115e59] hover:bg-[#ecfffb]",
+    };
+  }
+
+  if (status === "DELIVERED") {
+    return {
+      label: "Delivered",
+      card: "border-[#a8d8b8]/70 bg-[#f5fff8] shadow-[0_10px_26px_rgba(15,122,69,0.07)]",
+      bar: "bg-[#16a34a]",
+      banner: "border-[#c7ecd2] bg-[#e8f8ee] text-[#0f7a45]",
+      panel: "border-[#c7ecd2] bg-[#f0fbf4]",
+      box: "border-[#c7ecd2]",
+      row: "bg-[#eaf8ef]",
+      chip: "bg-[#e8f8ee] text-[#0f7a45]",
+      action: "border-[#c7ecd2] bg-white text-[#0f7a45] hover:bg-[#f0fbf4]",
+    };
+  }
+
+  return {
+    label: "Declined",
+    card: "border-[#c8cdd7] bg-[#f8fafc] shadow-[0_8px_22px_rgba(15,23,42,0.06)] opacity-90",
+    bar: "bg-[#64748b]",
+    banner: "border-[#d8dde7] bg-[#eef2f7] text-[#475569]",
+    panel: "border-[#dde3ec] bg-[#f8fafc]",
+    box: "border-[#dde3ec]",
+    row: "bg-[#f1f5f9]",
+    chip: "bg-[#eef2f7] text-[#475569]",
+    action: "border-[#d8dde7] bg-white text-[#475569] hover:bg-[#f8fafc]",
+  };
+}
+
+function getOrderProgress(status: OrderStatus) {
+  if (status === "PENDING_PAYMENT") return { index: 0, done: false };
+  if (status === "READY_FOR_PICKUP") return { index: progressStatuses.indexOf("PACKED"), done: false };
+  if (status === "CANCELLED") return { index: 0, done: false };
+
+  const index = Math.max(progressStatuses.indexOf(status), 0);
+  return { index, done: status === "DELIVERED" };
+}
+
+function getDefaultSelectedStatus(actions: OrderStatus[], currentStatus: OrderStatus) {
+  return actions.find((status) => status !== "CANCELLED") ?? actions[0] ?? currentStatus;
 }
 
 function getNextOrderActions(status: OrderStatus): OrderStatus[] {
@@ -461,21 +888,37 @@ function getPaymentSummary(payment?: { provider: string; status: string }) {
 }
 
 function getOrderDetails(order: AdminOrder) {
-  const parts = order.timeline.flatMap((event) => (event.note ?? "").split("|").map((part) => part.trim()).filter(Boolean));
+  const notes = order.timeline.map((event) => event.note).filter((note): note is string => Boolean(note));
+  const parts = notes.flatMap((note) => note.split("|").map((part) => part.trim()).filter(Boolean));
   return {
     receiver: readPart(parts, "Receiver"),
-    address: readPart(parts, "Address"),
-    addressType: readPart(parts, "Address type"),
-    customerNote: readPart(parts, "Customer note"),
-    location: readPart(parts, "Location"),
-    gps: readPart(parts, "GPS"),
-    distance: readPart(parts, "Distance"),
+    email: readPart(parts, "Email") || extractTimelineValue(notes, "Email"),
+    address: readPart(parts, "Address") || extractTimelineValue(notes, "Address"),
+    addressType: readPart(parts, "Address type") || extractTimelineValue(notes, "Address type"),
+    customerNote: readPart(parts, "Customer note") || extractTimelineValue(notes, "Customer note"),
+    location: readPart(parts, "Location") || extractTimelineValue(notes, "Location"),
+    gps: readPart(parts, "GPS") || extractTimelineValue(notes, "GPS"),
+    distance: readPart(parts, "Distance") || extractTimelineValue(notes, "Distance"),
+    eta: readPart(parts, "ETA") || extractTimelineValue(notes, "ETA"),
+    coupon: readPart(parts, "Coupon") || extractCouponCode(notes),
   };
 }
 
 function readPart(parts: string[], label: string) {
   const prefix = `${label}:`;
   return parts.find((part) => part.toLowerCase().startsWith(prefix.toLowerCase()))?.slice(prefix.length).trim() ?? "";
+}
+
+function extractTimelineValue(notes: string[], label: string) {
+  const joined = notes.join(" | ");
+  const labels = ["Receiver", "Email", "Address", "Address type", "Customer note", "Location", "GPS", "Distance", "ETA", "Coupon"];
+  const nextLabels = labels.filter((item) => item !== label).join("|");
+  const pattern = new RegExp(`${label}:\\s*(.*?)(?=\\s(?:${nextLabels}):|\\sCoupon\\s|\\s\\|\\s|$)`, "i");
+  return joined.match(pattern)?.[1]?.trim().replace(/[.]$/, "") ?? "";
+}
+
+function extractCouponCode(notes: string[]) {
+  return notes.join(" | ").match(/\bCoupon\s+([A-Z0-9_-]+)\s+applied/i)?.[1] ?? "";
 }
 
 function escapeHtml(value: string) {

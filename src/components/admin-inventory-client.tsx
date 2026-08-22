@@ -5,6 +5,7 @@ import { CheckCircle2, Download, Edit3, EyeOff, PackagePlus, Plus, Search, Slide
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import type { AdminProduct } from "@/lib/types";
 import { formatRupees } from "@/lib/pricing";
+import { formatIstTime } from "@/lib/time";
 
 type ProductForm = {
   id?: string;
@@ -299,7 +300,7 @@ export function AdminInventoryClient({
                 <h2 className="text-xl font-black text-maroon">Menu inventory</h2>
                 <p className="text-sm font-semibold text-muted">
                   {filteredProducts.length} products shown. Changes save to the live database.
-                  {lastSyncedAt ? ` Last synced ${lastSyncedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}.` : ""}
+                  {lastSyncedAt ? ` Last synced ${formatIstTime(lastSyncedAt)}.` : ""}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">

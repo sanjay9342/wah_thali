@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Bell,
   ChevronRight,
-  CreditCard,
   Gift,
   Heart,
   HelpCircle,
@@ -15,11 +14,12 @@ import {
   ShieldCheck,
   Star,
   UserRound,
-  WalletCards,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { clearCustomerSession, readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
+import { formatRupees } from "@/lib/pricing";
+import { getRewardState, rewardMilestones } from "@/lib/rewards";
 
 type CustomerAddress = {
   id: string;
@@ -47,15 +47,17 @@ type CustomerProfile = {
   addresses: CustomerAddress[];
   loyalty?: { points: number; tier: string } | null;
   orders: CustomerOrder[];
+  rewardOrderCount?: number;
+  rewardTier?: string;
 };
 
 const accountRows = [
   { title: "Addresses", subtitle: "Home, office, delivery instructions", icon: MapPin, href: "/address" },
-  { title: "Payment Methods", subtitle: "Cards, UPI, wallets, COD preference", icon: CreditCard, href: "/checkout" },
   { title: "My Orders", subtitle: "Live tracking, invoices, reorders", icon: PackageCheck, href: "/orders" },
   { title: "Wishlist", subtitle: "Saved dishes and repeat favourites", icon: Heart, href: "/wishlist" },
-  { title: "Notifications", subtitle: "WhatsApp, SMS, offer alerts", icon: Bell, href: "/account" },
-  { title: "Privacy and Security", subtitle: "OTP login, devices, data controls", icon: ShieldCheck, href: "/account" },
+  { title: "Rewards", subtitle: "Order milestones and reward coupons", icon: Gift, href: "/loyalty" },
+  { title: "Notifications", subtitle: "WhatsApp, SMS, offer alerts", icon: Bell, href: "/notifications" },
+  { title: "Privacy and Security", subtitle: "OTP login, devices, data controls", icon: ShieldCheck, href: "/privacy-security" },
 ];
 
 export function AccountClient() {
@@ -65,6 +67,7 @@ export function AccountClient() {
   const [profile, setProfile] = useState<CustomerProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   useEffect(() => {
     function refreshSession() {
@@ -120,8 +123,10 @@ export function AccountClient() {
   const addresses = useMemo(() => profile?.addresses ?? [], [profile?.addresses]);
   const orders = useMemo(() => profile?.orders ?? [], [profile?.orders]);
   const ltv = useMemo(() => orders.reduce((total, order) => total + order.grandTotal, 0), [orders]);
-  const tier = profile?.loyalty?.tier || "Starter";
-  const points = profile?.loyalty?.points ?? 0;
+  const rewardOrderCount = profile?.rewardOrderCount ?? profile?.loyalty?.points ?? orders.length;
+  const rewardState = getRewardState(rewardOrderCount);
+  const tier = profile?.rewardTier || rewardState.tier;
+  const unlockedRewardTotal = rewardState.completed.reduce((total, milestone) => total + milestone.value, 0);
 
   if (!sessionReady || !session) {
     return <main className="min-h-screen bg-white" />;
@@ -152,9 +157,9 @@ export function AccountClient() {
 
         <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-2xl border border-border bg-[#fff4f5] text-center">
           {[
-            [loading ? "..." : String(orders.length), "Orders"],
-            [String(points), "Points"],
-            [`Rs ${ltv.toLocaleString("en-IN")}`, "LTV"],
+            [loading ? "..." : String(rewardOrderCount), "Orders"],
+            [`${Math.round(rewardState.progress)}%`, "Reward"],
+            [formatRupees(ltv), "Spent"],
           ].map(([value, label]) => (
             <div key={label} className="min-w-0 border-r border-border px-1.5 py-3 last:border-r-0 sm:px-2">
               <p className="truncate text-base font-black text-red sm:text-lg">{value}</p>
@@ -167,7 +172,7 @@ export function AccountClient() {
       <section className="mt-5 grid gap-3 sm:grid-cols-3">
         {[
           ["/offers", Gift, "Coupons", "Active offers"],
-          ["/loyalty", WalletCards, "Wallet", `${points} rewards`],
+          ["/loyalty", Star, "Rewards", `${rewardOrderCount} orders`],
           ["/support", HelpCircle, "Support", "Help center"],
         ].map(([href, Icon, title, subtitle]) => (
           <Link key={String(title)} href={String(href)} className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-border sm:p-4">
@@ -231,26 +236,88 @@ export function AccountClient() {
         </div>
       </section>
 
-      <section className="mt-6 rounded-[24px] bg-red p-5 text-white shadow-[0_14px_34px_rgba(214,0,50,0.18)]">
-        <h2 className="text-xl font-black">Next reward</h2>
-        <p className="mt-1 text-sm font-bold text-white/75">Your live loyalty tier is {tier}. Keep ordering to unlock more rewards.</p>
-        <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/20">
-          <div className="h-full rounded-full bg-white" style={{ width: `${Math.min(100, points % 100)}%` }} />
+      <section className="mt-6 overflow-hidden rounded-[24px] bg-red p-5 text-white shadow-[0_14px_34px_rgba(214,0,50,0.18)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-black">Next reward</h2>
+            <p className="mt-1 text-sm font-bold text-white/75">
+              {rewardState.next
+                ? `${rewardState.ordersToNext} more orders unlock ${formatRupees(rewardState.next.value)} coupon.`
+                : "All reward coupons are unlocked."}
+            </p>
+          </div>
+          <span className="rounded-2xl bg-white/16 px-3 py-2 text-right text-xs font-black">
+            <span className="block text-lg leading-none">{rewardOrderCount}</span>
+            orders
+          </span>
         </div>
+        <div className="mt-5 h-3 overflow-hidden rounded-full bg-white/20">
+          <div className="wt-reward-progress h-full rounded-full bg-white" style={{ width: `${rewardState.progress}%` }} />
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          {rewardMilestones.map((milestone) => {
+            const unlocked = rewardOrderCount >= milestone.orders;
+            return (
+              <Link
+                key={milestone.code}
+                href="/offers"
+                className={`rounded-2xl px-3 py-3 text-center ring-1 ring-white/20 ${unlocked ? "bg-white text-red" : "bg-white/10 text-white"}`}
+              >
+                <span className="block text-sm font-black">{formatRupees(milestone.value)}</span>
+                <span className="mt-1 block text-[10px] font-black">{milestone.orders} orders</span>
+              </Link>
+            );
+          })}
+        </div>
+        <p className="mt-4 text-xs font-black text-white/75">
+          {unlockedRewardTotal ? `${formatRupees(unlockedRewardTotal)} reward value unlocked in Coupons.` : "Place orders to start unlocking reward coupons."}
+        </p>
       </section>
 
       {message ? <p className="mt-4 rounded-2xl bg-white p-3 text-center text-xs font-black text-muted">{message}</p> : null}
 
       <button
         type="button"
-        onClick={() => {
-          clearCustomerSession();
-          setProfile(null);
-        }}
+        onClick={() => setConfirmLogout(true)}
         className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-white font-black text-red"
       >
         <LogOut size={18} /> Logout
       </button>
+
+      {confirmLogout ? (
+        <div className="fixed inset-0 z-[80] grid place-items-center bg-charcoal/45 p-5">
+          <section className="w-full max-w-[360px] rounded-[24px] bg-white p-5 text-center shadow-2xl">
+            <span className="mx-auto grid h-13 w-13 place-items-center rounded-full bg-[#fff4f5] text-red">
+              <LogOut size={24} />
+            </span>
+            <h2 className="mt-4 text-xl font-black text-charcoal">Logout from Wah Thali?</h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-muted">
+              You will need to sign in again to view orders, rewards, addresses, and coupons linked to your account.
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmLogout(false)}
+                className="h-11 rounded-xl border border-border bg-white text-sm font-black text-charcoal"
+              >
+                Stay logged in
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  clearCustomerSession();
+                  setProfile(null);
+                  setConfirmLogout(false);
+                  router.replace("/login?next=/account");
+                }}
+                className="h-11 rounded-xl bg-red text-sm font-black text-white"
+              >
+                Logout
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

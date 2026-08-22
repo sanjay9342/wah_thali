@@ -24,11 +24,13 @@ import {
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MobileNav } from "@/components/mobile-nav";
+import { OrderTrackAutoRefresh } from "@/components/order-track-auto-refresh";
 import { OrderReviewForm } from "@/components/order-review-form";
 import { OrderReorderButton } from "@/components/order-reorder-button";
 import { getRestaurantSettingsFromDb } from "@/lib/db";
 import { formatRupees } from "@/lib/pricing";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
+import { formatIstDate, formatIstTime } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +62,7 @@ export default async function TrackPage({
       customer: { select: { id: true, name: true, mobile: true, email: true } },
       items: true,
       payments: true,
+      reviews: true,
       timeline: { orderBy: { createdAt: "asc" } },
     },
   });
@@ -72,9 +75,10 @@ export default async function TrackPage({
   const activeIndex = getActiveStepIndex(order.status, visibleSteps);
   const currentStep = visibleSteps[activeIndex] ?? visibleSteps[0];
   const currentIcon = cancelled ? XCircle : getHeroIcon(order.status, currentStep.icon);
+  const palette = getTrackingPalette(order.status);
   const progress = cancelled ? 0 : Math.round(((activeIndex + 1) / visibleSteps.length) * 100);
-  const placedAt = order.createdAt.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
-  const placedDate = order.createdAt.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  const placedAt = formatIstTime(toIsoTimestamp(order.createdAt));
+  const placedDate = formatIstDate(toIsoTimestamp(order.createdAt), "short");
   const eta = formatEta(extractTimelineValue(notes, "ETA"), restaurantSettings.defaultPrepMinutes);
   const deliveryLocation = extractTimelineValue(notes, "Address") ?? extractTimelineValue(notes, "Location") ?? "Delivery address saved with this order.";
   const deliveryNote = extractTimelineValue(notes, "Customer note");
@@ -83,14 +87,16 @@ export default async function TrackPage({
   const latestUpdate = getLatestCustomerUpdate(notes);
   const statusCopy = getStatusCopy(order.status, placedAt, eta);
   const itemCount = order.items.reduce((total, item) => total + item.quantity, 0);
+  const reviewItems = getReviewItems(order.items);
   const payment = order.payments[0];
   const paymentSummary = getPaymentSummary(payment);
   const whatsappLink = `https://wa.me/${restaurantSettings.whatsappNumber}?text=${encodeURIComponent(`I need help with order ${order.orderNumber}`)}`;
 
   return (
     <>
-      <main className="min-h-screen bg-[#efeaf3] text-charcoal">
-        <div className="mx-auto min-h-screen max-w-[430px] bg-[#f7f8fb] shadow-[0_24px_80px_rgba(34,31,32,0.14)] lg:max-w-5xl lg:bg-white">
+      <OrderTrackAutoRefresh status={order.status} />
+      <main className="min-h-screen bg-[#fff4f5] text-charcoal">
+        <div className="mx-auto min-h-screen max-w-[430px] bg-[#fffafa] shadow-[0_24px_80px_rgba(34,31,32,0.14)] lg:max-w-5xl lg:bg-white">
           <div className="sticky top-0 z-30 flex h-[68px] items-center justify-between border-b border-[#efe1e5] bg-white/96 px-5 backdrop-blur">
             <Link href="/orders" className="grid h-10 w-10 place-items-center rounded-full bg-white text-charcoal shadow-sm ring-1 ring-[#eadfe3]" aria-label="Back to orders">
               <ArrowLeft size={20} strokeWidth={2.5} />
@@ -103,38 +109,33 @@ export default async function TrackPage({
 
           <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6 lg:p-6">
             <div className="min-w-0">
-              <section className={`relative overflow-hidden rounded-b-[30px] px-5 pb-6 pt-5 text-white lg:rounded-[26px] ${cancelled ? "bg-[#3f4652]" : "bg-[#a50027]"}`}>
-                <div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-white/12" />
-                <div className="absolute right-6 top-24 h-16 w-16 rounded-full bg-[#f5a3b6]/18" />
+              <section className={`relative overflow-hidden rounded-b-[30px] px-5 pb-6 pt-5 lg:rounded-[26px] ${palette.hero}`}>
+                <div className={`absolute -right-12 -top-12 h-40 w-40 rounded-full ${palette.orbLarge}`} />
+                <div className={`absolute right-6 top-24 h-16 w-16 rounded-full ${palette.orbSmall}`} />
                 <div className="relative flex items-start justify-between gap-5">
                   <div className="min-w-0">
-                    <p className="text-[12px] font-black text-white/76">Order {order.orderNumber}</p>
-                    <h2 className="mt-3 max-w-[260px] text-[34px] font-black leading-[0.98] sm:text-[38px]">
+                    <p className={`text-[12px] font-black ${palette.eyebrow}`}>Order {order.orderNumber}</p>
+                    <h2 className={`mt-3 max-w-[260px] text-[34px] font-black leading-[0.98] sm:text-[38px] ${palette.title}`}>
                       {cancelled ? "Order cancelled" : statusCopy.title}
                     </h2>
-                    <p className="mt-3 max-w-[285px] text-[13px] font-bold leading-5 text-white/86">
+                    <p className={`mt-3 max-w-[285px] text-[13px] font-bold leading-5 ${palette.body}`}>
                       {cancelled ? "This order was cancelled. You can reorder the same dishes whenever you are ready." : statusCopy.body}
                     </p>
                   </div>
-                  <div className="relative grid h-[78px] w-[78px] shrink-0 place-items-center rounded-[24px] bg-white/16 ring-1 ring-white/20 wt-track-float">
-                    {!cancelled ? <span className="absolute inset-[-7px] rounded-[28px] border border-white/18 wt-track-pulse" /> : null}
+                  <div className={`relative grid h-[78px] w-[78px] shrink-0 place-items-center rounded-[24px] wt-track-float ${palette.iconBox}`}>
+                    {!cancelled ? <span className={`absolute inset-[-7px] rounded-[28px] border wt-track-pulse ${palette.pulse}`} /> : null}
                     <IconGlyph icon={currentIcon} size={36} strokeWidth={2.6} />
                   </div>
                 </div>
 
                 {!cancelled ? (
                   <div className="relative mt-7">
-                    <div className="flex items-center justify-between text-[12px] font-black text-white/78">
+                    <div className={`flex items-center justify-between text-[12px] font-black ${palette.progressLabel}`}>
                       <span>{currentStep.label}</span>
-                      <span>{progress}%</span>
+                      <span>{getProgressLabel(order.status)}</span>
                     </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/22">
-                      <div className="h-full rounded-full bg-white wt-track-progress" style={{ width: `${progress}%` }} />
-                    </div>
-                    <div className="mt-3 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${visibleSteps.length}, minmax(0, 1fr))` }}>
-                      {visibleSteps.map((step, index) => (
-                        <span key={step.status} className={`h-1.5 rounded-full ${index <= activeIndex ? "bg-white" : "bg-white/22"}`} />
-                      ))}
+                    <div className={`mt-2 h-2 overflow-hidden rounded-full ${palette.progressTrack}`}>
+                      <div className={`h-full rounded-full wt-track-progress ${palette.progressBar}`} style={{ width: `${progress}%` }} aria-hidden="true" />
                     </div>
                   </div>
                 ) : null}
@@ -142,10 +143,10 @@ export default async function TrackPage({
 
               <section className="px-5 pt-5 lg:px-0">
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <MetricCard icon={Timer} label="ETA" value={eta} tone="rose" />
-                  <MetricCard icon={Sparkles} label="Items" value={`${itemCount} ${itemCount === 1 ? "item" : "items"}`} tone="blue" />
-                  <MetricCard icon={Clock} label="Placed" value={placedAt} subValue={placedDate} tone="amber" />
-                  <MetricCard icon={ReceiptText} label="Total" value={formatRupees(order.grandTotal)} tone="green" />
+                  <MetricCard icon={Timer} label="ETA" value={eta} />
+                  <MetricCard icon={Sparkles} label="Items" value={`${itemCount} ${itemCount === 1 ? "item" : "items"}`} />
+                  <MetricCard icon={Clock} label="Placed" value={placedAt} subValue={placedDate} />
+                  <MetricCard icon={ReceiptText} label="Total" value={formatRupees(order.grandTotal)} />
                 </div>
 
                 <div className="mt-4 overflow-hidden rounded-[22px] bg-white shadow-sm ring-1 ring-[#eadfe3]">
@@ -155,34 +156,34 @@ export default async function TrackPage({
                 </div>
 
                 {latestUpdate ? (
-                  <div className="mt-4 rounded-[22px] border border-[#f1dce1] bg-[#fff8f9] p-4 text-sm font-bold leading-5 text-maroon">
+                  <div className={`mt-4 rounded-[22px] border p-4 text-sm font-bold leading-5 ${palette.notice}`}>
                     <p>{latestUpdate}</p>
                   </div>
                 ) : null}
 
-                <section className="mt-5 rounded-[24px] bg-white p-5 shadow-sm ring-1 ring-[#eadfe3]">
-                  <h2 className="text-[19px] font-black text-charcoal">Live progress</h2>
-                  <div className="mt-5 grid gap-3">
+                <section className="mt-5 rounded-[22px] bg-white p-4 shadow-sm ring-1 ring-[#f1dce1]">
+                  <h2 className="text-[16px] font-black text-charcoal">Live progress</h2>
+                  <div className="mt-4 grid gap-2.5">
                     {visibleSteps.map((step, index) => {
                       const event = getStepEvent(order.timeline, step.status);
                       const done = !cancelled && index <= activeIndex;
                       const active = !cancelled && index === activeIndex;
 
                       return (
-                        <div key={step.status} className="grid grid-cols-[42px_minmax(0,1fr)] gap-3">
+                        <div key={step.status} className="grid grid-cols-[34px_minmax(0,1fr)] gap-2.5">
                           <div className="grid justify-items-center">
-                            <span className={`grid h-10 w-10 place-items-center rounded-2xl ${done ? "bg-maroon text-white" : "bg-[#f4f5f8] text-muted"} ${active ? "wt-step-active" : ""}`}>
-                              <IconGlyph icon={step.icon} size={18} strokeWidth={2.6} />
+                            <span className={`grid h-8 w-8 place-items-center rounded-xl ${done ? palette.stepDone : "bg-[#f4f5f8] text-muted"} ${active ? "wt-step-active" : ""}`}>
+                              <IconGlyph icon={step.icon} size={15} strokeWidth={2.6} />
                             </span>
-                            {index < visibleSteps.length - 1 ? <span className={`mt-2 h-8 w-0.5 rounded-full ${done ? "bg-maroon/40" : "bg-[#e5e7eb]"}`} /> : null}
+                            {index < visibleSteps.length - 1 ? <span className={`mt-1.5 h-6 w-0.5 rounded-full ${done ? palette.lineDone : "bg-[#e5e7eb]"}`} /> : null}
                           </div>
-                          <div className={`min-w-0 rounded-[18px] px-4 py-3 ${active ? "bg-[#fff4f5] ring-1 ring-[#f1dce1]" : "bg-[#f7f8fb]"}`}>
+                          <div className={`min-w-0 rounded-[14px] px-3 py-2.5 ${active ? palette.stepActive : "bg-[#f7f8fb]"}`}>
                             <div className="flex items-start justify-between gap-3">
                               <span className="min-w-0">
-                                <span className="block text-[15px] font-black text-charcoal">{step.label}</span>
+                                <span className="block text-[13px] font-black text-charcoal">{step.label}</span>
                               </span>
-                              <span className="shrink-0 text-[12px] font-black text-maroon">
-                                {event ? event.createdAt.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : done ? "Done" : "Soon"}
+                              <span className="shrink-0 text-[11px] font-black text-maroon">
+                                {event ? formatIstTime(toIsoTimestamp(event.createdAt)) : done ? "Done" : "Soon"}
                               </span>
                             </div>
                           </div>
@@ -238,7 +239,7 @@ export default async function TrackPage({
                 </Link>
               </section>
 
-              {order.status === "DELIVERED" && order.items[0] ? (
+              {order.status === "DELIVERED" && reviewItems.length ? (
                 <section className="mt-5 rounded-[24px] bg-white p-5 shadow-sm ring-1 ring-[#eadfe3]">
                   <h2 className="flex items-center gap-2 text-lg font-black text-charcoal">
                     <Star className="text-maroon" size={19} /> Rate your meal
@@ -246,7 +247,15 @@ export default async function TrackPage({
                   <p className="mt-2 text-sm font-semibold leading-6 text-muted">
                     Your feedback helps Wah Thali serve you better next time.
                   </p>
-                  <OrderReviewForm orderNumber={order.orderNumber} productId={order.items[0].productId} productName={order.items[0].name} />
+                  {reviewItems.map((item) => (
+                    <OrderReviewForm
+                      key={item.productId}
+                      orderNumber={order.orderNumber}
+                      productId={item.productId}
+                      productName={item.name}
+                      existingReview={order.reviews.find((review) => review.productId === item.productId)}
+                    />
+                  ))}
                 </section>
               ) : null}
             </aside>
@@ -263,24 +272,15 @@ function MetricCard({
   label,
   value,
   subValue,
-  tone,
 }: {
   icon: LucideIcon;
   label: string;
   value: string;
   subValue?: string;
-  tone: "rose" | "blue" | "amber" | "green";
 }) {
-  const tones = {
-    rose: "bg-[#fff4f5] text-maroon",
-    blue: "bg-[#eef6ff] text-[#1769c2]",
-    amber: "bg-[#fff7e8] text-[#9a5b00]",
-    green: "bg-[#effaf4] text-[#0f7a45]",
-  };
-
   return (
-    <div className="min-w-0 rounded-[20px] bg-white p-4 shadow-sm ring-1 ring-[#eadfe3]">
-      <span className={`grid h-9 w-9 place-items-center rounded-xl ${tones[tone]}`}>
+    <div className="min-w-0 rounded-[20px] bg-white p-4 shadow-sm ring-1 ring-[#f1dce1]">
+      <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#fff4f5] text-maroon">
         <IconGlyph icon={icon} size={18} strokeWidth={2.6} />
       </span>
       <p className="mt-3 text-[12px] font-black text-muted">{label}</p>
@@ -354,12 +354,36 @@ function getStepEvent(timeline: { toStatus: string; note?: string | null; create
   return timeline.find((item) => item.toStatus === status);
 }
 
+function getReviewItems(items: { productId: string; name: string }[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.productId)) return false;
+    seen.add(item.productId);
+    return true;
+  });
+}
+
+function toIsoTimestamp(value: Date | string) {
+  return value instanceof Date ? value.toISOString() : value;
+}
+
 function extractTimelineValue(notes: string[], label: string) {
   const joined = notes.join(" | ");
   const labels = ["Receiver", "Address", "Address type", "Customer note", "Location", "GPS", "Distance", "ETA", "Coupon"];
   const nextLabels = labels.filter((item) => item !== label).join("|");
   const pattern = new RegExp(`${label}:\\s*(.*?)(?=\\s(?:${nextLabels}):|\\sCoupon\\s|\\s\\|\\s|$)`, "i");
   return joined.match(pattern)?.[1]?.trim().replace(/[.]$/, "");
+}
+
+function getProgressLabel(status: string) {
+  if (status === "PENDING_PAYMENT") return "Waiting";
+  if (status === "NEW") return "Placed";
+  if (status === "CONFIRMED") return "Accepted";
+  if (status === "PREPARING") return "Cooking";
+  if (status === "PACKED" || status === "READY_FOR_PICKUP") return "Packed";
+  if (status === "OUT_FOR_DELIVERY") return "On the way";
+  if (status === "DELIVERED") return "Completed";
+  return formatStatus(status);
 }
 
 function formatEta(value: string | undefined, fallbackMinutes: number) {
@@ -408,6 +432,166 @@ function getStatusCopy(status: string, placedAt: string, eta: string) {
     default:
       return { title: formatStatus(status), body: "We are updating your order live." };
   }
+}
+
+function getTrackingPalette(status: string) {
+  if (status === "PENDING_PAYMENT") {
+    return {
+      hero: "bg-[#fff7e8] text-[#4b2b00] ring-1 ring-[#f6d999]",
+      title: "text-[#4b2b00]",
+      body: "text-[#77510c]",
+      eyebrow: "text-[#9a5b00]",
+      iconBox: "bg-white/70 text-[#9a5b00] ring-1 ring-[#f6d999]",
+      pulse: "border-[#f0b44d]/45",
+      progressLabel: "text-[#7a4100]",
+      progressTrack: "bg-[#f5dfae]",
+      progressBar: "bg-[#f59e0b]",
+      notice: "border-[#f6d999] bg-[#fffaf0] text-[#7a4100]",
+      stepDone: "bg-[#f59e0b] text-white",
+      lineDone: "bg-[#f59e0b]/35",
+      stepActive: "bg-[#fff7e8] ring-1 ring-[#f6d999]",
+      orbLarge: "bg-[#f7c453]/28",
+      orbSmall: "bg-white/58",
+    };
+  }
+
+  if (status === "CONFIRMED") {
+    return {
+      hero: "bg-[#eef3ff] text-[#172554] ring-1 ring-[#cad7ff]",
+      title: "text-[#172554]",
+      body: "text-[#334b85]",
+      eyebrow: "text-[#1e3a8a]",
+      iconBox: "bg-white/72 text-[#2563eb] ring-1 ring-[#cad7ff]",
+      pulse: "border-[#9db5f7]/55",
+      progressLabel: "text-[#1e3a8a]",
+      progressTrack: "bg-[#dbe5ff]",
+      progressBar: "bg-[#2563eb]",
+      notice: "border-[#cad7ff] bg-[#f6f8ff] text-[#1e3a8a]",
+      stepDone: "bg-[#2563eb] text-white",
+      lineDone: "bg-[#2563eb]/35",
+      stepActive: "bg-[#eef3ff] ring-1 ring-[#cad7ff]",
+      orbLarge: "bg-[#9db5f7]/28",
+      orbSmall: "bg-white/60",
+    };
+  }
+
+  if (status === "PREPARING") {
+    return {
+      hero: "bg-[#fff4df] text-[#4a2800] ring-1 ring-[#ffd08a]",
+      title: "text-[#4a2800]",
+      body: "text-[#85520c]",
+      eyebrow: "text-[#a95d00]",
+      iconBox: "bg-white/72 text-[#d97706] ring-1 ring-[#ffd08a]",
+      pulse: "border-[#f6b44b]/55",
+      progressLabel: "text-[#8a4b00]",
+      progressTrack: "bg-[#ffe2ae]",
+      progressBar: "bg-[#d97706]",
+      notice: "border-[#ffd08a] bg-[#fff8ec] text-[#8a4b00]",
+      stepDone: "bg-[#d97706] text-white",
+      lineDone: "bg-[#d97706]/35",
+      stepActive: "bg-[#fff4df] ring-1 ring-[#ffd08a]",
+      orbLarge: "bg-[#f59e0b]/22",
+      orbSmall: "bg-white/58",
+    };
+  }
+
+  if (status === "PACKED" || status === "READY_FOR_PICKUP") {
+    return {
+      hero: "bg-[#e8fffb] text-[#0f3f3c] ring-1 ring-[#b7e5dd]",
+      title: "text-[#0f3f3c]",
+      body: "text-[#22635e]",
+      eyebrow: "text-[#115e59]",
+      iconBox: "bg-white/72 text-[#0f766e] ring-1 ring-[#b7e5dd]",
+      pulse: "border-[#88c8c0]/55",
+      progressLabel: "text-[#115e59]",
+      progressTrack: "bg-[#c9f3eb]",
+      progressBar: "bg-[#0f766e]",
+      notice: "border-[#b7e5dd] bg-[#f2fffc] text-[#115e59]",
+      stepDone: "bg-[#0f766e] text-white",
+      lineDone: "bg-[#0f766e]/35",
+      stepActive: "bg-[#ecfffb] ring-1 ring-[#b7e5dd]",
+      orbLarge: "bg-[#88c8c0]/28",
+      orbSmall: "bg-white/58",
+    };
+  }
+
+  if (status === "OUT_FOR_DELIVERY") {
+    return {
+      hero: "bg-[#e7f5ff] text-[#0b315f] ring-1 ring-[#b9ddff]",
+      title: "text-[#0b315f]",
+      body: "text-[#285f95]",
+      eyebrow: "text-[#1769c2]",
+      iconBox: "bg-white/72 text-[#1769c2] ring-1 ring-[#b9ddff]",
+      pulse: "border-[#8bc7ff]/55",
+      progressLabel: "text-[#1769c2]",
+      progressTrack: "bg-[#cdeaff]",
+      progressBar: "bg-[#1769c2]",
+      notice: "border-[#b9ddff] bg-[#f3faff] text-[#1769c2]",
+      stepDone: "bg-[#1769c2] text-white",
+      lineDone: "bg-[#1769c2]/35",
+      stepActive: "bg-[#e7f5ff] ring-1 ring-[#b9ddff]",
+      orbLarge: "bg-[#8bc7ff]/28",
+      orbSmall: "bg-white/60",
+    };
+  }
+
+  if (status === "DELIVERED") {
+    return {
+      hero: "bg-[#effaf4] text-[#0b3d25] ring-1 ring-[#c7ecd2]",
+      title: "text-[#0b3d25]",
+      body: "text-[#2c6344]",
+      eyebrow: "text-[#0f7a45]",
+      iconBox: "bg-white/72 text-[#16a34a] ring-1 ring-[#c7ecd2]",
+      pulse: "border-[#a8d8b8]/55",
+      progressLabel: "text-[#0f7a45]",
+      progressTrack: "bg-[#d4f0dd]",
+      progressBar: "bg-[#16a34a]",
+      notice: "border-[#c7ecd2] bg-[#f5fff8] text-[#0f7a45]",
+      stepDone: "bg-[#16a34a] text-white",
+      lineDone: "bg-[#16a34a]/35",
+      stepActive: "bg-[#effaf4] ring-1 ring-[#c7ecd2]",
+      orbLarge: "bg-[#a8d8b8]/28",
+      orbSmall: "bg-white/60",
+    };
+  }
+
+  if (status === "CANCELLED") {
+    return {
+      hero: "bg-[#eef2f7] text-[#253244] ring-1 ring-[#d8dde7]",
+      title: "text-[#253244]",
+      body: "text-[#475569]",
+      eyebrow: "text-[#64748b]",
+      iconBox: "bg-white/72 text-[#64748b] ring-1 ring-[#d8dde7]",
+      pulse: "border-[#c8cdd7]/55",
+      progressLabel: "text-[#475569]",
+      progressTrack: "bg-[#d8dde7]",
+      progressBar: "bg-[#64748b]",
+      notice: "border-[#d8dde7] bg-[#f8fafc] text-[#475569]",
+      stepDone: "bg-[#64748b] text-white",
+      lineDone: "bg-[#64748b]/35",
+      stepActive: "bg-[#eef2f7] ring-1 ring-[#d8dde7]",
+      orbLarge: "bg-[#c8cdd7]/36",
+      orbSmall: "bg-white/60",
+    };
+  }
+
+  return {
+    hero: "bg-[#fff4f5] text-[#4a0012] ring-1 ring-[#f1dce1]",
+    title: "text-[#4a0012]",
+    body: "text-[#7b2338]",
+    eyebrow: "text-maroon",
+    iconBox: "bg-white/72 text-maroon ring-1 ring-[#f1dce1]",
+    pulse: "border-maroon/30",
+    progressLabel: "text-maroon",
+    progressTrack: "bg-[#f2cbd4]",
+    progressBar: "bg-maroon",
+    notice: "border-[#f1dce1] bg-[#fff8f9] text-maroon",
+    stepDone: "bg-maroon text-white",
+    lineDone: "bg-maroon/35",
+    stepActive: "bg-[#fff4f5] ring-1 ring-[#f1dce1]",
+    orbLarge: "bg-[#f5a3b6]/25",
+    orbSmall: "bg-white/58",
+  };
 }
 
 function getPaymentSummary(payment?: { provider: string; status: string }) {

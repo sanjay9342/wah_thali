@@ -1,8 +1,10 @@
 "use client";
 
 import { Check, Copy, Gift } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 import { formatRupees } from "@/lib/pricing";
+import { formatIstDate } from "@/lib/time";
 import type { Coupon } from "@/lib/types";
 
 const couponPalettes = [
@@ -82,6 +84,34 @@ const couponPalettes = [
 
 export function OffersClient({ coupons }: { coupons: Coupon[] }) {
   const [copiedCode, setCopiedCode] = useState("");
+  const [session, setSession] = useState<CustomerSession | null>(null);
+  const [rewardOrderCount, setRewardOrderCount] = useState(0);
+
+  useEffect(() => {
+    function refreshSession() {
+      setSession(readCustomerSession());
+    }
+
+    refreshSession();
+    return subscribeCustomerSession(refreshSession);
+  }, []);
+
+  useEffect(() => {
+    const mobile = session?.mobile ?? "";
+    if (!mobile) return;
+    let cancelled = false;
+
+    async function loadRewards() {
+      const response = await fetch(`/api/customers/profile?mobile=${encodeURIComponent(mobile)}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!cancelled && response.ok) setRewardOrderCount(Number(data.customer?.rewardOrderCount ?? data.customer?.loyalty?.points ?? 0));
+    }
+
+    void loadRewards();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.mobile]);
 
   async function copyCode(code: string) {
     try {
@@ -112,6 +142,8 @@ export function OffersClient({ coupons }: { coupons: Coupon[] }) {
             coupon={coupon}
             palette={getCouponPalette(coupon.code)}
             copied={copiedCode === coupon.code}
+            eligible={isOfferEligible(coupon, session?.mobile ? rewardOrderCount : 0)}
+            rewardOrderCount={session?.mobile ? rewardOrderCount : 0}
             onCopy={() => copyCode(coupon.code)}
           />
         )) : (
@@ -132,11 +164,15 @@ function CouponTicket({
   coupon,
   palette,
   copied,
+  eligible,
+  rewardOrderCount,
   onCopy,
 }: {
   coupon: Coupon;
   palette: (typeof couponPalettes)[number];
   copied: boolean;
+  eligible: boolean;
+  rewardOrderCount: number;
   onCopy: () => void;
 }) {
   return (
@@ -187,6 +223,11 @@ function CouponTicket({
         <span className="mt-2 inline-flex rounded-[7px] px-2.5 py-1.5 text-[10px] font-black" style={{ backgroundColor: palette.pill, color: palette.ink }}>
           {getCouponAudienceLabel(coupon)}
         </span>
+        {!eligible ? (
+          <p className="mt-2 text-[11px] font-black leading-4 text-maroon">
+            {getLockedOfferMessage(coupon, rewardOrderCount)}
+          </p>
+        ) : null}
 
         <div className="mt-3 grid gap-1 border-t border-[#eef1f6] pt-3 text-[10px] font-bold leading-4 text-muted sm:grid-cols-2">
           <span>{coupon.minOrder > 0 ? `Min. Order: ${formatRupees(coupon.minOrder)}` : "No minimum order"}</span>
@@ -200,8 +241,20 @@ function CouponTicket({
 
 function getCouponAudienceLabel(coupon: Coupon) {
   if (coupon.audience === "VIP") return "VIP customers only";
-  if (coupon.audience === "POINTS") return `${coupon.minPoints ?? 0}+ loyalty points`;
+  if (coupon.audience === "POINTS") return `${coupon.minPoints ?? 0}+ placed orders`;
   return "All customers";
+}
+
+function isOfferEligible(coupon: Coupon, rewardOrderCount: number) {
+  if (coupon.audience === "POINTS") return rewardOrderCount >= (coupon.minPoints ?? 0);
+  return true;
+}
+
+function getLockedOfferMessage(coupon: Coupon, rewardOrderCount: number) {
+  if (coupon.audience === "POINTS") {
+    return `Place ${Math.max((coupon.minPoints ?? 0) - rewardOrderCount, 0)} more orders to unlock.`;
+  }
+  return "Sign in or check your account eligibility.";
 }
 
 function getCouponPalette(code: string) {
@@ -225,9 +278,5 @@ function getCouponDescription(coupon: Coupon) {
 }
 
 function formatCouponDate(value: string) {
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(new Date(value));
+  return formatIstDate(value);
 }

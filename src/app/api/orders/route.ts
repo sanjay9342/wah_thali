@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server";
+import type { PaymentStatus, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { getCouponsFromDb, getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
 import { getDeliveryCoverage } from "@/lib/delivery-radius";
+import { normalizeEmail } from "@/lib/customer-auth";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { createRazorpayOrder } from "@/lib/razorpay";
+import { notifyOrderStatus } from "@/lib/customer-messaging";
 import { getStoreOrderingStatus } from "@/lib/store-hours";
-import type { CartLine, RestaurantSettings } from "@/lib/types";
+import type { CartLine, OrderStatus, RestaurantSettings } from "@/lib/types";
 import { isCouponEligibleForCustomer, type CouponCustomerContext } from "@/lib/pricing";
+import { getRewardTier } from "@/lib/rewards";
+
+const paidOnlineStatuses: PaymentStatus[] = ["PAID", "AUTHORIZED"];
 
 const orderItemSchema = z.object({
   productId: z.string().min(1),
@@ -18,6 +24,7 @@ const orderItemSchema = z.object({
 const orderSchema = z.object({
   customerMobile: z.string().min(8),
   customerName: z.string().min(1),
+  customerEmail: z.string().email().optional().or(z.literal("")),
   couponCode: z.string().trim().optional(),
   receiverName: z.string().trim().optional(),
   receiverMobile: z.string().trim().optional(),
@@ -101,18 +108,41 @@ export async function GET() {
     return NextResponse.json({ orders: [], configured: false });
   }
 
+  const baseInclude = {
+    customer: { select: { id: true, name: true, mobile: true, email: true } },
+    items: true,
+    payments: true,
+    timeline: { orderBy: { createdAt: "asc" as const } },
+  };
+
+  try {
+    const orders = await prisma.order.findMany({
+      where: visiblePlacedOrderWhere(),
+      orderBy: { createdAt: "desc" },
+      include: {
+        ...baseInclude,
+        reviews: {
+          include: { product: { select: { name: true } } },
+          orderBy: { createdAt: "desc" as const },
+        },
+      },
+      take: 100,
+    });
+
+    return NextResponse.json({ orders, configured: true });
+  } catch (error) {
+    if (!isMissingReviewOrderColumn(error)) throw error;
+    console.error("Review.orderId is missing in the database. Returning orders without review summaries.", error);
+  }
+
   const orders = await prisma.order.findMany({
+    where: visiblePlacedOrderWhere(),
     orderBy: { createdAt: "desc" },
-    include: {
-      customer: { select: { id: true, name: true, mobile: true, email: true } },
-      items: true,
-      payments: true,
-      timeline: { orderBy: { createdAt: "asc" } },
-    },
+    include: baseInclude,
     take: 100,
   });
 
-  return NextResponse.json({ orders, configured: true });
+  return NextResponse.json({ orders: orders.map((order) => ({ ...order, reviews: [] })), configured: true });
 }
 
 export async function POST(request: Request) {
@@ -126,18 +156,24 @@ export async function POST(request: Request) {
   }
 
   const data = parsed.data;
+  const customerEmail = data.customerEmail ? normalizeEmail(data.customerEmail) : "";
   const settings = await getRestaurantSettingsFromDb();
   const orderingStatus = getStoreOrderingStatus(settings);
   const existingCustomer = await prisma.customer.findUnique({
     where: { mobile: data.customerMobile },
     select: {
-      loyalty: { select: { points: true } },
       tags: { include: { tag: { select: { name: true } } } },
+    },
+  });
+  const rewardOrderCount = await prisma.order.count({
+    where: {
+      customer: { mobile: data.customerMobile },
+      ...visiblePlacedOrderWhere(),
     },
   });
   const couponCustomer = {
     isVip: existingCustomer?.tags.some((assignment) => assignment.tag.name === "VIP") ?? false,
-    points: existingCustomer?.loyalty?.points ?? 0,
+    points: rewardOrderCount,
   };
 
   if (orderingStatus.unavailable) {
@@ -196,6 +232,16 @@ export async function POST(request: Request) {
   }
 
   const orderNumber = await getNextOrderNumber();
+  if (customerEmail) {
+    const existingEmailCustomer = await prisma.customer.findUnique({
+      where: { email: customerEmail },
+      select: { mobile: true },
+    });
+    if (existingEmailCustomer && existingEmailCustomer.mobile !== data.customerMobile) {
+      return NextResponse.json({ error: "This email is already linked to another customer account." }, { status: 409 });
+    }
+  }
+
   if (data.paymentMethod === "RAZORPAY" && !settings.onlinePaymentsEnabled) {
     return NextResponse.json({ error: "Online payments are not enabled right now." }, { status: 423 });
   }
@@ -222,6 +268,20 @@ export async function POST(request: Request) {
   }
 
   const order = await prisma.$transaction(async (tx) => {
+    const customer = await tx.customer.upsert({
+      where: { mobile: data.customerMobile },
+      create: {
+        mobile: data.customerMobile,
+        name: data.customerName,
+        email: customerEmail || undefined,
+      },
+      update: {
+        name: data.customerName,
+        ...(customerEmail ? { email: customerEmail } : {}),
+      },
+      select: { id: true },
+    });
+
     for (const item of calculated.items) {
       const updated = await tx.inventoryItem.updateMany({
         where: { productId: item.productId, stock: { gte: item.quantity } },
@@ -242,12 +302,7 @@ export async function POST(request: Request) {
         status: data.paymentMethod === "RAZORPAY"
           ? "PENDING_PAYMENT"
           : settings.autoAcceptOrders ? "CONFIRMED" : "NEW",
-        customer: {
-          connectOrCreate: {
-            where: { mobile: data.customerMobile },
-            create: { mobile: data.customerMobile, name: data.customerName },
-          },
-        },
+        customer: { connect: { id: customer.id } },
         items: {
           create: calculated.items.map((item) => ({
             productId: item.productId,
@@ -266,6 +321,7 @@ export async function POST(request: Request) {
                 ? "Order created and waiting for online payment."
                 : settings.autoAcceptOrders ? "Order auto accepted from admin settings." : "Order created from website checkout.",
               data.receiverName || data.receiverMobile ? `Receiver: ${[data.receiverName, data.receiverMobile].filter(Boolean).join(", ")}` : "",
+              customerEmail ? `Email: ${customerEmail}` : "",
               data.deliveryAddress ? `Address: ${data.deliveryAddress}` : "",
               data.deliveryLabel ? `Address type: ${data.deliveryLabel}` : "",
               data.restaurantNote ? `Customer note: ${data.restaurantNote}` : "",
@@ -273,7 +329,7 @@ export async function POST(request: Request) {
               data.pinCode ? `Location: PIN ${data.pinCode}` : "",
               data.latitude && data.longitude ? `GPS: ${data.latitude}, ${data.longitude}` : "",
               deliveryCoverage.distanceKm !== null ? `Distance: ${deliveryCoverage.distanceKm.toFixed(2)} km.` : "",
-            ].filter(Boolean).join(" "),
+            ].filter(Boolean).join(" | "),
           },
         },
         payments: {
@@ -309,6 +365,22 @@ export async function POST(request: Request) {
     metadata: { grandTotal: order.grandTotal, couponCode: calculated.couponCode },
   });
 
+  await notifyOrderStatus(order, order.status as OrderStatus).catch((error) => {
+    console.error("Order WhatsApp/customer notification failed.", error);
+  });
+
+  const nextRewardOrderCount = await prisma.order.count({
+    where: {
+      customer: { mobile: data.customerMobile },
+      ...visiblePlacedOrderWhere(),
+    },
+  });
+  await prisma.loyaltyAccount.upsert({
+    where: { customerId: order.customer.id },
+    create: { customerId: order.customer.id, points: nextRewardOrderCount, tier: getRewardTier(nextRewardOrderCount) },
+    update: { points: nextRewardOrderCount, tier: getRewardTier(nextRewardOrderCount) },
+  });
+
   return NextResponse.json({
     order,
     razorpay: razorpayOrder?.ok ? {
@@ -330,4 +402,18 @@ async function getNextOrderNumber() {
   const nextNumber = latestNumber && /^\d+$/.test(latestNumber) ? Number(latestNumber) + 1 : 1;
 
   return `WH${nextNumber.toString().padStart(4, "0")}`;
+}
+
+function isMissingReviewOrderColumn(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("Review.orderId") || (message.includes("Review") && message.includes("orderId"));
+}
+
+function visiblePlacedOrderWhere(): Prisma.OrderWhereInput {
+  return {
+    OR: [
+      { payments: { some: { provider: "COD" } } },
+      { payments: { some: { provider: "RAZORPAY", status: { in: paidOnlineStatuses } } } },
+    ],
+  };
 }

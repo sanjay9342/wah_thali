@@ -41,7 +41,7 @@ export function getDeliveryCoverage(location: DeliveryPoint, settings: DeliveryC
       serviceable: false,
       needsLocation: false,
       distanceKm: null,
-      message: "Kitchen delivery location is not configured. Please update it in Admin Settings.",
+      message: "Delivery area is not configured yet. Please contact the restaurant before placing an order.",
     };
   }
 
@@ -50,7 +50,7 @@ export function getDeliveryCoverage(location: DeliveryPoint, settings: DeliveryC
       serviceable: false,
       needsLocation: true,
       distanceKm: null,
-      message: "Use current location so we can check if your address is inside our delivery area.",
+      message: "Use current location so we can check if your address is inside our delivery radius.",
     };
   }
 
@@ -72,7 +72,7 @@ export function getDeliveryCoverage(location: DeliveryPoint, settings: DeliveryC
     serviceable: false,
     needsLocation: false,
     distanceKm,
-    message: `Delivery is available within ${formatDistanceKm(radiusKm)} of the kitchen. This location is ${formatDistanceKm(distanceKm)} away.`,
+    message: `This location is not deliverable. Delivery is available within ${formatDistanceKm(radiusKm)} of the kitchen, and this location is ${formatDistanceKm(distanceKm)} away.`,
   };
 }
 

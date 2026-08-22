@@ -111,8 +111,8 @@ export function LoginClient() {
     router.push("/");
   }
 
-  function saveSession(customer: ApiCustomer, title: string, body: string) {
-    saveCustomerSession({
+  async function saveSession(customer: ApiCustomer, title: string, body: string) {
+    await saveCustomerSession({
       id: customer.id,
       name: customer.name,
       mobile: customer.mobile,
@@ -134,7 +134,7 @@ export function LoginClient() {
     }
 
     setLoading(true);
-    setMessage("Signing you in...");
+    setMessage("");
 
     try {
       const response = await fetch("/api/customers/auth", {
@@ -152,7 +152,7 @@ export function LoginClient() {
         return;
       }
 
-      saveSession(data.customer, "Welcome back", `Hi ${data.customer.name}, you are signed in to Wah Thali.`);
+      await saveSession(data.customer, "Welcome back", `Hi ${data.customer.name}, you are signed in to Wah Thali.`);
     } catch {
       setMessage("Could not connect. Please try again.");
     } finally {
@@ -168,7 +168,7 @@ export function LoginClient() {
     }
 
     setLoading(true);
-    setMessage("Checking your account...");
+    setMessage("");
     try {
       const response = await fetch("/api/customers/password-reset", {
         method: "POST",
@@ -204,7 +204,7 @@ export function LoginClient() {
     }
 
     setLoading(true);
-    setMessage("Sending WhatsApp OTP...");
+    setMessage("");
     try {
       const response = await fetch("/api/customers/otp", {
         method: "POST",
@@ -234,7 +234,7 @@ export function LoginClient() {
     }
 
     setLoading(true);
-    setMessage(screen === "signup" ? "Creating your account..." : "Signing you in...");
+    setMessage("");
 
     try {
       if (screen === "signin") {
@@ -253,7 +253,7 @@ export function LoginClient() {
           return;
         }
 
-        saveSession(data.customer, "Welcome back", `Hi ${data.customer.name}, you are signed in to Wah Thali.`);
+        await saveSession(data.customer, "Welcome back", `Hi ${data.customer.name}, you are signed in to Wah Thali.`);
         return;
       }
 
@@ -278,7 +278,7 @@ export function LoginClient() {
         return;
       }
 
-      saveSession(data.customer, "Welcome to Wah Thali", "Your account is ready. Fresh homely meals are waiting for you.");
+      await saveSession(data.customer, "Welcome to Wah Thali", "Your account is ready. Fresh homely meals are waiting for you.");
     } catch {
       setMessage("Could not connect. Please try again.");
     } finally {
@@ -320,6 +320,9 @@ export function LoginClient() {
 
   const isSignup = screen === "signup";
   const isOtpSignIn = screen === "signin" && signInMethod === "otp";
+  const otpFlowActive = isSignup || isOtpSignIn;
+  const otpInlineMessage = otpFlowActive && /WhatsApp OTP|OTP sent/i.test(message) ? message : "";
+  const pageMessage = otpInlineMessage ? "" : message;
 
   return (
     <main className="min-h-screen bg-[#f7f8fc] text-charcoal">
@@ -370,6 +373,12 @@ export function LoginClient() {
             />
           ) : null}
 
+          {pageMessage ? (
+            <p className="-mt-1 rounded-2xl border border-[#f0d7dd] bg-[#fff4f5] px-4 py-3 text-center text-xs font-black leading-5 text-maroon" aria-live="polite">
+              {pageMessage}
+            </p>
+          ) : null}
+
           <button
             type="button"
             onClick={isSignup || isOtpSignIn ? (step === "form" ? startOtp : verifyOtp) : loginWithPassword}
@@ -384,6 +393,11 @@ export function LoginClient() {
                   ? step === "form" ? "Send WhatsApp OTP" : "Sign In"
                   : "Login"}
           </button>
+          {otpInlineMessage ? (
+            <p className="-mt-2 text-center text-[12px] font-black leading-5 text-muted" aria-live="polite">
+              {otpInlineMessage}
+            </p>
+          ) : null}
 
           {!isSignup ? (
             <>
@@ -414,8 +428,6 @@ export function LoginClient() {
             </p>
           )}
         </section>
-
-        {message ? <p className="mt-5 rounded-2xl bg-white p-3 text-center text-xs font-black leading-5 text-muted shadow-sm ring-1 ring-border">{message}</p> : null}
 
         {isSignup ? (
           <p className="mt-12 text-center text-[16px] font-semibold text-charcoal">

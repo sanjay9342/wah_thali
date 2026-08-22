@@ -1,4 +1,5 @@
 import type { BusinessSettings, Coupon, Product } from "./types";
+import { rewardCoupons } from "@/lib/rewards";
 
 export const settings: BusinessSettings = {
   gstRate: 0.05,
@@ -9,8 +10,8 @@ export const settings: BusinessSettings = {
   serviceablePins: ["700001", "700016", "700019", "700029", "700091"],
   locationRestrictionEnabled: false,
   kitchenAddress: "248/1 Rajdanga Main Road, Kasba, Kolkata",
-  kitchenLatitude: "",
-  kitchenLongitude: "",
+  kitchenLatitude: "22.514805",
+  kitchenLongitude: "88.398226",
   deliveryRadiusKm: 5,
   openingHours: "11:30 AM - 10:00 PM",
   supportPhone: "7001323730",
@@ -189,6 +190,24 @@ export const products: Product[] = [
 ];
 
 export const coupons: Coupon[] = [
+  ...rewardCoupons,
+  {
+    code: "PARTY",
+    label: "Flat 50% off",
+    type: "PERCENT",
+    value: 50,
+    minOrder: 249,
+    maxDiscount: 120,
+  },
+  { code: "FREEDEL", label: "Free delivery offer", type: "FIXED", value: 40, minOrder: 199 },
+  {
+    code: "YUMMY",
+    label: "30% off selected orders",
+    type: "PERCENT",
+    value: 30,
+    minOrder: 199,
+    maxDiscount: 80,
+  },
   { code: "WAH50", label: "Flat Rs 50 off", type: "FIXED", value: 50, minOrder: 299 },
   {
     code: "FAMILY10",

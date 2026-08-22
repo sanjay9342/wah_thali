@@ -1,9 +1,14 @@
 import "server-only";
 
-import { Prisma } from "@prisma/client";
+import { Prisma, type PaymentStatus } from "@prisma/client";
 import { coupons as fallbackCoupons, products as fallbackProducts, settings as fallbackSettings } from "@/lib/data";
 import { prisma, isDatabaseConfigured } from "@/lib/prisma";
+import { defaultNewOrderSound, getNewOrderSound } from "@/lib/order-sounds";
+import { getRewardTier, rewardCoupons } from "@/lib/rewards";
+import { getIstDayRangeUtc } from "@/lib/time";
 import type { AdvancedSettings, AdminCustomer, AdminOrder, AdminProduct, BusinessSettings, CategoryImageMap, CategoryOfferMap, Coupon, HomeSlide, Product, RestaurantSettings, StoreMode } from "@/lib/types";
+
+const paidOnlineStatuses: PaymentStatus[] = ["PAID", "AUTHORIZED"];
 
 type ProductWithRelations = Prisma.ProductGetPayload<{
   include: {
@@ -255,7 +260,7 @@ export async function getCouponsFromDb(): Promise<Coupon[]> {
       getCouponRulesFromDb(),
     ]);
 
-    return applyCouponRules(coupons, rules);
+    return withRewardCoupons(applyCouponRules(coupons, rules));
   } catch (error) {
     console.error("Database coupon read failed. Falling back to local coupons.", error);
     return fallbackCoupons;
@@ -270,10 +275,22 @@ export async function getAdminCouponsFromDb(): Promise<Array<Coupon & { active: 
     getCouponRulesFromDb(),
   ]);
 
-  return applyCouponRules(coupons, rules).map((coupon, index) => ({
+  return withRewardCoupons(applyCouponRules(coupons, rules)).map((coupon) => ({
     ...coupon,
-    active: coupons[index].active,
+    active: coupons.find((item) => item.code === coupon.code)?.active ?? true,
   }));
+}
+
+function withRewardCoupons(coupons: Coupon[]) {
+  const couponByCode = new Map(coupons.map((coupon) => [coupon.code, coupon]));
+  for (const rewardCoupon of rewardCoupons) {
+    couponByCode.set(rewardCoupon.code, {
+      ...rewardCoupon,
+      startsAt: rewardCoupon.startsAt ?? "2026-01-01T00:00:00.000Z",
+      endsAt: rewardCoupon.endsAt ?? "2028-01-01T00:00:00.000Z",
+    });
+  }
+  return Array.from(couponByCode.values());
 }
 
 export async function getBusinessSettingsFromDb(): Promise<BusinessSettings> {
@@ -283,16 +300,30 @@ export async function getBusinessSettingsFromDb(): Promise<BusinessSettings> {
     const rows = await prisma.businessSetting.findMany();
     if (!rows.length) return fallbackSettings;
 
-    return rows.reduce<BusinessSettings>((settings, row) => {
+    const settings = rows.reduce<BusinessSettings>((settings, row) => {
       return {
         ...settings,
         [row.key]: row.value,
       };
     }, fallbackSettings);
+
+    return withDefaultKitchenCoordinates(settings);
   } catch (error) {
     console.error("Database settings read failed. Falling back to local settings.", error);
     return fallbackSettings;
   }
+}
+
+function withDefaultKitchenCoordinates(settings: BusinessSettings): BusinessSettings {
+  if (settings.kitchenLatitude || settings.kitchenLongitude) return settings;
+  const normalizedAddress = settings.kitchenAddress.toLowerCase();
+  if (!normalizedAddress.includes("rajdanga") && !normalizedAddress.includes("kasba")) return settings;
+
+  return {
+    ...settings,
+    kitchenLatitude: fallbackSettings.kitchenLatitude,
+    kitchenLongitude: fallbackSettings.kitchenLongitude,
+  };
 }
 
 export const defaultAdvancedSettings: AdvancedSettings = {
@@ -311,6 +342,7 @@ export const defaultAdvancedSettings: AdvancedSettings = {
   onlinePaymentsEnabled: false,
   lowStockAlertThreshold: 5,
   newOrderSoundEnabled: true,
+  newOrderSound: defaultNewOrderSound,
   whatsappOrderAlerts: true,
   adminDailyDigestTime: "21:00",
 };
@@ -358,6 +390,7 @@ export async function getAdvancedSettingsFromDb(): Promise<AdvancedSettings> {
       onlinePaymentsEnabled: readBoolean(values.onlinePaymentsEnabled, defaultAdvancedSettings.onlinePaymentsEnabled),
       lowStockAlertThreshold: readNumber(values.lowStockAlertThreshold, defaultAdvancedSettings.lowStockAlertThreshold),
       newOrderSoundEnabled: readBoolean(values.newOrderSoundEnabled, defaultAdvancedSettings.newOrderSoundEnabled),
+      newOrderSound: getNewOrderSound(values.newOrderSound),
       whatsappOrderAlerts: readBoolean(values.whatsappOrderAlerts, defaultAdvancedSettings.whatsappOrderAlerts),
       adminDailyDigestTime: readString(values.adminDailyDigestTime, defaultAdvancedSettings.adminDailyDigestTime),
     };
@@ -439,27 +472,82 @@ export async function getHomeSlidesFromDb(): Promise<HomeSlide[]> {
 export async function getAdminOrdersFromDb(): Promise<AdminOrder[]> {
   if (!isDatabaseConfigured()) return [];
 
+  const baseInclude = {
+    customer: { select: { id: true, name: true, mobile: true, email: true } },
+    items: true,
+    payments: true,
+    timeline: { orderBy: { createdAt: "asc" as const } },
+  };
+  const reviewInclude = {
+    ...baseInclude,
+    reviews: {
+      include: { product: { select: { name: true } } },
+      orderBy: { createdAt: "desc" as const },
+    },
+  };
+
+  try {
+    const orders = await prisma.order.findMany({
+      where: visiblePlacedOrderWhere(),
+      include: reviewInclude,
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+
+    return orders.map(toAdminOrder);
+  } catch (error) {
+    if (!isMissingReviewOrderColumn(error)) throw error;
+    console.error("Review.orderId is missing in the database. Loading admin orders without review summaries.", error);
+  }
+
   const orders = await prisma.order.findMany({
+    where: visiblePlacedOrderWhere(),
     include: {
-      customer: { select: { id: true, name: true, mobile: true, email: true } },
-      items: true,
-      payments: true,
-      timeline: { orderBy: { createdAt: "asc" } },
+      ...baseInclude,
     },
     orderBy: { createdAt: "desc" },
     take: 100,
   });
 
-  return orders.map((order) => ({
+  return orders.map((order) => toAdminOrder({ ...order, reviews: [] }));
+}
+
+function visiblePlacedOrderWhere(): Prisma.OrderWhereInput {
+  return {
+    OR: [
+      { payments: { some: { provider: "COD" } } },
+      { payments: { some: { provider: "RAZORPAY", status: { in: paidOnlineStatuses } } } },
+    ],
+  };
+}
+
+function toAdminOrder(order: Prisma.OrderGetPayload<{
+  include: {
+    customer: { select: { id: true; name: true; mobile: true; email: true } };
+    items: true;
+    payments: true;
+    timeline: true;
+  };
+}> & {
+  reviews?: Array<{
+    id: string;
+    product: { name: string };
+    rating: number;
+    comment: string | null;
+    createdAt: Date;
+  }>;
+}): AdminOrder {
+  return {
     orderNumber: order.orderNumber,
     customerName: order.customer.name,
     customerMobile: order.customer.mobile,
+    customerEmail: order.customer.email ?? undefined,
     status: order.status as AdminOrder["status"],
     subtotal: order.subtotal,
     discount: order.discount,
     gst: order.gst,
     amount: order.grandTotal,
-    items: order.items.map((item) => ({ name: item.name, quantity: item.quantity, price: item.price })),
+    items: order.items.map((item) => ({ productId: item.productId, name: item.name, quantity: item.quantity, price: item.price })),
     itemSummary: order.items.map((item) => `${item.quantity} x ${item.name}`).join(", "),
     paymentSummary: getAdminPaymentSummary(order.payments[0]),
     createdAt: order.createdAt.toISOString(),
@@ -468,7 +556,19 @@ export async function getAdminOrdersFromDb(): Promise<AdminOrder[]> {
       note: event.note,
       createdAt: event.createdAt.toISOString(),
     })),
-}));
+    reviews: (order.reviews ?? []).map((review) => ({
+      id: review.id,
+      productName: review.product.name,
+      rating: review.rating,
+      comment: review.comment ?? undefined,
+      createdAt: review.createdAt.toISOString(),
+    })),
+  };
+}
+
+function isMissingReviewOrderColumn(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("Review.orderId") || (message.includes("Review") && message.includes("orderId"));
 }
 
 function getAdminPaymentSummary(payment?: { provider: string; status: string }) {
@@ -489,7 +589,6 @@ export async function getAdminCustomersFromDb(): Promise<AdminCustomer[]> {
       mobile: true,
       email: true,
       updatedAt: true,
-      loyalty: true,
       tags: { include: { tag: { select: { name: true } } } },
       orders: { orderBy: { createdAt: "desc" } },
     },
@@ -499,6 +598,7 @@ export async function getAdminCustomersFromDb(): Promise<AdminCustomer[]> {
 
   return customers.map((customer) => {
     const ltv = customer.orders.reduce((total, order) => total + order.grandTotal, 0);
+    const rewardOrderCount = customer.orders.length;
     const tagNames = customer.tags.map((assignment) => assignment.tag.name);
 
     return {
@@ -508,8 +608,8 @@ export async function getAdminCustomersFromDb(): Promise<AdminCustomer[]> {
     email: customer.email ?? undefined,
     orders: customer.orders.length,
     ltv,
-    points: customer.loyalty?.points ?? 0,
-    tier: customer.loyalty?.tier ?? "Starter",
+    points: rewardOrderCount,
+    tier: getRewardTier(rewardOrderCount),
     isVip: tagNames.includes("VIP"),
     lastOrder: customer.orders[0]?.createdAt.toISOString(),
     };
@@ -533,11 +633,10 @@ export async function getAdminDashboardMetrics() {
     };
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = getIstDayRangeUtc();
 
   const [ordersToday, totalOrders, openOrders, repeatCustomers, products, coupons] = await Promise.all([
-    prisma.order.findMany({ where: { createdAt: { gte: today } } }),
+    prisma.order.findMany({ where: { createdAt: { gte: today.start, lt: today.end } } }),
     prisma.order.count(),
     prisma.order.count({ where: { status: { in: ["NEW", "CONFIRMED", "PREPARING", "PACKED", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] } } }),
     prisma.customer.count({ where: { orders: { some: {} } } }),

@@ -45,6 +45,7 @@ body {
 
 html {
   scroll-behavior: smooth;
+  scroll-padding-top: 88px;
 }
 
 button,
@@ -134,6 +135,106 @@ textarea:disabled {
   }
 }
 
+@keyframes wt-new-order-arrive {
+  0% {
+    opacity: 0;
+    transform: translateY(-22px) scale(0.96);
+  }
+  58% {
+    opacity: 1;
+    transform: translateY(4px) scale(1.015);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes wt-new-order-border {
+  0%,
+  100% {
+    border-color: #8d0021;
+    box-shadow: 0 0 0 2px rgba(141, 0, 33, 0.2), 0 18px 42px rgba(141, 0, 33, 0.18);
+  }
+  50% {
+    border-color: #0f9f6e;
+    box-shadow: 0 0 0 5px rgba(15, 159, 110, 0.2), 0 18px 42px rgba(15, 159, 110, 0.15);
+  }
+}
+
+@keyframes wt-new-order-ring {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.995);
+    border-color: rgba(141, 0, 33, 0.85);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1);
+    border-color: rgba(15, 159, 110, 0.9);
+  }
+}
+
+@keyframes wt-new-order-toast {
+  0% {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.98);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(2px) scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes wt-new-order-bell {
+  0%,
+  100% {
+    transform: rotate(-7deg) scale(1);
+  }
+  50% {
+    transform: rotate(8deg) scale(1.08);
+  }
+}
+
+@keyframes wt-new-order-text {
+  0%,
+  100% {
+    color: #ffffff;
+    opacity: 0.82;
+  }
+  50% {
+    color: #dffaf4;
+    opacity: 1;
+  }
+}
+
+@keyframes wt-new-order-sweep {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes wt-reward-shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.wt-reward-progress {
+  background-image: linear-gradient(90deg, #ffffff 0%, #ffd6df 34%, #ffffff 68%, #ffffff 100%);
+  background-size: 200% 100%;
+  animation: wt-reward-shimmer 1.6s linear infinite;
+  transition: width 700ms ease;
+}
+
 @keyframes wt-track-float {
   0%,
   100% {
@@ -192,6 +293,67 @@ textarea:disabled {
   animation: wt-order-progress 1.05s ease-in-out infinite alternate;
 }
 
+.wt-new-order-arrive {
+  animation: wt-new-order-arrive 520ms cubic-bezier(0.2, 1, 0.28, 1) both, wt-new-order-border 1.05s ease-in-out 520ms infinite;
+}
+
+.wt-new-order-blink {
+  animation: wt-order-card-in 260ms ease-out both, wt-new-order-border 1.05s ease-in-out 260ms infinite;
+}
+
+.wt-new-order-blink.wt-new-order-arrive {
+  animation: wt-new-order-arrive 520ms cubic-bezier(0.2, 1, 0.28, 1) both, wt-new-order-border 1.05s ease-in-out 520ms infinite;
+}
+
+.wt-new-order-blink::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  padding: 3px;
+  border-radius: 16px;
+  background: conic-gradient(from 0deg, #8d0021, #0f9f6e, #8d0021, #0f9f6e, #8d0021);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: wt-new-order-sweep 1.35s linear infinite;
+}
+
+.wt-new-order-blink::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  z-index: 0;
+  pointer-events: none;
+  border: 2px solid rgba(15, 159, 110, 0.75);
+  border-radius: 14px;
+  animation: wt-new-order-ring 1.05s ease-in-out infinite;
+}
+
+.wt-new-order-blink > * {
+  position: relative;
+  z-index: 1;
+}
+
+.wt-new-order-toast {
+  animation: wt-new-order-toast 480ms cubic-bezier(0.2, 1, 0.28, 1) both;
+}
+
+.wt-new-order-bell {
+  animation: wt-new-order-bell 0.72s ease-in-out infinite;
+  transform-origin: 50% 12%;
+}
+
+.wt-new-order-text {
+  animation: wt-new-order-text 0.9s ease-in-out infinite;
+}
+
+.wt-incoming-watch-active {
+  animation: wt-new-order-border 1.25s ease-in-out infinite;
+}
+
 .wt-track-pulse {
   animation: wt-track-pulse 1.8s ease-in-out infinite;
 }
@@ -202,6 +364,114 @@ textarea:disabled {
 
 .wt-step-active {
   animation: wt-step-active 1.8s ease-in-out infinite;
+}
+
+::view-transition-group(site-page) {
+  animation-duration: 260ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+::view-transition-old(.wt-page-share) {
+  animation: 130ms ease-out both wt-page-fade-out;
+}
+
+::view-transition-new(.wt-page-share) {
+  animation: 230ms cubic-bezier(0.22, 1, 0.36, 1) both wt-page-fade-in;
+}
+
+::view-transition-old(.wt-page-exit) {
+  animation: 130ms ease-out both wt-page-fade-out;
+}
+
+::view-transition-new(.wt-page-enter) {
+  animation: 230ms cubic-bezier(0.22, 1, 0.36, 1) both wt-page-enter;
+}
+
+::view-transition-group(site-header),
+::view-transition-group(site-mobile-nav) {
+  animation: none;
+  z-index: 100;
+}
+
+::view-transition-old(site-header),
+::view-transition-old(site-mobile-nav) {
+  display: none;
+}
+
+::view-transition-new(site-header),
+::view-transition-new(site-mobile-nav) {
+  animation: none;
+}
+
+.wt-skeleton {
+  position: relative;
+  overflow: hidden;
+}
+
+.wt-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.72), transparent);
+  animation: wt-skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes wt-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes wt-page-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes wt-page-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes wt-skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
 }
 
 @media print {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
+import { notifyOrderStatus } from "@/lib/customer-messaging";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { canTransitionOrder } from "@/lib/state-machines";
 
@@ -98,6 +99,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ or
     entity: "Order",
     entityId: order.id,
     summary: `${order.orderNumber} moved to ${order.status}`,
+  });
+
+  await notifyOrderStatus(order, parsed.data.status, parsed.data.note).catch((error) => {
+    console.error("Order status WhatsApp/customer notification failed.", error);
   });
 
   return NextResponse.json({ order });

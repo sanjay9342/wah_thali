@@ -208,8 +208,8 @@ const settings = {
   serviceablePins: ["700001", "700016", "700019", "700029", "700091"],
   locationRestrictionEnabled: false,
   kitchenAddress: "248/1 Rajdanga Main Road, Kasba, Kolkata",
-  kitchenLatitude: "",
-  kitchenLongitude: "",
+  kitchenLatitude: "22.514805",
+  kitchenLongitude: "88.398226",
   deliveryRadiusKm: 5,
   openingHours: "11:30 AM - 10:00 PM",
   supportPhone: "7001323730",
@@ -293,36 +293,48 @@ async function main() {
     });
   }
 
-  await prisma.coupon.upsert({
-    where: { code: "WAH50" },
-    create: {
-      code: "WAH50",
-      label: "Flat Rs 50 off",
-      type: "FIXED",
-      value: 50,
-      minOrder: 299,
-      startsAt: new Date("2026-01-01"),
-      endsAt: new Date("2028-01-01"),
-      active: true,
-    },
-    update: { label: "Flat Rs 50 off", active: true },
-  });
+  const seededCoupons = [
+    { code: "PARTY", label: "Flat 50% off", type: "PERCENT", value: 50, minOrder: 249, maxDiscount: 120 },
+    { code: "FREEDEL", label: "Free delivery offer", type: "FIXED", value: 40, minOrder: 199, maxDiscount: null },
+    { code: "YUMMY", label: "30% off selected orders", type: "PERCENT", value: 30, minOrder: 199, maxDiscount: 80 },
+    { code: "REWARD10", label: "10 order reward", type: "FIXED", value: 10, minOrder: 0, maxDiscount: null, audience: "POINTS", minPoints: 10 },
+    { code: "REWARD20", label: "20 order reward", type: "FIXED", value: 20, minOrder: 0, maxDiscount: null, audience: "POINTS", minPoints: 20 },
+    { code: "REWARD30", label: "30 order reward", type: "FIXED", value: 30, minOrder: 0, maxDiscount: null, audience: "POINTS", minPoints: 30 },
+    { code: "WAH50", label: "Flat Rs 50 off", type: "FIXED", value: 50, minOrder: 299, maxDiscount: null },
+    { code: "FAMILY10", label: "10% off family orders", type: "PERCENT", value: 10, minOrder: 699, maxDiscount: 120 },
+  ];
 
-  await prisma.coupon.upsert({
-    where: { code: "FAMILY10" },
-    create: {
-      code: "FAMILY10",
-      label: "10% off family orders",
-      type: "PERCENT",
-      value: 10,
-      minOrder: 699,
-      maxDiscount: 120,
-      startsAt: new Date("2026-01-01"),
-      endsAt: new Date("2028-01-01"),
-      active: true,
-    },
-    update: { label: "10% off family orders", active: true },
-  });
+  for (const coupon of seededCoupons) {
+    await prisma.coupon.upsert({
+      where: { code: coupon.code },
+      create: {
+        ...coupon,
+        startsAt: new Date("2026-01-01"),
+        endsAt: new Date("2028-01-01"),
+        active: true,
+      },
+      update: {
+        label: coupon.label,
+        type: coupon.type,
+        value: coupon.value,
+        minOrder: coupon.minOrder,
+        maxDiscount: coupon.maxDiscount,
+        active: true,
+      },
+    });
+
+    if (coupon.audience) {
+      const existingRules = await prisma.businessSetting.findUnique({ where: { key: "couponEligibility" } });
+      const rules = existingRules?.value && typeof existingRules.value === "object" && !Array.isArray(existingRules.value)
+        ? existingRules.value
+        : {};
+      await prisma.businessSetting.upsert({
+        where: { key: "couponEligibility" },
+        create: { key: "couponEligibility", value: { ...rules, [coupon.code]: { audience: coupon.audience, minPoints: coupon.minPoints ?? 0 } } },
+        update: { value: { ...rules, [coupon.code]: { audience: coupon.audience, minPoints: coupon.minPoints ?? 0 } } },
+      });
+    }
+  }
 
   for (const [key, value] of Object.entries(settings)) {
     await prisma.businessSetting.upsert({

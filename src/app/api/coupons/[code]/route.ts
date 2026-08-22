@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { deleteCouponRule, logActivity, saveCouponRule } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
+import { parseIstDateInput } from "@/lib/time";
+
+function istDateSchema(boundary: "start" | "end") {
+  return z.preprocess((value) => {
+    if (value instanceof Date) return value;
+    if (typeof value === "string") return parseIstDateInput(value, boundary) ?? value;
+    return value;
+  }, z.date());
+}
 
 const couponSchema = z.object({
   code: z.string().min(2).transform((value) => value.toUpperCase()).optional(),
@@ -10,8 +19,8 @@ const couponSchema = z.object({
   value: z.coerce.number().int().positive().optional(),
   minOrder: z.coerce.number().int().nonnegative().optional(),
   maxDiscount: z.coerce.number().int().positive().nullable().optional(),
-  startsAt: z.coerce.date().optional(),
-  endsAt: z.coerce.date().optional(),
+  startsAt: istDateSchema("start").optional(),
+  endsAt: istDateSchema("end").optional(),
   active: z.boolean().optional(),
   audience: z.enum(["ALL", "VIP", "POINTS"]).optional(),
   minPoints: z.coerce.number().int().nonnegative().optional(),

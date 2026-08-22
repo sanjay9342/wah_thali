@@ -8,6 +8,8 @@ export type CustomerSession = {
 };
 
 const customerSessionEvent = "wah-thali-customer-session-change";
+const customerSessionStorageKey = "wah-thali-customer-session-v1";
+const sessionMaxAgeMs = 1000 * 60 * 60 * 24 * 120;
 let cachedSession: CustomerSession | null = null;
 let sessionLoaded = false;
 let loadingSession: Promise<CustomerSession | null> | null = null;
@@ -29,7 +31,44 @@ function normalizeSession(value: unknown): CustomerSession | null {
   };
 }
 
+function readStoredSession(): CustomerSession | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(customerSessionStorageKey);
+    if (!raw) return null;
+    const stored = JSON.parse(raw) as { session?: unknown; expiresAt?: unknown };
+    if (typeof stored.expiresAt !== "number" || stored.expiresAt <= Date.now()) {
+      window.localStorage.removeItem(customerSessionStorageKey);
+      return null;
+    }
+    return normalizeSession(stored.session);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredSession(session: CustomerSession | null) {
+  if (typeof window === "undefined") return;
+
+  try {
+    if (!session) {
+      window.localStorage.removeItem(customerSessionStorageKey);
+      return;
+    }
+    window.localStorage.setItem(customerSessionStorageKey, JSON.stringify({
+      session,
+      expiresAt: Date.now() + sessionMaxAgeMs,
+    }));
+  } catch {
+    // Storage can be unavailable in private modes. The server cookie remains the source of truth.
+  }
+}
+
 export function readCustomerSession(): CustomerSession | null {
+  if (!cachedSession && !sessionLoaded) {
+    cachedSession = readStoredSession();
+  }
   return cachedSession;
 }
 
@@ -42,6 +81,7 @@ export async function loadCustomerSession() {
     .then(async (response) => {
       const data = await response.json().catch(() => ({}));
       cachedSession = response.ok ? normalizeSession(data.customer) : null;
+      writeStoredSession(cachedSession);
       sessionLoaded = true;
       dispatchSessionChange();
       return cachedSession;
@@ -60,22 +100,34 @@ export async function loadCustomerSession() {
 }
 
 export function saveCustomerSession(session: CustomerSession) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined") return Promise.resolve(null);
   cachedSession = session;
   sessionLoaded = true;
+  writeStoredSession(session);
   dispatchSessionChange();
 
-  void fetch("/api/customers/session", {
+  return fetch("/api/customers/session", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mobile: session.mobile }),
-  }).catch(() => undefined);
+  })
+    .then(async (response) => {
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        cachedSession = normalizeSession(data.customer) ?? session;
+        writeStoredSession(cachedSession);
+        dispatchSessionChange();
+      }
+      return cachedSession;
+    })
+    .catch(() => cachedSession);
 }
 
 export function clearCustomerSession() {
   if (typeof window === "undefined") return;
   cachedSession = null;
   sessionLoaded = true;
+  writeStoredSession(null);
   dispatchSessionChange();
   void fetch("/api/customers/session", { method: "DELETE" }).catch(() => undefined);
 }

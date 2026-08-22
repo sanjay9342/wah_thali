@@ -42,6 +42,7 @@ export default async function AdminSettingsPage() {
             "onlinePaymentsEnabled",
             "lowStockAlertThreshold",
             "newOrderSoundEnabled",
+            "newOrderSound",
             "whatsappOrderAlerts",
             "adminDailyDigestTime",
           ],

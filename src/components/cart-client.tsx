@@ -239,7 +239,7 @@ export function CartClient({
         if (!response.ok || !data.customer || cancelled) return;
         setCouponCustomer({
           isVip: Boolean(data.customer.isVip),
-          points: Number(data.customer.loyalty?.points ?? 0),
+          points: Number(data.customer.rewardOrderCount ?? data.customer.loyalty?.points ?? 0),
         });
       } catch {
         if (!cancelled) setCouponCustomer({ isVip: false, points: 0 });
@@ -449,6 +449,17 @@ export function CartClient({
     }
   }
 
+  async function cancelUnpaidOrder(orderNumber: string) {
+    await fetch(`/api/orders/${orderNumber}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: "CANCELLED",
+        note: "Online payment was not completed. Checkout attempt cancelled before sending to kitchen.",
+      }),
+    }).catch(() => undefined);
+  }
+
   async function openRazorpayCheckout(input: {
     keyId: string;
     orderId: string;
@@ -458,6 +469,7 @@ export function CartClient({
   }) {
     const loaded = await loadRazorpayCheckout();
     if (!loaded || !window.Razorpay) {
+      await cancelUnpaidOrder(input.orderNumber);
       throw new Error("Online payment could not be loaded.");
     }
 
@@ -511,9 +523,10 @@ export function CartClient({
       },
       modal: {
         ondismiss: () => {
+          void cancelUnpaidOrder(input.orderNumber);
           setSubmitting(false);
           setPlacingStage(null);
-          setCheckoutMessage("Payment was not completed. Your order is waiting for payment.");
+          setCheckoutMessage("Payment was not completed. The order was not sent to the kitchen.");
         },
       },
     });
@@ -531,6 +544,10 @@ export function CartClient({
     }
     if (!customerSession?.mobile) {
       router.push("/login?next=/cart");
+      return;
+    }
+    if (!hasDeliveryAddress) {
+      openLocationSheet();
       return;
     }
     if (!serviceable) {
@@ -556,6 +573,7 @@ export function CartClient({
         body: JSON.stringify({
           customerName: receiverName,
           customerMobile: receiverMobile,
+          customerEmail: customerSession.email,
           receiverName,
           receiverMobile,
           deliveryAddress: deliveryLocation.address,
@@ -840,10 +858,12 @@ export function CartClient({
                 <dt className="font-bold text-[#1f2937]">GST</dt>
                 <dd className="font-black text-charcoal">{formatRupees(totals.gst)}</dd>
               </div>
-              <div className="flex items-center justify-between gap-4 rounded-2xl bg-[#e7f6ee] px-4 py-3 text-maroon">
-                <dt className="flex items-center gap-2 font-black"><Tag size={18} /> Discount Applied</dt>
-                <dd className="font-black">-{formatRupees(totals.discount)}</dd>
-              </div>
+              {totals.discount > 0 ? (
+                <div className="flex items-center justify-between gap-4 rounded-2xl bg-[#e7f6ee] px-4 py-3 text-maroon">
+                  <dt className="flex items-center gap-2 font-black"><Tag size={18} /> {appliedCoupon ? `Coupon ${appliedCoupon.code}` : "Discount Applied"}</dt>
+                  <dd className="font-black">-{formatRupees(totals.discount)}</dd>
+                </div>
+              ) : null}
               <div className="flex items-center justify-between gap-4 border-t border-[#dfe3ea] pt-5">
                 <dt className="text-xl font-black text-charcoal">To Pay</dt>
                 <dd className="text-[30px] font-black text-charcoal">{formatRupees(totals.grandTotal)}</dd>
@@ -1179,9 +1199,6 @@ export function CartClient({
 
       {showBillSummary ? (
         <div className="fixed inset-0 z-[70] flex items-end bg-charcoal/60" onClick={() => setShowBillSummary(false)}>
-          <div className="absolute bottom-[calc(min(76vh,620px)+18px)] left-1/2 grid h-12 w-12 -translate-x-1/2 place-items-center rounded-full bg-[#272b35] text-white shadow-2xl">
-            <X size={25} strokeWidth={3} />
-          </div>
           <section
             className="w-full rounded-t-[26px] bg-[#f6f7fb] px-4 pb-[calc(env(safe-area-inset-bottom)+22px)] pt-5 shadow-[0_-18px_48px_rgba(17,24,39,0.25)]"
             onClick={(event) => event.stopPropagation()}
@@ -1189,8 +1206,18 @@ export function CartClient({
             aria-modal="true"
             aria-labelledby="bill-summary-title"
           >
-            <h2 id="bill-summary-title" className="text-[24px] font-black text-charcoal">Bill Summary</h2>
-            <div className="mt-10 overflow-hidden rounded-[18px] bg-white shadow-sm">
+            <div className="grid grid-cols-[minmax(0,1fr)_40px] items-start gap-3">
+              <h2 id="bill-summary-title" className="min-w-0 text-[22px] font-black text-charcoal">Bill Summary</h2>
+              <button
+                type="button"
+                className="grid h-10 w-10 place-items-center rounded-full bg-white text-charcoal shadow-sm ring-1 ring-border"
+                onClick={() => setShowBillSummary(false)}
+                aria-label="Close bill summary"
+              >
+                <X size={22} strokeWidth={3} />
+              </button>
+            </div>
+            <div className="mt-5 overflow-hidden rounded-[18px] bg-white shadow-sm">
               <dl className="space-y-4 px-4 py-5 text-[17px]">
                 <div className="flex items-center justify-between gap-3">
                   <dt className="font-black text-charcoal">Item total</dt>
@@ -1239,28 +1266,28 @@ export function CartClient({
 
       {showReceiverSheet ? (
         <BottomSheet onClose={() => setShowReceiverSheet(false)} title="Update receiver details">
-          <p className="mt-1 text-[16px] font-bold leading-6 text-muted">
+          <p className="mt-1 text-[13px] font-bold leading-5 text-muted">
             {deliveryLocation.label} - {deliveryLocation.address}
           </p>
-          <div className="mt-8 rounded-[20px] bg-white p-4 shadow-sm">
+          <div className="mt-5 rounded-[18px] bg-white p-4 shadow-sm">
             <label className="block rounded-xl border border-border bg-white px-3 py-2">
-              <span className="block text-[13px] font-bold text-muted">Receiver&apos;s name</span>
+              <span className="block text-[12px] font-bold text-muted">Receiver&apos;s name</span>
               <input
                 value={receiverDraft.name}
                 onChange={(event) => setReceiverDraft((current) => ({ ...current, name: event.target.value }))}
-                className="mt-1 h-8 w-full bg-transparent text-[17px] font-black text-charcoal outline-none"
+                className="mt-1 h-8 w-full bg-transparent text-[15px] font-black text-charcoal outline-none"
               />
             </label>
             <label className="mt-4 block rounded-xl border border-border bg-white px-3 py-2">
-              <span className="block text-[13px] font-bold text-muted">Receiver&apos;s mobile number</span>
+              <span className="block text-[12px] font-bold text-muted">Receiver&apos;s mobile number</span>
               <input
                 value={receiverDraft.mobile}
                 onChange={(event) => setReceiverDraft((current) => ({ ...current, mobile: event.target.value }))}
-                className="mt-1 h-8 w-full bg-transparent text-[17px] font-black text-charcoal outline-none"
+                className="mt-1 h-8 w-full bg-transparent text-[15px] font-black text-charcoal outline-none"
               />
             </label>
           </div>
-          <button onClick={saveReceiverDetails} className="mt-8 h-14 w-full rounded-xl bg-maroon text-[20px] font-black text-white">
+          <button onClick={saveReceiverDetails} className="mt-6 h-13 w-full rounded-xl bg-maroon text-[17px] font-black text-white">
             Submit
           </button>
         </BottomSheet>
@@ -1446,21 +1473,23 @@ function BottomSheet({
 }) {
   return (
     <div className="fixed inset-0 z-[72] flex items-end bg-charcoal/60" onClick={onClose}>
-      <button
-        type="button"
-        className="absolute bottom-[calc(min(72vh,580px)+18px)] left-1/2 grid h-12 w-12 -translate-x-1/2 place-items-center rounded-full bg-[#272b35] text-white shadow-2xl"
-        onClick={onClose}
-        aria-label="Close"
-      >
-        <X size={25} strokeWidth={3} />
-      </button>
       <section
         className="max-h-[72vh] w-full overflow-y-auto rounded-t-[26px] bg-[#f6f7fb] px-4 pb-[calc(env(safe-area-inset-bottom)+22px)] pt-5 shadow-[0_-18px_48px_rgba(17,24,39,0.25)]"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
-        <h2 className="text-[24px] font-black leading-tight text-charcoal">{title}</h2>
+        <div className="grid grid-cols-[minmax(0,1fr)_40px] items-start gap-3">
+          <h2 className="min-w-0 text-[22px] font-black leading-tight text-charcoal">{title}</h2>
+          <button
+            type="button"
+            className="grid h-10 w-10 place-items-center rounded-full bg-white text-charcoal shadow-sm ring-1 ring-border"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X size={22} strokeWidth={3} />
+          </button>
+        </div>
         {children}
       </section>
     </div>
@@ -1728,10 +1757,10 @@ function CartInfoRow({
       <span className="grid h-7 w-7 place-items-center pt-0.5 text-[#374151]">{icon}</span>
       <span className="min-w-0">
         <span className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="text-[15px] font-black leading-5 text-charcoal">{title}</span>
+          <span className="text-[14px] font-black leading-5 text-charcoal">{title}</span>
           {badge ? <span className="shrink-0 rounded-md bg-[#e9f2ff] px-2 py-0.5 text-[11px] font-black text-[#1769c2]">{badge}</span> : null}
         </span>
-        <span className="mt-1 line-clamp-2 text-[13px] font-semibold leading-5 text-muted">{body}</span>
+        <span className="mt-1 line-clamp-2 text-[12px] font-semibold leading-5 text-muted">{body}</span>
       </span>
       {href || onClick ? <ChevronRight size={22} className="mt-3 text-muted" /> : <span />}
     </div>
@@ -1761,7 +1790,7 @@ function getCouponDescription(coupon: Coupon) {
 
 function getCouponEligibilityMessage(coupon: Coupon) {
   if (coupon.audience === "VIP") return "This coupon is only for VIP customers.";
-  if (coupon.audience === "POINTS") return `This coupon needs at least ${coupon.minPoints ?? 0} loyalty points.`;
+  if (coupon.audience === "POINTS") return `This reward unlocks after ${coupon.minPoints ?? 0} placed orders.`;
   return "This coupon is not eligible for this account.";
 }
 

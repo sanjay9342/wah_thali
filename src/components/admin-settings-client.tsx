@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import type { ReactNode } from "react";
-import { BellRing, Clock3, CreditCard, ImagePlus, LocateFixed, Save, Settings2, Store, Trash2, Truck } from "lucide-react";
+import { BellRing, CheckCircle2, Clock3, CreditCard, ImagePlus, LocateFixed, MapPin, Play, Save, Settings2, Store, Trash2, Truck, Volume2 } from "lucide-react";
 import { AdminSectionNav } from "@/components/admin-section-nav";
+import { defaultNewOrderSound, getNewOrderSound, getNewOrderSoundSteps, newOrderSoundOptions } from "@/lib/order-sounds";
 import { buildOpeningHours, minutesToTimeInput, parseOpeningHours } from "@/lib/store-hours";
-import type { BusinessSettings, HomeSlide, StoreMode } from "@/lib/types";
+import type { BusinessSettings, HomeSlide, NewOrderSound, StoreMode } from "@/lib/types";
 
 type AdvancedSettings = {
   storeMode: StoreMode;
@@ -23,6 +24,7 @@ type AdvancedSettings = {
   onlinePaymentsEnabled: boolean;
   lowStockAlertThreshold: string;
   newOrderSoundEnabled: boolean;
+  newOrderSound: NewOrderSound;
   whatsappOrderAlerts: boolean;
   adminDailyDigestTime: string;
 };
@@ -43,6 +45,7 @@ const defaultAdvanced: AdvancedSettings = {
   onlinePaymentsEnabled: false,
   lowStockAlertThreshold: "5",
   newOrderSoundEnabled: true,
+  newOrderSound: defaultNewOrderSound,
   whatsappOrderAlerts: true,
   adminDailyDigestTime: "21:00",
 };
@@ -95,6 +98,7 @@ export function AdminSettingsClient({
   const [advanced, setAdvanced] = useState<AdvancedSettings>({
     ...defaultAdvanced,
     ...initialAdvanced,
+    newOrderSound: getNewOrderSound(initialAdvanced?.newOrderSound),
     maxOrdersPerSlot: String(initialAdvanced?.maxOrdersPerSlot ?? defaultAdvanced.maxOrdersPerSlot),
     defaultPrepMinutes: String(initialAdvanced?.defaultPrepMinutes ?? defaultAdvanced.defaultPrepMinutes),
     rushPrepBufferMinutes: String(initialAdvanced?.rushPrepBufferMinutes ?? defaultAdvanced.rushPrepBufferMinutes),
@@ -106,8 +110,13 @@ export function AdminSettingsClient({
   const [message, setMessage] = useState("");
   const [uploading, setUploading] = useState(false);
   const [locatingKitchen, setLocatingKitchen] = useState(false);
+  const [geocodingKitchen, setGeocodingKitchen] = useState(false);
   const [storeModeSaving, setStoreModeSaving] = useState<StoreMode | null>(null);
+  const [lastPreviewedSound, setLastPreviewedSound] = useState<NewOrderSound | null>(null);
+  const [previewingSound, setPreviewingSound] = useState<NewOrderSound | null>(null);
   const [isPending, startTransition] = useTransition();
+  const soundPreviewContext = useRef<AudioContext | null>(null);
+  const kitchenCoordinatesReady = hasValidCoordinate(settings.kitchenLatitude, 90) && hasValidCoordinate(settings.kitchenLongitude, 180);
 
   function run(task: () => Promise<void>) {
     setMessage("");
@@ -125,6 +134,9 @@ export function AdminSettingsClient({
       const openingHours = buildOpeningHours(storeHours.opensAt, storeHours.closesAt);
       if (!openingHours) {
         throw new Error("Please choose valid opening and closing times.");
+      }
+      if (settings.locationRestrictionEnabled && !kitchenCoordinatesReady) {
+        throw new Error("Kitchen latitude and longitude are required before enabling delivery radius restriction.");
       }
 
       const response = await fetch("/api/settings", {
@@ -156,8 +168,48 @@ export function AdminSettingsClient({
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Settings save failed.");
       setSettings((current) => ({ ...current, openingHours: data.settings?.openingHours ?? openingHours }));
-      setMessage(`Restaurant settings saved live. Store hours are ${data.settings?.openingHours ?? openingHours}.`);
+      window.dispatchEvent(new CustomEvent("wah-thali-admin-alert-settings-updated", {
+        detail: {
+          enabled: advanced.newOrderSoundEnabled,
+          sound: advanced.newOrderSound,
+        },
+      }));
+      const storedSettings = data.settings ?? {};
+      const storedSoundEnabled = storedSettings.newOrderSoundEnabled ?? advanced.newOrderSoundEnabled;
+      const storedSound = getNewOrderSound(storedSettings.newOrderSound ?? advanced.newOrderSound);
+      const storedHours = storedSettings.openingHours ?? openingHours;
+      const storedMode = storedSettings.storeMode ?? advanced.storeMode;
+      setMessage([
+        "Settings saved and stored successfully.",
+        `Stored values: Store hours ${storedHours}, Store mode ${storedMode}, New order sound ${storedSoundEnabled ? "On" : "Off"} - ${getSoundLabel(storedSound)}.`,
+      ].join("\n"));
     });
+  }
+
+  async function previewOrderSound(sound: NewOrderSound) {
+    const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) {
+      setMessage("This browser does not support order sound previews.");
+      return;
+    }
+
+    const audio = soundPreviewContext.current ?? new AudioContextClass();
+    soundPreviewContext.current = audio;
+    if (audio.state === "suspended") {
+      await audio.resume().catch(() => undefined);
+    }
+    if (audio.state === "suspended") {
+      setMessage("Sound preview is blocked. Click Preview again or allow sound in this browser.");
+      return;
+    }
+
+    playNewOrderSoundSteps(audio, sound);
+    setLastPreviewedSound(sound);
+    setPreviewingSound(sound);
+    window.setTimeout(() => {
+      setPreviewingSound((current) => current === sound ? null : current);
+    }, 850);
+    setMessage(`Previewing ${newOrderSoundOptions.find((option) => option.id === sound)?.label ?? "order sound"}.`);
   }
 
   async function publishStoreMode(mode: StoreMode) {
@@ -301,6 +353,38 @@ export function AdminSettingsClient({
     );
   }
 
+  async function findKitchenCoordinatesFromAddress() {
+    const address = settings.kitchenAddress.trim();
+    if (!address) {
+      setMessage("Enter the kitchen address first.");
+      return;
+    }
+
+    setGeocodingKitchen(true);
+    setMessage("Finding kitchen coordinates from address...");
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(address)}`);
+      const data = await response.json();
+      const first = Array.isArray(data) ? data[0] : null;
+      if (!first?.lat || !first?.lon) {
+        setMessage("Could not find coordinates for this address. Use device location or enter latitude and longitude manually.");
+        return;
+      }
+
+      setSettings((current) => ({
+        ...current,
+        kitchenLatitude: Number(first.lat).toFixed(6),
+        kitchenLongitude: Number(first.lon).toFixed(6),
+        locationRestrictionEnabled: true,
+      }));
+      setMessage("Kitchen coordinates found. Click Save settings to publish the delivery radius.");
+    } catch {
+      setMessage("Could not find kitchen coordinates right now. Use device location or enter latitude and longitude manually.");
+    } finally {
+      setGeocodingKitchen(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-white">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
@@ -318,7 +402,15 @@ export function AdminSettingsClient({
         </div>
         <AdminSectionNav />
 
-        {message ? <p className="mt-4 rounded-lg border border-border bg-cream px-4 py-3 text-sm font-black text-maroon">{message}</p> : null}
+        {message ? (
+          <p className={`mt-4 whitespace-pre-line rounded-lg border px-4 py-3 text-sm font-black ${
+            message.startsWith("Settings saved")
+              ? "border-[#bfe7cc] bg-[#effaf4] text-[#0f7a45]"
+              : "border-border bg-cream text-maroon"
+          }`}>
+            {message}
+          </p>
+        ) : null}
 
         <section className="mt-6 grid gap-5 lg:grid-cols-3">
           <Panel title="Store mode" icon={<Store className="text-red" size={22} />}>
@@ -378,6 +470,55 @@ export function AdminSettingsClient({
 
           <Panel title="Notifications" icon={<BellRing className="text-red" size={22} />}>
             <Toggle label="New order sound" checked={advanced.newOrderSoundEnabled} onChange={(value) => setAdvanced({ ...advanced, newOrderSoundEnabled: value })} />
+            <div className="grid gap-2">
+              <p className="text-sm font-black text-charcoal">New order sound style</p>
+              <div className="grid gap-2">
+                {newOrderSoundOptions.map((option) => {
+                  const active = advanced.newOrderSound === option.id;
+                  const previewed = lastPreviewedSound === option.id;
+                  const playing = previewingSound === option.id;
+
+                  return (
+                    <div
+                      key={option.id}
+                      className={`grid min-h-14 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-xl border bg-white px-3 py-2 transition ${
+                        active ? "border-maroon bg-[#fff8f9]" : "border-[#e6e9ef]"
+                      }`}
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${
+                          active ? "bg-maroon text-white" : "bg-[#f7f8fb] text-maroon ring-1 ring-[#e8edf3]"
+                        }`}>
+                          {active ? <CheckCircle2 size={16} /> : <Volume2 size={16} />}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-black text-charcoal">{option.label}</span>
+                          {playing ? <span className="block text-[10px] font-black text-[#0f7a45]">Playing</span> : null}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => previewOrderSound(option.id)}
+                        className="grid h-9 w-9 place-items-center rounded-lg bg-charcoal text-white"
+                        aria-label={`Preview ${option.label}`}
+                      >
+                        <Play size={14} fill="currentColor" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdvanced({ ...advanced, newOrderSound: option.id })}
+                        disabled={!previewed && !active}
+                        className={`h-9 min-w-16 rounded-lg px-3 text-xs font-black disabled:opacity-45 ${
+                          active ? "bg-white text-maroon ring-1 ring-[#efd8de]" : "bg-maroon text-white"
+                        }`}
+                      >
+                        {active ? "Using" : "Use"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
             <Toggle label="WhatsApp order alerts" checked={advanced.whatsappOrderAlerts} onChange={(value) => setAdvanced({ ...advanced, whatsappOrderAlerts: value })} />
             <Input label="Low stock alert threshold" value={advanced.lowStockAlertThreshold} onChange={(value) => setAdvanced({ ...advanced, lowStockAlertThreshold: value })} />
             <Input label="Daily digest time" value={advanced.adminDailyDigestTime} onChange={(value) => setAdvanced({ ...advanced, adminDailyDigestTime: value })} />
@@ -395,6 +536,23 @@ export function AdminSettingsClient({
               <Input label="Kitchen latitude" value={settings.kitchenLatitude} onChange={(value) => setSettings({ ...settings, kitchenLatitude: value })} />
               <Input label="Kitchen longitude" value={settings.kitchenLongitude} onChange={(value) => setSettings({ ...settings, kitchenLongitude: value })} />
             </div>
+            {settings.locationRestrictionEnabled && !kitchenCoordinatesReady ? (
+              <p className="rounded-lg border border-red/25 bg-[#fff4f5] px-3 py-2 text-xs font-black leading-5 text-maroon">
+                Radius restriction is On, but kitchen coordinates are missing. Add latitude and longitude, then save settings.
+              </p>
+            ) : settings.locationRestrictionEnabled ? (
+              <p className="rounded-lg border border-[#c7ecd2] bg-[#effaf4] px-3 py-2 text-xs font-black leading-5 text-[#0f7a45]">
+                Strict radius is active. Customers outside {settings.deliveryRadiusKm || "0"} km cannot place orders.
+              </p>
+            ) : null}
+            <button
+              type="button"
+              onClick={findKitchenCoordinatesFromAddress}
+              disabled={geocodingKitchen}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-maroon/25 bg-white px-3 text-sm font-black text-maroon disabled:cursor-wait disabled:opacity-60"
+            >
+              <MapPin size={17} /> {geocodingKitchen ? "Finding..." : "Find coordinates from kitchen address"}
+            </button>
             <button
               type="button"
               onClick={detectKitchenLocation}
@@ -540,4 +698,34 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
 
 function safeImage(src?: string) {
   return src?.startsWith("/") ? src : src || "/wah-thali-meal-cutout-v2.png";
+}
+
+function getSoundLabel(sound: NewOrderSound) {
+  return newOrderSoundOptions.find((option) => option.id === sound)?.label ?? "Classic bell";
+}
+
+function playNewOrderSoundSteps(audio: AudioContext, sound: NewOrderSound) {
+  const now = audio.currentTime;
+
+  getNewOrderSoundSteps(sound).forEach((step) => {
+    const oscillator = audio.createOscillator();
+    const gain = audio.createGain();
+    oscillator.type = step.wave;
+    oscillator.frequency.value = step.frequency;
+    oscillator.connect(gain);
+    gain.connect(audio.destination);
+
+    const start = now + step.startMs / 1000;
+    const end = start + step.durationMs / 1000;
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(step.gain, start + 0.018);
+    gain.gain.exponentialRampToValueAtTime(0.0001, end);
+    oscillator.start(start);
+    oscillator.stop(end + 0.02);
+  });
+}
+
+function hasValidCoordinate(value: string, maxAbs: number) {
+  const numeric = Number(value);
+  return value.trim() !== "" && Number.isFinite(numeric) && Math.abs(numeric) <= maxAbs;
 }

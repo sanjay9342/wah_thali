@@ -71,7 +71,19 @@ export async function POST(request: Request) {
     });
 
     return { review, product };
+  }).catch((error) => {
+    if (isMissingReviewOrderColumn(error)) {
+      console.error("Review.orderId is missing in the database. Review submission is disabled until the schema is pushed.", error);
+      return null;
+    }
+    throw error;
   });
+
+  if (!result) {
+    return NextResponse.json({
+      error: "Reviews need a database update before they can be saved. Please run the Prisma database push/migration so Review.orderId exists.",
+    }, { status: 503 });
+  }
 
   await logActivity({
     type: "REVIEW_SUBMITTED",
@@ -86,4 +98,9 @@ export async function POST(request: Request) {
     productRating: Number(result.product.rating),
     productRatingCount: result.product.ratingCount,
   });
+}
+
+function isMissingReviewOrderColumn(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("Review.orderId") || (message.includes("Review") && message.includes("orderId"));
 }

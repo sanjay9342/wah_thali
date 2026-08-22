@@ -1,3 +1,7 @@
+import type { NewOrderSound } from "@/lib/order-sounds";
+
+export type { NewOrderSound } from "@/lib/order-sounds";
+
 export type DietaryType = "VEG" | "NON_VEG" | "JAIN";
 
 export type Product = {
@@ -52,16 +56,24 @@ export type AdminOrder = {
   orderNumber: string;
   customerName: string;
   customerMobile: string;
+  customerEmail?: string;
   status: OrderStatus;
   subtotal: number;
   discount: number;
   gst: number;
   amount: number;
   itemSummary: string;
-  items: { name: string; quantity: number; price: number }[];
+  items: { productId?: string; name: string; quantity: number; price: number }[];
   paymentSummary: string;
   createdAt: string;
   timeline: { toStatus: string; note?: string | null; createdAt: string }[];
+  reviews?: {
+    id: string;
+    productName: string;
+    rating: number;
+    comment?: string;
+    createdAt: string;
+  }[];
 };
 
 export type AdminCustomer = {
@@ -136,6 +148,7 @@ export type AdvancedSettings = {
   onlinePaymentsEnabled: boolean;
   lowStockAlertThreshold: number;
   newOrderSoundEnabled: boolean;
+  newOrderSound: NewOrderSound;
   whatsappOrderAlerts: boolean;
   adminDailyDigestTime: string;
 };

@@ -9,7 +9,7 @@ export default async function AdminOrdersPage() {
   return (
     <AdminOrdersClient
       initialOrders={orders}
-      newOrderSoundEnabled={settings.newOrderSoundEnabled}
+      defaultPrepMinutes={settings.defaultPrepMinutes}
       requireDeclineReason={settings.requireDeclineReason}
     />
   );

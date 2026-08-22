@@ -10,6 +10,8 @@ import {
   ChevronRight,
   Grid3X3,
   Heart,
+  IndianRupee,
+  Leaf,
   LockKeyhole,
   MapPin,
   Minus,
@@ -17,6 +19,7 @@ import {
   Search,
   ShoppingBag,
   ShoppingCart,
+  SlidersHorizontal,
   Star,
   Store,
   TimerReset,
@@ -36,7 +39,7 @@ import { getDeliveryLocationCoverage, useDeliveryLocation } from "@/lib/delivery
 import { formatRupees, getPricableCartLines, getProductPrice } from "@/lib/pricing";
 import { getStoreOrderingStatus } from "@/lib/store-hours";
 import { useStoredCart } from "@/lib/use-stored-cart";
-import type { CartLine, CategoryOfferMap, HomeSlide, Product, RestaurantSettings } from "@/lib/types";
+import type { CartLine, CategoryOfferMap, Coupon, HomeSlide, Product, RestaurantSettings } from "@/lib/types";
 
 function getQuantity(lines: CartLine[], productId: string) {
   return lines
@@ -50,10 +53,124 @@ function getVariantQuantity(lines: CartLine[], productId: string, variantId: str
     .reduce((total, line) => total + line.quantity, 0);
 }
 
-function cleanDisplayText(value: string) {
-  return value
-    .replaceAll("\u00e2\u201a\u00b9", "\u20b9")
-    .replaceAll("\u00e2\u20ac\u00a2", "\u2022");
+type MenuFilterId = "veg" | "bestseller" | "offers" | "rating" | "fast" | "under199";
+
+const menuFilterOptions: { id: MenuFilterId; label: string; helper: string }[] = [
+  { id: "veg", label: "Pure Veg", helper: "Veg and Jain dishes" },
+  { id: "bestseller", label: "Bestsellers", helper: "Most ordered dishes" },
+  { id: "offers", label: "Offers", helper: "Deals and discounts" },
+  { id: "rating", label: "Rating 4.5+", helper: "Top rated items" },
+  { id: "fast", label: "Under 30 min", helper: "Quick prep dishes" },
+  { id: "under199", label: "Under Rs 199", helper: "Budget picks" },
+];
+
+function MenuFilterIcon({ filterId, className }: { filterId: MenuFilterId; className?: string }) {
+  if (filterId === "veg") return <Leaf size={15} strokeWidth={2.6} className={className} />;
+  if (filterId === "bestseller") return <Star size={15} strokeWidth={2.6} className={className} />;
+  if (filterId === "offers") return <BadgePercent size={15} strokeWidth={2.6} className={className} />;
+  if (filterId === "rating") return <Star size={15} strokeWidth={2.6} className={className} />;
+  if (filterId === "fast") return <TimerReset size={15} strokeWidth={2.6} className={className} />;
+  return <IndianRupee size={15} strokeWidth={2.6} className={className} />;
+}
+
+function productMatchesMenuFilters(product: Product, activeFilters: MenuFilterId[], categoryOffers: CategoryOfferMap) {
+  if (!activeFilters.length) return true;
+
+  return activeFilters.every((filterId) => {
+    if (filterId === "veg") return product.dietaryType === "VEG" || product.dietaryType === "JAIN";
+    if (filterId === "bestseller") return Boolean(product.bestseller);
+    if (filterId === "offers") return Boolean(getProductOffer(product, categoryOffers) || product.originalPrice);
+    if (filterId === "rating") return product.rating >= 4.5;
+    if (filterId === "fast") return product.prepTimeMinutes <= 30;
+    return product.price <= 199;
+  });
+}
+
+function SearchFilterControl({
+  query,
+  setQuery,
+  activeFilters,
+  filtersOpen,
+  onToggleFiltersOpen,
+  onToggleFilter,
+  onClearFilters,
+  placeholder,
+  className = "",
+}: {
+  query: string;
+  setQuery: (value: string) => void;
+  activeFilters: MenuFilterId[];
+  filtersOpen: boolean;
+  onToggleFiltersOpen: () => void;
+  onToggleFilter: (filterId: MenuFilterId) => void;
+  onClearFilters: () => void;
+  placeholder: string;
+  className?: string;
+}) {
+  return (
+    <section className={`rounded-[16px] border border-[#eef1f6] bg-white px-2 py-1.5 shadow-[0_8px_22px_rgba(34,31,32,0.05)] ${className}`}>
+      <div className="grid h-11 grid-cols-[42px_1fr_auto] items-center gap-1 lg:h-12">
+        <Search size={20} className="mx-auto text-[#68707c]" strokeWidth={2.4} />
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          className="min-w-0 bg-transparent text-[12px] font-semibold text-charcoal outline-none placeholder:text-muted lg:text-sm"
+          placeholder={placeholder}
+        />
+        <button
+          type="button"
+          onClick={onToggleFiltersOpen}
+          className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-[11px] px-2.5 text-[11px] font-black transition-colors lg:px-3 lg:text-xs ${
+            activeFilters.length ? "bg-red text-white" : "bg-[#f7f8fc] text-charcoal ring-1 ring-[#e7ebf2]"
+          }`}
+          aria-expanded={filtersOpen}
+        >
+          <SlidersHorizontal size={15} strokeWidth={2.7} />
+          <span>Filters</span>
+          {activeFilters.length ? (
+            <span className="grid h-4 min-w-4 place-items-center rounded-full bg-white px-1 text-[9px] text-red">
+              {activeFilters.length}
+            </span>
+          ) : null}
+        </button>
+      </div>
+
+      {filtersOpen ? (
+        <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+          {menuFilterOptions.map((option) => {
+            const selected = activeFilters.includes(option.id);
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => onToggleFilter(option.id)}
+                title={option.helper}
+                className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[11px] font-black transition-colors ${
+                  selected
+                    ? "border-red bg-red text-white shadow-[0_8px_18px_rgba(141,0,33,0.16)]"
+                    : "border-[#e5e9f0] bg-white text-[#374151] hover:border-red/40 hover:text-red"
+                }`}
+                aria-pressed={selected}
+              >
+                <MenuFilterIcon filterId={option.id} className={selected ? "fill-white/20" : ""} />
+                {option.label}
+              </button>
+            );
+          })}
+          {activeFilters.length ? (
+            <button
+              type="button"
+              onClick={onClearFilters}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-[#e5e9f0] bg-[#f7f8fc] px-3 text-[11px] font-black text-[#4b5563]"
+            >
+              <X size={14} strokeWidth={2.7} />
+              Clear
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 function QuantityControl({
@@ -114,7 +231,7 @@ function DetailQuantityControl({
 }) {
   if (disabled) {
     return (
-      <button disabled className="h-9 w-[112px] shrink-0 rounded-[9px] bg-[#f2eef0] text-[12px] font-black text-muted">
+      <button disabled className="h-13 w-[112px] shrink-0 rounded-[15px] bg-[#f2eef0] text-[12px] font-black text-muted">
         Closed
       </button>
     );
@@ -122,13 +239,13 @@ function DetailQuantityControl({
 
   if (quantity > 0) {
     return (
-      <div className="grid h-9 w-[112px] shrink-0 grid-cols-3 overflow-hidden rounded-[9px] bg-red text-white shadow-[0_10px_22px_rgba(141,0,33,0.22)]">
+      <div className="grid h-13 w-[112px] shrink-0 grid-cols-3 overflow-hidden rounded-[15px] bg-maroon text-white shadow-[0_10px_22px_rgba(141,0,33,0.22)]">
         <button className="grid place-items-center" onClick={onDecrease} aria-label="Decrease quantity">
-          <Minus size={14} strokeWidth={3} />
+          <Minus size={16} strokeWidth={3} />
         </button>
-        <span className="grid place-items-center text-[13px] font-black">{quantity}</span>
+        <span className="grid place-items-center text-[14px] font-black">{quantity}</span>
         <button className="grid place-items-center" onClick={onAdd} aria-label="Increase quantity">
-          <Plus size={14} strokeWidth={3} />
+          <Plus size={16} strokeWidth={3} />
         </button>
       </div>
     );
@@ -137,7 +254,7 @@ function DetailQuantityControl({
   return (
     <button
       onClick={onAdd}
-      className="h-9 w-[112px] shrink-0 rounded-[9px] bg-red text-[12px] font-black text-white shadow-[0_10px_22px_rgba(141,0,33,0.22)]"
+      className="h-13 w-[112px] shrink-0 rounded-[15px] bg-maroon text-[12px] font-black text-white shadow-[0_10px_22px_rgba(141,0,33,0.22)]"
     >
       Add
     </button>
@@ -189,7 +306,7 @@ function ProductCard({
       <div className="relative aspect-[1.58/1] w-full overflow-hidden bg-[#f6f1ed] sm:aspect-[1.42/1]">
         <button className="block h-full w-full text-left" onClick={onOpen} aria-label={`View details for ${product.name}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="eager" onError={useFallbackImage} />
+          <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="lazy" decoding="async" onError={useFallbackImage} />
         </button>
         <button
           className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-white text-red shadow-[0_8px_18px_rgba(34,31,32,0.12)] sm:right-3 sm:top-3 sm:h-9 sm:w-9"
@@ -256,7 +373,7 @@ function FoodieProductCard({
       <div className="relative aspect-[1.55/1] overflow-hidden bg-[#f3f5f8]">
         <button className="block h-full w-full text-left" onClick={onOpen} aria-label={`View details for ${product.name}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="eager" onError={useFallbackImage} />
+          <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="lazy" decoding="async" onError={useFallbackImage} />
         </button>
         <button
           className="absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-full bg-white text-[#98a0ad] shadow-[0_8px_18px_rgba(34,31,32,0.12)]"
@@ -303,6 +420,11 @@ function FoodieProductCard({
 function DesktopSearchPage({
   query,
   setQuery,
+  activeFilters,
+  filtersOpen,
+  onToggleFiltersOpen,
+  onToggleFilter,
+  onClearFilters,
   searchGroups,
   categoryOffers,
   validCart,
@@ -315,6 +437,11 @@ function DesktopSearchPage({
 }: {
   query: string;
   setQuery: (value: string) => void;
+  activeFilters: MenuFilterId[];
+  filtersOpen: boolean;
+  onToggleFiltersOpen: () => void;
+  onToggleFilter: (filterId: MenuFilterId) => void;
+  onClearFilters: () => void;
   searchGroups: { category: string; items: Product[] }[];
   categoryOffers: CategoryOfferMap;
   validCart: CartLine[];
@@ -336,20 +463,22 @@ function DesktopSearchPage({
                 What are you looking for today?
               </h1>
             </div>
-            <label className="grid h-14 grid-cols-[50px_1fr] items-center rounded-[18px] border border-[#f0e2e4] bg-white px-2 shadow-[0_8px_18px_rgba(17,24,39,0.05)]">
-              <Search size={23} className="mx-auto text-[#68707c]" strokeWidth={2.4} />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                className="min-w-0 bg-transparent text-[15px] font-semibold text-[#111827] outline-none placeholder:text-[#a8adb7]"
-                placeholder="Search fresh dishes"
-              />
-            </label>
+            <SearchFilterControl
+              query={query}
+              setQuery={setQuery}
+              activeFilters={activeFilters}
+              filtersOpen={filtersOpen}
+              onToggleFiltersOpen={onToggleFiltersOpen}
+              onToggleFilter={onToggleFilter}
+              onClearFilters={onClearFilters}
+              placeholder="Search fresh dishes"
+              className="rounded-[18px] border-[#f0e2e4] px-2.5 py-2"
+            />
           </div>
         </div>
 
         <div className="mt-8 grid gap-10">
-          {searchGroups.map((group) => (
+          {searchGroups.length ? searchGroups.map((group) => (
             <section key={group.category}>
               <div className="mb-5 flex items-center gap-4">
                 <h2 className="text-[26px] font-black text-[#111827]">{shortCategoryName(group.category)}</h2>
@@ -372,7 +501,13 @@ function DesktopSearchPage({
                 ))}
               </div>
             </section>
-          ))}
+          )) : (
+            <div className="rounded-[24px] border border-[#e7ebf2] bg-white p-10 text-center shadow-[0_12px_28px_rgba(17,24,39,0.04)]">
+              <Store className="mx-auto text-muted" size={34} />
+              <h2 className="mt-4 text-xl font-black text-[#111827]">No dishes found</h2>
+              <p className="mt-2 text-sm font-semibold text-muted">Try clearing filters or searching for thali, biryani, momo, or dessert.</p>
+            </div>
+          )}
         </div>
       </div>
     </section>
@@ -455,6 +590,7 @@ function DishDetailSheet({
   offer,
   relatedProducts,
   freeDeliveryThreshold,
+  cartCount,
 }: {
   product: Product;
   getQuantityForVariant: (variantId: string) => number;
@@ -466,6 +602,7 @@ function DishDetailSheet({
   offer?: string;
   relatedProducts: Product[];
   freeDeliveryThreshold?: number;
+  cartCount: number;
 }) {
   const defaultVariantId = product.variants[0]?.id ?? "regular";
   const variants = product.variants.length ? product.variants : [{ id: defaultVariantId, name: "Regular", price: 0 }];
@@ -518,7 +655,7 @@ function DishDetailSheet({
         <div className="min-h-0 flex-1 overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+92px)]">
           <div className="relative h-[242px] bg-[#f6f1ed]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
+            <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
             <div className="absolute inset-0 bg-gradient-to-b from-charcoal/24 via-transparent to-charcoal/10" />
             <button
               className="absolute left-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white/92 text-charcoal shadow-lg"
@@ -527,6 +664,10 @@ function DishDetailSheet({
             >
               <ArrowLeft size={21} strokeWidth={3} />
             </button>
+            <Link href="/cart" className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white/92 text-maroon shadow-lg" aria-label="Open cart">
+              <ShoppingCart size={20} strokeWidth={2.7} />
+              {cartCount ? <span className="absolute -right-1 -top-1 rounded-full bg-maroon px-1.5 text-[9px] font-black text-white">{cartCount}</span> : null}
+            </Link>
             <span className="absolute bottom-4 left-4">
               <DietMark type={product.dietaryType} />
             </span>
@@ -538,17 +679,17 @@ function DishDetailSheet({
           </div>
 
           <div className="px-5 pt-3">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted">{product.category}</p>
-            <h2 id="dish-detail-title" className="mt-1.5 text-[25px] font-black leading-tight text-charcoal">
+            <p className="text-[9px] font-black uppercase tracking-[0.14em] text-muted">{product.category}</p>
+            <h2 id="dish-detail-title" className="mt-1.5 text-[22px] font-black leading-tight text-charcoal">
                 {product.name}
             </h2>
-            <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11px] font-black text-muted">
+            <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[10px] font-black text-muted">
               <span className="inline-flex items-center gap-1">
-                <TimerReset size={14} /> {product.prepTimeMinutes}-{product.prepTimeMinutes + 5} min
+                <TimerReset size={12} /> {product.prepTimeMinutes}-{product.prepTimeMinutes + 5} min
               </span>
               <span className="text-[#d8dce3]">•</span>
               <span className="inline-flex items-center gap-1">
-                <BadgeCheck size={14} className="text-maroon" /> {product.rating}
+                <BadgeCheck size={12} className="text-maroon" /> {product.rating}
               </span>
             </div>
             <div className="mt-4 flex flex-wrap items-end gap-2.5">
@@ -567,7 +708,7 @@ function DishDetailSheet({
           ) : null}
 
           <div className="mt-5">
-            <h3 className="text-[13px] font-black text-charcoal">Select Size</h3>
+            <h3 className="text-[12px] font-black text-charcoal">Select Size</h3>
             <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-3">
               {variants.map((variant, index) => {
                 const active = variant.id === selectedVariant.id;
@@ -577,14 +718,14 @@ function DishDetailSheet({
                     key={variant.id}
                     type="button"
                     onClick={() => setSelectedVariantId(variant.id)}
-                    className={`min-h-[108px] rounded-[16px] border-2 bg-white p-2.5 text-center shadow-[0_10px_20px_rgba(17,24,39,0.05)] transition-colors ${
+                    className={`min-h-[96px] rounded-[16px] border-2 bg-white p-2.5 text-center shadow-[0_10px_20px_rgba(17,24,39,0.05)] transition-colors ${
                       active ? "border-maroon text-maroon" : "border-[#eef1f6] text-muted"
                     }`}
                   >
                     <span className={`mx-auto grid h-5 w-5 place-items-center rounded-full ${active ? "bg-maroon text-white" : "bg-[#f2f4f7] text-transparent"}`}>
                       <BadgeCheck size={13} strokeWidth={3} />
                     </span>
-                    <span className="mt-2 block text-[12px] font-black">{variant.name}</span>
+                    <span className="mt-2 block text-[11px] font-black">{variant.name}</span>
                     <span className="mt-1 block text-[11px] font-black text-muted">{index === 0 ? "1" : index === 1 ? "2" : String(index + 1)}</span>
                     <span className="mt-1.5 block text-[12px] font-black">{formatRupees(variantPrice)}</span>
                     {product.originalPrice ? <span className="mt-1 block text-[10px] font-bold text-muted line-through">{formatRupees(product.originalPrice + variant.price)}</span> : null}
@@ -597,8 +738,8 @@ function DishDetailSheet({
           {product.addons.length ? (
             <div className="mt-5 overflow-hidden rounded-[16px] bg-white shadow-[0_10px_24px_rgba(17,24,39,0.05)] ring-1 ring-[#eef1f6]">
               <div className="flex items-center gap-2 border-b border-[#eef1f6] px-4 py-3">
-                <Plus size={18} className="text-maroon" strokeWidth={3} />
-                <h3 className="text-[14px] font-black text-charcoal">Add Extras</h3>
+                <Plus size={15} className="text-maroon" strokeWidth={3} />
+                <h3 className="text-[13px] font-black text-charcoal">Add Extras</h3>
               </div>
               <div className="divide-y divide-[#eef1f6]">
                 {product.addons.map((addon) => {
@@ -682,7 +823,7 @@ function DishDetailSheet({
                   >
                     <span className="relative block aspect-[1.35/1] bg-[#f3f5f8]">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
+                      <img src={item.image} alt={item.name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
                     </span>
                     <span className="block p-3">
                       <span className="line-clamp-1 text-[14px] font-black text-charcoal">{item.name}</span>
@@ -700,15 +841,15 @@ function DishDetailSheet({
         </div>
 
         <div className="shrink-0 border-t border-[#eef1f6] bg-white px-5 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3">
-          <div className={`grid gap-3 ${selectedQuantity > 0 ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-[minmax(0,1fr)_58px]"}`}>
+          <div className={`grid items-center gap-3 ${selectedQuantity > 0 ? "grid-cols-[minmax(0,1fr)_112px]" : "grid-cols-[minmax(0,1fr)_58px]"}`}>
             <button
               type="button"
               onClick={() => onAdd(selectedVariant.id, selectedAddonIds)}
               disabled={orderingDisabled}
-              className="grid h-13 grid-cols-[30px_1fr_auto] items-center gap-2 rounded-[15px] bg-maroon px-4 text-white shadow-[0_12px_28px_rgba(141,0,33,0.25)] disabled:bg-muted/40"
+              className="grid h-13 min-w-0 grid-cols-[26px_minmax(0,1fr)_auto] items-center gap-2 rounded-[15px] bg-maroon px-4 text-white shadow-[0_12px_28px_rgba(141,0,33,0.25)] disabled:bg-muted/40"
             >
               <ShoppingCart size={20} strokeWidth={3} />
-              <span className="text-left text-[13px] font-black">{selectedQuantity ? "ADD MORE" : "ADD TO CART"}</span>
+              <span className="truncate text-left text-[13px] font-black">{selectedQuantity ? "ADD MORE" : "ADD TO CART"}</span>
               <span className="text-[13px] font-black">{formatRupees(totalPrice)}</span>
             </button>
             {selectedQuantity > 0 ? (
@@ -731,6 +872,7 @@ export function MenuExperience({
   initialSlides,
   initialCategoryImages = {},
   initialCategoryOffers = {},
+  initialCoupons = [],
   restaurantSettings,
   initialActiveCategory,
 }: {
@@ -739,6 +881,7 @@ export function MenuExperience({
   initialSlides?: HomeSlide[];
   initialCategoryImages?: Record<string, string>;
   initialCategoryOffers?: CategoryOfferMap;
+  initialCoupons?: Coupon[];
   restaurantSettings?: RestaurantSettings;
   initialActiveCategory?: string;
 }) {
@@ -750,6 +893,8 @@ export function MenuExperience({
   const deliveryLocation = useDeliveryLocation();
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
   const [query, setQuery] = useState("");
+  const [activeFilters, setActiveFilters] = useState<MenuFilterId[]>([]);
+  const [filtersOpen, setFiltersOpen] = useState(true);
   const [activeCategory, setActiveCategory] = useState(() => {
     if (!initialActiveCategory || initialActiveCategory === "All") return "All";
     return categories.includes(initialActiveCategory) ? initialActiveCategory : "All";
@@ -778,9 +923,10 @@ export function MenuExperience({
     return products.filter((product) => {
       const categoryMatch = activeCategory === "All" || product.category === activeCategory;
       const textMatch = !needle || `${product.name} ${product.category} ${product.description}`.toLowerCase().includes(needle);
-      return product.available && categoryMatch && textMatch;
+      const filterMatch = productMatchesMenuFilters(product, activeFilters, categoryOffers);
+      return product.available && categoryMatch && textMatch && filterMatch;
     });
-  }, [activeCategory, products, query]);
+  }, [activeCategory, activeFilters, categoryOffers, products, query]);
 
   const popularProducts = useMemo(() => {
     const bestsellers = visibleProducts.filter((product) => product.bestseller);
@@ -887,6 +1033,16 @@ export function MenuExperience({
     );
   }
 
+  function toggleFilter(filterId: MenuFilterId) {
+    setActiveFilters((current) =>
+      current.includes(filterId) ? current.filter((id) => id !== filterId) : [...current, filterId],
+    );
+  }
+
+  function clearFilters() {
+    setActiveFilters([]);
+  }
+
   function closeCartBarWithFlyout() {
     if (cartCount === 0 || cartBarClosing) return;
     setCartBarClosing(true);
@@ -914,12 +1070,13 @@ export function MenuExperience({
         const items = products.filter((product) => {
           const matchesCategory = product.category === category;
           const matchesText = !needle || `${product.name} ${product.category} ${product.description}`.toLowerCase().includes(needle);
-          return product.available && matchesCategory && matchesText;
+          const filterMatch = productMatchesMenuFilters(product, activeFilters, categoryOffers);
+          return product.available && matchesCategory && matchesText && filterMatch;
         });
         return { category, items };
       })
       .filter((group) => group.items.length > 0);
-  }, [allProductCategories, products, query]);
+  }, [activeFilters, allProductCategories, categoryOffers, products, query]);
   const cartCount = validCart.reduce((total, line) => total + line.quantity, 0);
   const cartSubtotal = useMemo(
     () => validCart.reduce((total, line) => total + getProductPrice(line, products), 0),
@@ -928,6 +1085,7 @@ export function MenuExperience({
   const isHomePage = pathname === "/";
   const isSearchPage = pathname === "/menu";
   const showCartBar = cartCount > 0 && hiddenCartCount !== cartCount;
+  const homeOfferCards = getHomeOfferCards(initialCoupons);
 
   if (storeClosed) {
     return (
@@ -996,19 +1154,21 @@ export function MenuExperience({
               What are you
               <span className="block">looking for today?</span>
             </h1>
-            <label className="mt-6 grid h-12 grid-cols-[42px_1fr] items-center rounded-[16px] border border-[#eef1f6] bg-white px-2 shadow-[0_6px_16px_rgba(17,24,39,0.05)]">
-              <Search size={21} className="mx-auto text-[#68707c]" strokeWidth={2.4} />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                className="min-w-0 bg-transparent text-[13px] font-semibold text-[#111827] outline-none placeholder:text-[#a8adb7]"
-                placeholder="Search fresh dishes"
-              />
-            </label>
+            <SearchFilterControl
+              query={query}
+              setQuery={setQuery}
+              activeFilters={activeFilters}
+              filtersOpen={filtersOpen}
+              onToggleFiltersOpen={() => setFiltersOpen((current) => !current)}
+              onToggleFilter={toggleFilter}
+              onClearFilters={clearFilters}
+              placeholder="Search fresh dishes"
+              className="mt-6 shadow-[0_6px_16px_rgba(17,24,39,0.05)]"
+            />
           </div>
 
           <div className="mt-4 grid gap-8">
-            {searchGroups.map((group) => (
+            {searchGroups.length ? searchGroups.map((group) => (
               <section key={group.category}>
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-[22px] font-black text-[#111827]">{shortCategoryName(group.category)}</h2>
@@ -1031,7 +1191,13 @@ export function MenuExperience({
                   ))}
                 </div>
               </section>
-            ))}
+            )) : (
+              <div className="rounded-[20px] border border-[#e7ebf2] bg-white p-8 text-center shadow-[0_12px_28px_rgba(17,24,39,0.04)]">
+                <Store className="mx-auto text-muted" size={32} />
+                <h2 className="mt-4 text-[19px] font-black text-[#111827]">No dishes found</h2>
+                <p className="mt-2 text-sm font-semibold text-muted">Try clearing filters or searching another dish.</p>
+              </div>
+            )}
           </div>
           <section className="pb-10 pt-10 text-center">
             <h2 className="text-[32px] font-black leading-[0.92] text-[#9aa1ad]">
@@ -1051,6 +1217,11 @@ export function MenuExperience({
         <DesktopSearchPage
           query={query}
           setQuery={setQuery}
+          activeFilters={activeFilters}
+          filtersOpen={filtersOpen}
+          onToggleFiltersOpen={() => setFiltersOpen((current) => !current)}
+          onToggleFilter={toggleFilter}
+          onClearFilters={clearFilters}
           searchGroups={searchGroups}
           categoryOffers={categoryOffers}
           validCart={validCart}
@@ -1074,9 +1245,9 @@ export function MenuExperience({
             >
               <ArrowLeft size={22} strokeWidth={3} />
             </button>
-            <h1 className="text-[26px] font-black leading-tight text-[#111827]">All Categories</h1>
+            <h1 className="text-[22px] font-black leading-tight text-[#111827]">All Categories</h1>
           </div>
-          <div className="mt-7 grid grid-cols-3 gap-x-3 gap-y-6">
+          <div className="mt-6 grid grid-cols-3 gap-x-3 gap-y-5">
             {categoryItems.map((category) => (
               <button
                 key={category}
@@ -1085,17 +1256,17 @@ export function MenuExperience({
                   setActiveCategory(category);
                   setMobileMenuView("category");
                 }}
-                className="grid h-[92px] place-items-center rounded-[16px] bg-[#f0f4fc] text-center shadow-[inset_0_0_0_1px_#e1e7f1]"
+                className="grid h-[86px] place-items-center rounded-[16px] bg-[#f0f4fc] px-1 text-center shadow-[inset_0_0_0_1px_#e1e7f1]"
               >
-                <span className="grid h-[46px] w-[46px] place-items-center overflow-hidden rounded-full bg-white shadow-[0_8px_18px_rgba(34,31,32,0.08)]">
+                <span className="grid h-[42px] w-[42px] place-items-center overflow-hidden rounded-full bg-white shadow-[0_8px_18px_rgba(34,31,32,0.08)]">
                   {category === "All" ? (
-                    <Grid3X3 size={24} strokeWidth={3} />
+                    <Grid3X3 size={21} strokeWidth={3} />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[82%] w-[82%] rounded-full object-cover" loading="eager" />
+                    <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[82%] w-[82%] rounded-full object-cover" loading="lazy" decoding="async" />
                   )}
                 </span>
-                <span className="max-w-[76px] truncate text-[14px] font-black leading-tight text-[#1f2937]">{shortCategoryName(category)}</span>
+                <span className="max-w-[70px] truncate text-[11px] font-black leading-tight text-[#1f2937]">{shortCategoryName(category)}</span>
               </button>
             ))}
           </div>
@@ -1108,7 +1279,7 @@ export function MenuExperience({
             <button className="grid h-10 w-10 place-items-center text-maroon" onClick={() => setMobileMenuView("categories")} aria-label="Back to categories">
               <ArrowLeft size={25} strokeWidth={2.7} />
             </button>
-            <h1 className="text-center text-[25px] font-black leading-none text-maroon">{shortCategoryName(mobileCategory)}</h1>
+            <h1 className="text-center text-[21px] font-black leading-none text-maroon">{shortCategoryName(mobileCategory)}</h1>
             <Link href="/cart" className="relative grid h-10 w-10 place-items-center text-maroon" aria-label="Cart">
               <ShoppingCart size={27} strokeWidth={2.6} />
               {cartCount ? <span className="absolute right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
@@ -1116,8 +1287,8 @@ export function MenuExperience({
           </div>
           <div className="px-6 pt-11">
             <div className="mb-7 flex items-center justify-between">
-              <h2 className="text-[25px] font-bold text-[#111827]">{shortCategoryName(mobileCategory)} Products</h2>
-              <span className="text-[25px] font-bold text-[#111827]">{mobileCategoryProducts.length} {mobileCategoryProducts.length === 1 ? "item" : "items"}</span>
+              <h2 className="text-[18px] font-bold text-[#111827]">{shortCategoryName(mobileCategory)} Products</h2>
+              <span className="text-[18px] font-bold text-[#111827]">{mobileCategoryProducts.length} {mobileCategoryProducts.length === 1 ? "item" : "items"}</span>
             </div>
             <div className="grid grid-cols-2 gap-5">
               {mobileCategoryProducts.map((product) => (
@@ -1159,7 +1330,7 @@ export function MenuExperience({
                     <Grid3X3 size={17} />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-full w-full object-cover" loading="eager" onError={useFallbackImage} />
+                    <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" onError={useFallbackImage} />
                   )}
                 </span>
                 <span className="truncate">{shortCategoryName(category)}</span>
@@ -1245,17 +1416,17 @@ export function MenuExperience({
             </div>
           </section>
 
-          <section className={`${isHomePage ? "block" : "block"} mt-5 rounded-[16px] border border-[#eef1f6] bg-white px-2 py-1.5 shadow-[0_8px_22px_rgba(34,31,32,0.05)] lg:mt-6`}>
-            <label className="grid h-11 grid-cols-[42px_1fr] items-center lg:h-11">
-              <Search size={20} className="mx-auto text-[#68707c]" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                className="min-w-0 bg-transparent text-[12px] font-semibold text-charcoal outline-none placeholder:text-muted lg:text-sm"
-                placeholder="Search dishes or cuisines"
-              />
-            </label>
-          </section>
+          <SearchFilterControl
+            query={query}
+            setQuery={setQuery}
+            activeFilters={activeFilters}
+            filtersOpen={filtersOpen}
+            onToggleFiltersOpen={() => setFiltersOpen((current) => !current)}
+            onToggleFilter={toggleFilter}
+            onClearFilters={clearFilters}
+            placeholder="Search dishes or cuisines"
+            className="mt-5 lg:mt-6"
+          />
 
           {storeMode !== "OPEN" ? (
             <section className="mt-5 rounded-2xl border border-red/20 bg-[#fff8f9] p-4 text-maroon">
@@ -1292,7 +1463,7 @@ export function MenuExperience({
                       <Grid3X3 size={21} />
                     ) : (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[72%] w-[72%] rounded-full object-cover" loading="eager" onError={useFallbackImage} />
+                      <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[72%] w-[72%] rounded-full object-cover" loading="lazy" decoding="async" onError={useFallbackImage} />
                     )}
                   </span>
                   <span className={`max-w-[54px] truncate text-[10px] font-black sm:max-w-20 sm:text-sm ${activeCategory === category ? "text-red" : "text-charcoal"}`}>
@@ -1374,25 +1545,19 @@ export function MenuExperience({
             </div>
 
             <div className="grid gap-3 lg:grid-cols-3">
-              {[
-                ["FLAT 50% OFF", "up to â‚¹120", "Use Code: PARTY", "bg-[#e8f7ed] text-[#16833d]"],
-                ["FREE DELIVERY", "on orders above â‚¹199", "Use Code: FREEDEL", "bg-[#fff0e8] text-[#c95000]"],
-                ["30% OFF", "up to â‚¹80", "Use Code: YUMMY", "bg-[#f3ecff] text-[#6c35d5]"],
-              ].map(([title, subtitle, code, classes]) => (
-                <article key={title} className={`min-h-[96px] rounded-[12px] p-5 lg:min-h-[112px] ${classes}`}>
+              {homeOfferCards.map((offer) => (
+                <article key={offer.code} className={`min-h-[96px] rounded-[12px] p-5 lg:min-h-[112px] ${offer.classes}`}>
                   <div className="flex h-full items-center justify-between gap-4">
-                    <div>
-                      <h3 className="text-[15px] font-black leading-tight">{cleanDisplayText(title)} <span className="text-[10px]">{cleanDisplayText(subtitle)}</span></h3>
-                      <p className="mt-4 inline-flex rounded-lg bg-white/55 px-3 py-2 text-[9px] font-black">{cleanDisplayText(code)}</p>
+                    <div className="min-w-0">
+                      <h3 className="text-[15px] font-black leading-tight">
+                        {offer.title} <span className="text-[10px]">{offer.subtitle}</span>
+                      </h3>
+                      <p className="mt-4 inline-flex max-w-full rounded-lg bg-white/55 px-3 py-2 text-[9px] font-black">
+                        <span className="truncate">Use Code: {offer.code}</span>
+                      </p>
                     </div>
                     <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white/35">
-                      {cleanDisplayText(title).startsWith("FLAT") ? (
-                        <Truck size={29} strokeWidth={2.6} />
-                      ) : cleanDisplayText(title).startsWith("FREE") ? (
-                        <Bike size={29} strokeWidth={2.6} />
-                      ) : (
-                        <BadgePercent size={29} strokeWidth={2.6} />
-                      )}
+                      <offer.Icon size={29} strokeWidth={2.6} />
                     </span>
                   </div>
                 </article>
@@ -1499,6 +1664,7 @@ export function MenuExperience({
           relatedProducts={products
             .filter((product) => product.id !== selectedProduct.id && product.available && product.category === selectedProduct.category)
             .slice(0, 4)}
+          cartCount={cartCount}
         />
       ) : null}
 
@@ -1520,6 +1686,40 @@ function useFallbackImage(event: SyntheticEvent<HTMLImageElement>) {
 
 function getProductOffer(product: Product, categoryOffers: CategoryOfferMap) {
   return product.offer?.trim() || categoryOffers[slugifyCategory(product.category)]?.trim() || undefined;
+}
+
+function getHomeOfferCards(coupons: Coupon[]) {
+  const classes = [
+    "bg-[#e8f7ed] text-[#16833d]",
+    "bg-[#fff0e8] text-[#c95000]",
+    "bg-[#f3ecff] text-[#6c35d5]",
+  ];
+  const icons = [Truck, Bike, BadgePercent];
+  const priorityCodes = ["PARTY", "FREEDEL", "YUMMY"];
+  const orderedCoupons = [
+    ...priorityCodes.flatMap((code) => coupons.filter((coupon) => coupon.code === code)),
+    ...coupons.filter((coupon) => !priorityCodes.includes(coupon.code)),
+  ];
+
+  return orderedCoupons.slice(0, 3).map((coupon, index) => ({
+    code: coupon.code,
+    title: getCouponOfferTitle(coupon),
+    subtitle: getCouponOfferSubtitle(coupon),
+    classes: classes[index % classes.length],
+    Icon: icons[index % icons.length],
+  }));
+}
+
+function getCouponOfferTitle(coupon: Coupon) {
+  if (coupon.label.toLowerCase().includes("free delivery")) return "FREE DELIVERY";
+  if (coupon.type === "PERCENT") return `${coupon.value}% OFF`;
+  return `SAVE ${formatRupees(coupon.value)}`;
+}
+
+function getCouponOfferSubtitle(coupon: Coupon) {
+  if (coupon.type === "PERCENT" && coupon.maxDiscount) return `up to ${formatRupees(coupon.maxDiscount)}`;
+  if (coupon.minOrder > 0) return `on orders above ${formatRupees(coupon.minOrder)}`;
+  return "on your order";
 }
 
 function shortCategoryName(category: string) {

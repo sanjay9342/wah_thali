@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
+import { newOrderSoundIds } from "@/lib/order-sounds";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { formatMinutesAsClock, parseOpeningHours } from "@/lib/store-hours";
 
@@ -35,6 +36,7 @@ const settingsSchema = z.object({
   onlinePaymentsEnabled: z.boolean(),
   lowStockAlertThreshold: z.number().finite().int().nonnegative(),
   newOrderSoundEnabled: z.boolean(),
+  newOrderSound: z.enum(newOrderSoundIds),
   whatsappOrderAlerts: z.boolean(),
   adminDailyDigestTime: z.string().trim().regex(/^\d{2}:\d{2}$/),
 }).partial().strict();
@@ -61,6 +63,28 @@ export async function PATCH(request: Request) {
       ? `${formatMinutesAsClock(openingRange.openingMinutes)} - ${formatMinutesAsClock(openingRange.closingMinutes)}`
       : parsed.data.openingHours,
   };
+  const currentSettings = await getRestaurantSettingsFromDb();
+  const nextRestrictionEnabled = normalized.locationRestrictionEnabled ?? currentSettings.locationRestrictionEnabled;
+  const nextKitchenLatitude = normalized.kitchenLatitude ?? currentSettings.kitchenLatitude;
+  const nextKitchenLongitude = normalized.kitchenLongitude ?? currentSettings.kitchenLongitude;
+  const nextRadiusKm = normalized.deliveryRadiusKm ?? currentSettings.deliveryRadiusKm;
+
+  if (nextRestrictionEnabled) {
+    const kitchenLatitude = parseCoordinate(nextKitchenLatitude, 90);
+    const kitchenLongitude = parseCoordinate(nextKitchenLongitude, 180);
+    if (kitchenLatitude === null || kitchenLongitude === null) {
+      return NextResponse.json(
+        { error: "Kitchen latitude and longitude are required before enabling delivery radius restriction." },
+        { status: 400 },
+      );
+    }
+    if (Number(nextRadiusKm) <= 0) {
+      return NextResponse.json(
+        { error: "Allowed delivery radius must be greater than 0 km." },
+        { status: 400 },
+      );
+    }
+  }
 
   const entries = await Promise.all(
     Object.entries(normalized).filter(([, value]) => value !== undefined).map(([key, value]) =>
@@ -81,4 +105,10 @@ export async function PATCH(request: Request) {
   const settings = await getRestaurantSettingsFromDb();
 
   return NextResponse.json({ settings, savedKeys: entries.map((entry) => entry.key) });
+}
+
+function parseCoordinate(value: string | number | undefined, maxAbs: number) {
+  if (value === undefined || value === "") return null;
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) && Math.abs(numeric) <= maxAbs ? numeric : null;
 }

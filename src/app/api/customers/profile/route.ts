@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
+import type { PaymentStatus, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { hashPassword, normalizeEmail, normalizeMobile } from "@/lib/customer-auth";
 import { verifyCustomerOtp } from "@/lib/customer-otp";
 import { logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
+import { getRewardTier } from "@/lib/rewards";
+
+const paidOnlineStatuses: PaymentStatus[] = ["PAID", "AUTHORIZED"];
 
 const profileSchema = z.object({
   name: z.string().min(1),
@@ -26,20 +30,30 @@ const publicCustomerSelect = {
   loyalty: true,
   tags: { include: { tag: { select: { name: true } } } },
   orders: {
+    where: {
+      OR: [
+        { payments: { some: { provider: "COD" } } },
+        { payments: { some: { provider: "RAZORPAY", status: { in: paidOnlineStatuses } } } },
+      ],
+    },
     orderBy: { createdAt: "desc" as const },
     take: 20,
     include: { items: true },
   },
 };
 
-function toPublicCustomer<Customer extends object>(customer: Customer) {
+function toPublicCustomer<Customer extends object>(customer: Customer, rewardOrderCount = 0) {
   const publicCustomer = { ...customer } as Customer & {
     passwordHash?: string | null;
     isVip?: boolean;
     tags?: Array<{ tag?: { name?: string } }>;
+    rewardOrderCount?: number;
+    rewardTier?: string;
   };
   delete publicCustomer.passwordHash;
   publicCustomer.isVip = publicCustomer.tags?.some((assignment) => assignment.tag?.name === "VIP") ?? false;
+  publicCustomer.rewardOrderCount = rewardOrderCount;
+  publicCustomer.rewardTier = getRewardTier(rewardOrderCount);
   return publicCustomer;
 }
 
@@ -62,8 +76,9 @@ export async function GET(request: Request) {
     where: { mobile },
     select: publicCustomerSelect,
   });
+  const rewardOrderCount = customer ? await countRewardOrders(mobile) : 0;
 
-  return NextResponse.json({ customer: customer ? toPublicCustomer(customer) : null, configured: true });
+  return NextResponse.json({ customer: customer ? toPublicCustomer(customer, rewardOrderCount) : null, configured: true });
 }
 
 export async function POST(request: Request) {
@@ -140,5 +155,21 @@ export async function POST(request: Request) {
     summary: `Saved customer profile for ${customer.name}`,
   });
 
-  return NextResponse.json({ customer: toPublicCustomer(customer) });
+  const rewardOrderCount = await countRewardOrders(customer.mobile);
+
+  return NextResponse.json({ customer: toPublicCustomer(customer, rewardOrderCount) });
+}
+
+function visiblePlacedOrderWhere(mobile: string): Prisma.OrderWhereInput {
+  return {
+    customer: { mobile },
+    OR: [
+      { payments: { some: { provider: "COD" } } },
+      { payments: { some: { provider: "RAZORPAY", status: { in: paidOnlineStatuses } } } },
+    ],
+  };
+}
+
+function countRewardOrders(mobile: string) {
+  return prisma.order.count({ where: visiblePlacedOrderWhere(mobile) });
 }

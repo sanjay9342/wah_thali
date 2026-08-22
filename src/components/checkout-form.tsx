@@ -9,10 +9,37 @@ import { writeStoredCart } from "@/lib/cart-storage";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 import { saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
 import { getDeliveryCoverage } from "@/lib/delivery-radius";
+import { addNotification } from "@/lib/notifications";
 import { getStoreOrderingStatus } from "@/lib/store-hours";
 import { useStoredCart } from "@/lib/use-stored-cart";
 import { OrderPlacingOverlay } from "@/components/order-placing-overlay";
 import type { RestaurantSettings } from "@/lib/types";
+
+type PaymentMethod = "COD" | "RAZORPAY";
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: RazorpayCheckoutOptions) => { open: () => void };
+  }
+}
+
+type RazorpayCheckoutOptions = {
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  order_id: string;
+  prefill: { name: string; contact: string };
+  notes: { orderNumber: string };
+  theme: { color: string };
+  handler: (response: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) => void;
+  modal: { ondismiss: () => void };
+};
 
 function wait(durationMs: number) {
   return new Promise((resolve) => window.setTimeout(resolve, durationMs));
@@ -58,6 +85,7 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
         : "No payment method is enabled. Please contact support.",
   );
   const mapUrl = address.latitude && address.longitude ? `https://www.google.com/maps?q=${address.latitude},${address.longitude}` : "";
+  const apiPaymentMethod: PaymentMethod = paymentMethod === "Online Pay" ? "RAZORPAY" : "COD";
 
   useEffect(() => {
     function refreshSession() {
@@ -76,6 +104,129 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
     return subscribeCustomerSession(refreshSession);
   }, []);
 
+  async function loadRazorpayCheckout() {
+    if (window.Razorpay) return true;
+
+    return new Promise<boolean>((resolve) => {
+      const existing = document.querySelector<HTMLScriptElement>("script[src='https://checkout.razorpay.com/v1/checkout.js']");
+      if (existing) {
+        existing.addEventListener("load", () => resolve(true), { once: true });
+        existing.addEventListener("error", () => resolve(false), { once: true });
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.async = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  }
+
+  async function verifyRazorpayPayment(input: {
+    orderNumber: string;
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) {
+    const response = await fetch("/api/payments/razorpay", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.verified) {
+      throw new Error(data.error || "Payment verification failed.");
+    }
+  }
+
+  async function cancelUnpaidOrder(orderNumber: string) {
+    await fetch(`/api/orders/${orderNumber}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: "CANCELLED",
+        note: "Online payment was not completed. Checkout attempt cancelled before sending to kitchen.",
+      }),
+    }).catch(() => undefined);
+  }
+
+  async function openRazorpayCheckout(input: {
+    keyId: string;
+    orderId: string;
+    amount: number;
+    currency: string;
+    orderNumber: string;
+  }) {
+    const loaded = await loadRazorpayCheckout();
+    if (!loaded || !window.Razorpay) {
+      await cancelUnpaidOrder(input.orderNumber);
+      throw new Error("Online payment could not be loaded.");
+    }
+
+    const checkout = new window.Razorpay({
+      key: input.keyId,
+      amount: input.amount,
+      currency: input.currency,
+      name: "Wah Thali",
+      description: `Order ${input.orderNumber}`,
+      order_id: input.orderId,
+      prefill: {
+        name: address.name.trim(),
+        contact: address.phone.trim(),
+      },
+      notes: {
+        orderNumber: input.orderNumber,
+      },
+      theme: {
+        color: "#8d0021",
+      },
+      handler: async (response) => {
+        setSubmitting(true);
+        setPlacingStage("Verifying your payment and placing the order.");
+        setMessage("Verifying payment...");
+        let keepOverlay = false;
+        try {
+          await verifyRazorpayPayment({
+            orderNumber: input.orderNumber,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+          });
+          writeStoredCart([], customerSession?.mobile);
+          addNotification(customerSession?.mobile, {
+            kind: "order",
+            title: "Payment received",
+            body: `Your order ${input.orderNumber} was placed successfully.`,
+          });
+          setPlacingStage("Payment received. Opening your live order tracker.");
+          await wait(850);
+          keepOverlay = true;
+          router.push(`/order/${input.orderNumber}/track`);
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Payment verification failed.");
+        } finally {
+          if (!keepOverlay) {
+            setSubmitting(false);
+            setPlacingStage(null);
+          }
+        }
+      },
+      modal: {
+        ondismiss: () => {
+          void cancelUnpaidOrder(input.orderNumber);
+          setSubmitting(false);
+          setPlacingStage(null);
+          setMessage("Payment was not completed. The order was not sent to the kitchen.");
+        },
+      },
+    });
+
+    checkout.open();
+    setPlacingStage(null);
+  }
+
   async function placeOrder() {
     if (orderingDisabled || !paymentMethods.length || submitting) return;
 
@@ -90,9 +241,10 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
     }
 
     setSubmitting(true);
-    setPlacingStage("Creating your order and sending it to the kitchen.");
-    setMessage("Creating your order...");
+    setPlacingStage(apiPaymentMethod === "RAZORPAY" ? "Starting secure payment for your order." : "Creating your order and sending it to the kitchen.");
+    setMessage(apiPaymentMethod === "RAZORPAY" ? "Starting secure payment..." : "Creating your order...");
     let keepOverlay = false;
+    let keepRazorpaySubmitting = false;
 
     try {
       const response = await fetch("/api/orders", {
@@ -101,6 +253,7 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
         body: JSON.stringify({
           customerName: address.name.trim(),
           customerMobile: address.phone.trim(),
+          customerEmail: customerSession?.email,
           receiverName: address.name.trim(),
           receiverMobile: address.phone.trim(),
           deliveryAddress: [address.area.trim(), address.landmark.trim()].filter(Boolean).join(", "),
@@ -109,6 +262,7 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
           pinCode: address.pinCode.trim(),
           latitude: String(address.latitude || deliveryLocation.latitude || ""),
           longitude: String(address.longitude || deliveryLocation.longitude || ""),
+          paymentMethod: apiPaymentMethod,
           items: cartLines,
         }),
       });
@@ -119,15 +273,32 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
         return;
       }
 
+      if (apiPaymentMethod === "RAZORPAY") {
+        if (!data.razorpay) {
+          setMessage("Online payment could not be started for this order.");
+          return;
+        }
+
+        await openRazorpayCheckout({
+          keyId: data.razorpay.keyId,
+          orderId: data.razorpay.orderId,
+          amount: data.razorpay.amount,
+          currency: data.razorpay.currency,
+          orderNumber: data.order.orderNumber,
+        });
+        keepRazorpaySubmitting = true;
+        return;
+      }
+
       writeStoredCart([], customerSession?.mobile);
       setPlacingStage("Order placed successfully. Opening your live tracker.");
       await wait(850);
       keepOverlay = true;
       router.push(`/order/${data.order.orderNumber}/track`);
-    } catch {
-      setMessage("Order could not be created. Please check your connection and try again.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Order could not be created. Please check your connection and try again.");
     } finally {
-      if (!keepOverlay) {
+      if (!keepOverlay && !keepRazorpaySubmitting) {
         setSubmitting(false);
         setPlacingStage(null);
       }

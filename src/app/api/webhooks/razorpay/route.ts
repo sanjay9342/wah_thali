@@ -1,7 +1,9 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
+import { notifyOrderStatus } from "@/lib/customer-messaging";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
+import type { OrderStatus } from "@/lib/types";
 
 type RazorpayWebhookPayload = {
   event?: string;
@@ -75,11 +77,13 @@ export async function POST(request: NextRequest) {
           razorpayOrderId ? { providerPaymentId: razorpayOrderId } : {},
         ],
       },
-      include: { order: true },
+      include: { order: { include: { items: true } } },
     });
 
     if (payment) {
       const settings = await getRestaurantSettingsFromDb();
+      let notifiedStatus: OrderStatus | null = null;
+      let notificationNote = "";
       await prisma.$transaction(async (tx) => {
         await tx.payment.update({
           where: { id: payment.id },
@@ -90,21 +94,64 @@ export async function POST(request: NextRequest) {
         });
 
         if ((status === "PAID" || status === "AUTHORIZED") && payment.order.status === "PENDING_PAYMENT") {
+          const nextStatus = settings.autoAcceptOrders ? "CONFIRMED" : "NEW";
           await tx.order.update({
             where: { id: payment.orderId },
             data: {
-              status: settings.autoAcceptOrders ? "CONFIRMED" : "NEW",
+              status: nextStatus,
               timeline: {
                 create: {
                   fromStatus: "PENDING_PAYMENT",
-                  toStatus: settings.autoAcceptOrders ? "CONFIRMED" : "NEW",
+                  toStatus: nextStatus,
                   note: `Razorpay webhook confirmed payment: ${paymentId}`,
                 },
               },
             },
           });
+          notifiedStatus = nextStatus;
+          notificationNote = `Razorpay webhook confirmed payment: ${paymentId}`;
+        }
+
+        if (status === "FAILED" && payment.order.status === "PENDING_PAYMENT" && payment.status !== "FAILED") {
+          for (const item of payment.order.items) {
+            await tx.inventoryItem.updateMany({
+              where: { productId: item.productId },
+              data: { stock: { increment: item.quantity } },
+            });
+          }
+
+          await tx.order.update({
+            where: { id: payment.orderId },
+            data: {
+              status: "CANCELLED",
+              timeline: {
+                create: {
+                  fromStatus: "PENDING_PAYMENT",
+                  toStatus: "CANCELLED",
+                  note: `Razorpay webhook reported payment failed: ${paymentId ?? razorpayOrderId}`,
+                },
+              },
+            },
+          });
+          notifiedStatus = "CANCELLED";
+          notificationNote = `Razorpay webhook reported payment failed: ${paymentId ?? razorpayOrderId}`;
         }
       });
+      if (notifiedStatus) {
+        const notifiedOrder = await prisma.order.findUnique({
+          where: { id: payment.orderId },
+          include: {
+            customer: { select: { id: true, name: true, mobile: true, email: true } },
+            items: true,
+            timeline: { orderBy: { createdAt: "asc" } },
+          },
+        });
+        if (notifiedOrder) {
+          await notifyOrderStatus(notifiedOrder, notifiedStatus, notificationNote).catch((error) => {
+            console.error("Razorpay webhook WhatsApp/customer notification failed.", error);
+          });
+        }
+      }
     }
   }
 
