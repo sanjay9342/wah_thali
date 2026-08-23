@@ -17,7 +17,7 @@ export default function robots(): MetadataRoute.Robots {
         "/wishlist",
       ],
     },
-    sitemap: `${siteUrl}/sitemap.xml`,
+    sitemap: [`${siteUrl}/sitemap.xml`, `${siteUrl}/sitemap-main.xml`],
     host: siteUrl,
   };
 }

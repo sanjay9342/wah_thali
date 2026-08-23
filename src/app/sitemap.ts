@@ -21,7 +21,6 @@ const publicRoutes: Array<{
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const lastModified = new Date();
   const policyRoutes = policies.map((policy) => ({
     path: `/${policy.slug}`,
     changeFrequency: "yearly" as const,
@@ -39,7 +38,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     })
     .map((route) => ({
       url: `${siteUrl}${route.path}`,
-      lastModified,
       changeFrequency: route.changeFrequency,
       priority: route.priority,
     }));
