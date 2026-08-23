@@ -13,7 +13,7 @@ import {
 } from "@/lib/admin-access-shared";
 
 type AccessCustomer = {
-  id: string;
+  id?: string;
   name: string;
   mobile: string;
   email?: string | null;
@@ -37,9 +37,13 @@ export function AdminAccessClient() {
   const [isPending, startTransition] = useTransition();
 
   const actor = adminAccess?.session;
+  const searchReady = query.trim().length >= 2;
 
   useEffect(() => {
     let cancelled = false;
+    const timeoutId = window.setTimeout(() => {
+      void loadAccess();
+    }, query.trim() ? 260 : 0);
 
     async function loadAccess() {
       if (!actor) return;
@@ -52,6 +56,7 @@ export function AdminAccessClient() {
         actorMobile: actor.mobile,
         actorEmail: actor.email ?? "",
       });
+      if (query.trim()) params.set("q", query.trim());
 
       try {
         const response = await fetch(`/api/admin/access?${params.toString()}`, { cache: "no-store" });
@@ -71,11 +76,11 @@ export function AdminAccessClient() {
       }
     }
 
-    loadAccess();
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
     };
-  }, [actor]);
+  }, [actor, query]);
 
   const assignmentByMobile = useMemo(() => {
     return new Map(assignments.map((assignment) => [cleanMobile(assignment.mobile), assignment]));
@@ -90,7 +95,14 @@ export function AdminAccessClient() {
     });
   }, [assignmentByMobile, customers, query]);
 
-  const activeAssignments = assignments.filter((assignment) => assignment.active);
+  const activeAssignments = useMemo(() => assignments.filter((assignment) => assignment.active), [assignments]);
+  const visibleAssignments = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return activeAssignments;
+    return activeAssignments.filter((assignment) =>
+      `${assignment.name} ${assignment.mobile} ${assignment.email ?? ""} ${assignment.role}`.toLowerCase().includes(needle),
+    );
+  }, [activeAssignments, query]);
 
   function updateAccess(customer: AccessCustomer, role: AdminRole, active = true) {
     if (!actor) return;
@@ -158,28 +170,76 @@ export function AdminAccessClient() {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 className="min-w-0 flex-1 bg-transparent text-sm font-semibold"
-                placeholder="Search users"
+                placeholder="Search name, mobile, email"
               />
             </label>
 
             <div className="mt-5 rounded-xl border border-border bg-[#fff9fa] p-4">
               <h2 className="text-sm font-black text-maroon">How it works</h2>
               <p className="mt-2 text-xs font-semibold leading-5 text-muted">
-                Users must create or log into a normal Wah Thali account first. Then an Admin can assign their role here.
+                Staff first create or log into a normal customer account. Admins search that account here, grant a role, and then the staff member can open allowed admin pages.
               </p>
             </div>
           </aside>
 
           <div className="surface overflow-hidden rounded-2xl">
             <div className="border-b border-border p-5">
-              <h2 className="text-xl font-black text-maroon">Logged-in accounts</h2>
-              <p className="text-sm font-semibold text-muted">{loading ? "Loading users..." : `${filteredCustomers.length} user accounts shown`}</p>
+              <h2 className="text-xl font-black text-maroon">Staff role assignments</h2>
+              <p className="text-sm font-semibold text-muted">
+                {searchReady
+                  ? loading ? "Searching customer accounts..." : `${filteredCustomers.length} matching customer account${filteredCustomers.length === 1 ? "" : "s"}`
+                  : `${activeAssignments.length} active staff account${activeAssignments.length === 1 ? "" : "s"}. Search to grant a new role.`}
+              </p>
             </div>
 
             {message ? <p className="m-5 rounded-lg border border-border bg-cream px-4 py-3 text-sm font-black text-maroon">{message}</p> : null}
 
             <div className="divide-y divide-border">
-              {filteredCustomers.length ? filteredCustomers.map((customer) => {
+              {!searchReady && visibleAssignments.length ? visibleAssignments.map((assignment) => {
+                const customer: AccessCustomer = {
+                  id: assignment.customerId,
+                  name: assignment.name,
+                  mobile: assignment.mobile,
+                  email: assignment.email,
+                };
+                return (
+                  <article key={assignmentKey(assignment)} className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="truncate text-lg font-black text-charcoal">{assignment.name}</h3>
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-[#fff4f5] px-2.5 py-1 text-[11px] font-black text-red">
+                          <ShieldCheck size={13} /> {roleLabels[assignment.role]}
+                        </span>
+                      </div>
+                      <p className="mt-1 truncate text-sm font-bold text-muted">{assignment.mobile}{assignment.email ? ` - ${assignment.email}` : ""}</p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 lg:justify-end">
+                      <select
+                        value={assignment.role}
+                        onChange={(event) => updateAccess(customer, event.target.value as AdminRole, true)}
+                        disabled={isPending}
+                        className="h-10 rounded-lg border border-border bg-cream px-3 text-sm font-black text-charcoal disabled:opacity-60"
+                        aria-label={`Role for ${assignment.name}`}
+                      >
+                        {adminRoles.map((role) => (
+                          <option key={role} value={role}>{roleLabels[role]}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => updateAccess(customer, assignment.role, false)}
+                        disabled={isPending}
+                        className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm font-black text-red disabled:opacity-60"
+                      >
+                        <ShieldOff size={16} /> Disable
+                      </button>
+                    </div>
+                  </article>
+                );
+              }) : null}
+
+              {searchReady && filteredCustomers.length ? filteredCustomers.map((customer) => {
                 const assignment = assignmentByMobile.get(cleanMobile(customer.mobile));
                 const currentRole = assignment?.role ?? "STAFF";
                 const active = Boolean(assignment?.active);
@@ -235,12 +295,17 @@ export function AdminAccessClient() {
                     </div>
                   </article>
                 );
-              }) : (
+              }) : searchReady ? (
                 <div className="p-8 text-center">
                   <h2 className="text-xl font-black text-maroon">{loading ? "Loading users" : "No users found"}</h2>
-                  <p className="mt-2 text-sm font-semibold text-muted">Ask staff to create a normal account first, then assign a role here.</p>
+                  <p className="mt-2 text-sm font-semibold text-muted">Ask staff to create or log into a normal account first, then search their mobile or email here.</p>
                 </div>
-              )}
+              ) : !visibleAssignments.length ? (
+                <div className="p-8 text-center">
+                  <h2 className="text-xl font-black text-maroon">{loading ? "Loading access" : "No staff access yet"}</h2>
+                  <p className="mt-2 text-sm font-semibold text-muted">Search a customer account by name, mobile, or email to grant the first role.</p>
+                </div>
+              ) : null}
             </div>
           </div>
         </section>

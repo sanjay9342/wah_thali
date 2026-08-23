@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { normalizeMobile } from "@/lib/customer-auth";
+import { notifyOrderCustomerCancelled } from "@/lib/customer-messaging";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
@@ -87,6 +88,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
     summary: `${order.orderNumber} cancelled by customer before acceptance`,
     metadata: { orderNumber: order.orderNumber, previousStatus: existing.status, whatsappOrderAlerts: settings.whatsappOrderAlerts },
   });
+
+  if (settings.whatsappOrderAlerts) {
+    await notifyOrderCustomerCancelled(order).catch((error) => {
+      console.error("Customer cancelled order WhatsApp notification failed.", error);
+    });
+  }
 
   return NextResponse.json({ order });
 }

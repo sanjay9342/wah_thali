@@ -52,7 +52,14 @@ export function getWhatsAppMessagingConfigStatus() {
 export function getWhatsAppNotificationConfigStatus() {
   const messaging = getWhatsAppMessagingConfigStatus();
   const freeformEnabled = ["1", "true", "yes", "on"].includes(readEnv("META_WHATSAPP_FREEFORM_NOTIFICATIONS").toLowerCase());
-  const orderTemplateConfigured = Boolean(readEnv("META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"));
+  const orderStatusTemplateConfigured = Boolean(readEnv("META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"));
+  const orderPlacedTemplateConfigured = Boolean(readFirstEnv(["META_WHATSAPP_ORDER_NEW_TEMPLATE_NAME", "META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"]));
+  const orderDeliveredTemplateConfigured = Boolean(readFirstEnv(["META_WHATSAPP_ORDER_DELIVERED_TEMPLATE_NAME", "META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"]));
+  const orderDeclinedTemplateConfigured = Boolean(readFirstEnv([
+    "META_WHATSAPP_ORDER_DECLINED_TEMPLATE_NAME",
+  ]));
+  const orderCancelledTemplateConfigured = Boolean(readEnv("META_WHATSAPP_ORDER_CANCELLED_TEMPLATE_NAME"));
+  const orderTemplateConfigured = orderStatusTemplateConfigured || orderPlacedTemplateConfigured || orderDeliveredTemplateConfigured || orderDeclinedTemplateConfigured || orderCancelledTemplateConfigured;
   const couponTemplateConfigured = Boolean(readEnv("META_WHATSAPP_COUPON_TEMPLATE_NAME") || readEnv("META_WHATSAPP_OFFER_TEMPLATE_NAME"));
 
   return {
@@ -60,6 +67,11 @@ export function getWhatsAppNotificationConfigStatus() {
     missing: messaging.missing,
     freeformEnabled,
     orderTemplateConfigured,
+    orderStatusTemplateConfigured,
+    orderPlacedTemplateConfigured,
+    orderDeliveredTemplateConfigured,
+    orderDeclinedTemplateConfigured,
+    orderCancelledTemplateConfigured,
     couponTemplateConfigured,
     orderNotificationsReady: messaging.configured && (orderTemplateConfigured || freeformEnabled),
     couponNotificationsReady: messaging.configured && (couponTemplateConfigured || freeformEnabled),

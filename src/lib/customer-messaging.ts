@@ -41,6 +41,11 @@ type OrderForMessage = {
   timeline?: Array<{ note?: string | null; toStatus?: string; createdAt?: Date | string }>;
 };
 
+type OrderTemplateConfig = {
+  name: string;
+  parameterSet: "default" | "placed" | "delivered" | "declined";
+};
+
 const orderStatusCopy: Record<OrderStatus, { label: string; body: string }> = {
   PENDING_PAYMENT: { label: "Payment pending", body: "Your payment is pending. We will start once payment is confirmed." },
   NEW: { label: "Order placed", body: "We received your order and shared it with the Wah Thali kitchen." },
@@ -59,8 +64,50 @@ function truthyEnv(key: string) {
   return ["1", "true", "yes", "on"].includes(readServerEnv(key).toLowerCase());
 }
 
-function getTemplateName(specificKey: string, fallbackKey: string) {
-  return readServerEnv(specificKey) || readServerEnv(fallbackKey);
+function getTemplateName(specificKey: string, fallbackKey: string, aliases: string[] = []) {
+  return readServerEnv(specificKey, aliases) || readServerEnv(fallbackKey);
+}
+
+function getOrderTemplateConfig(status: OrderStatus): OrderTemplateConfig {
+  if (status === "NEW") {
+    return {
+      name: getTemplateName("META_WHATSAPP_ORDER_NEW_TEMPLATE_NAME", "META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"),
+      parameterSet: "placed",
+    };
+  }
+
+  if (status === "DELIVERED") {
+    return {
+      name: getTemplateName("META_WHATSAPP_ORDER_DELIVERED_TEMPLATE_NAME", "META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"),
+      parameterSet: "delivered",
+    };
+  }
+
+  if (status === "CANCELLED") {
+    const declinedTemplateName = readServerEnv("META_WHATSAPP_ORDER_DECLINED_TEMPLATE_NAME");
+    if (declinedTemplateName) {
+      return {
+        name: declinedTemplateName,
+        parameterSet: "declined",
+      };
+    }
+
+    return {
+      name: getTemplateName(
+        "META_WHATSAPP_ORDER_CANCELLED_TEMPLATE_NAME",
+        "META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME",
+      ),
+      parameterSet: "default",
+    };
+  }
+
+  return {
+    name: getTemplateName(
+      `META_WHATSAPP_ORDER_${status}_TEMPLATE_NAME`,
+      "META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME",
+    ),
+    parameterSet: "default",
+  };
 }
 
 function getSiteUrl() {
@@ -89,6 +136,61 @@ function getOrderBillText(order: OrderForMessage) {
     `Total bill: ${formatRupees(order.grandTotal)}`,
   ].filter(Boolean);
   return lines.join("\n");
+}
+
+function getSimpleOrderIntro(status: OrderStatus, customerName: string, orderNumber: string, fallbackBody: string) {
+  if (status === "NEW") {
+    return `Hi ${customerName}, thank you for ordering from Wah Thali.\nOrder ${orderNumber} is placed.`;
+  }
+
+  if (status === "DELIVERED") {
+    return `Hi ${customerName}, your Wah Thali order ${orderNumber} has been delivered.`;
+  }
+
+  if (status === "CANCELLED") {
+    return `Hi ${customerName}, sorry, Wah Thali could not accept order ${orderNumber}.`;
+  }
+
+  return `Hi ${customerName}, ${fallbackBody}\nOrder: ${orderNumber}`;
+}
+
+function getOrderTemplateParameters(
+  config: OrderTemplateConfig,
+  order: OrderForMessage,
+  copy: { label: string },
+  latestNote: string,
+  trackingUrl: string,
+) {
+  if (config.parameterSet === "placed" || config.parameterSet === "delivered") {
+    return [
+      order.customer.name,
+      order.orderNumber,
+      getOrderItemsText(order),
+      formatRupees(order.grandTotal),
+      trackingUrl,
+    ];
+  }
+
+  if (config.parameterSet === "declined") {
+    return [
+      order.customer.name,
+      order.orderNumber,
+      latestNote || "Order declined by restaurant.",
+      getOrderItemsText(order),
+      formatRupees(order.grandTotal),
+      trackingUrl,
+    ];
+  }
+
+  return [
+    order.customer.name,
+    order.orderNumber,
+    copy.label,
+    getOrderItemsText(order),
+    formatRupees(order.grandTotal),
+    latestNote || "-",
+    trackingUrl,
+  ];
 }
 
 function getCouponBenefit(coupon: Coupon) {
@@ -159,41 +261,63 @@ export async function notifyOrderStatus(order: OrderForMessage, status: OrderSta
 
   const copy = orderStatusCopy[status] ?? { label: status, body: "Your order status was updated." };
   const latestNote = getLatestNote(order, note);
-  const reason = status === "CANCELLED" && latestNote ? `\nReason: ${latestNote}` : latestNote ? `\nNote: ${latestNote}` : "";
+  const customerNote = status === "CANCELLED" ? latestNote : "";
+  const reason = status === "CANCELLED" && customerNote ? `Decline reason: ${customerNote}` : customerNote ? `Note: ${customerNote}` : "";
   const bill = getOrderBillText(order);
   const trackingUrl = getOrderTrackingUrl(order.orderNumber);
   const title = `Wah Thali ${copy.label}: ${order.orderNumber}`;
   const body = [
-    `Hi ${order.customer.name}, ${copy.body}`,
-    `Order: ${order.orderNumber}`,
-    bill,
-    `Track: ${trackingUrl}`,
+    getSimpleOrderIntro(status, order.customer.name, order.orderNumber, copy.body),
     reason,
+    status === "NEW" || status === "DELIVERED" || status === "CANCELLED" ? `Items: ${getOrderItemsText(order)}` : bill,
+    status === "NEW" || status === "DELIVERED" || status === "CANCELLED" ? `Total: ${formatRupees(order.grandTotal)}` : "",
+    `Track: ${trackingUrl}`,
   ].filter(Boolean).join("\n\n");
-  const templateName = getTemplateName(
-    `META_WHATSAPP_ORDER_${status}_TEMPLATE_NAME`,
-    "META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME",
-  );
+  const templateConfig = getOrderTemplateConfig(status);
 
   return notifyCustomer({
     mobile: order.customer.mobile,
     title,
     body,
     kind: "order",
+    templateName: templateConfig.name,
+    templateParameters: getOrderTemplateParameters(templateConfig, order, copy, latestNote, trackingUrl),
+    metadata: {
+      entityId: order.id,
+      orderNumber: order.orderNumber,
+      status,
+    },
+  });
+}
+
+export async function notifyOrderCustomerCancelled(order: OrderForMessage) {
+  const templateName = readServerEnv("META_WHATSAPP_ORDER_CANCELLED_TEMPLATE_NAME");
+  const trackingUrl = getOrderTrackingUrl(order.orderNumber);
+  const body = [
+    `Hi ${order.customer.name}, your Wah Thali order ${order.orderNumber} has been cancelled as requested.`,
+    `Items: ${getOrderItemsText(order)}`,
+    `Total: ${formatRupees(order.grandTotal)}`,
+    `View order: ${trackingUrl}`,
+  ].join("\n\n");
+
+  return notifyCustomer({
+    mobile: order.customer.mobile,
+    title: `Wah Thali Cancelled: ${order.orderNumber}`,
+    body,
+    kind: "order",
     templateName,
     templateParameters: [
       order.customer.name,
       order.orderNumber,
-      copy.label,
       getOrderItemsText(order),
       formatRupees(order.grandTotal),
-      latestNote || "-",
       trackingUrl,
     ],
     metadata: {
       entityId: order.id,
       orderNumber: order.orderNumber,
-      status,
+      status: "CANCELLED",
+      cancelledBy: "customer",
     },
   });
 }

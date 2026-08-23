@@ -1,4 +1,11 @@
+import type { Metadata } from "next";
 import { SimpleCustomerPage } from "@/components/simple-customer-page";
+
+export const metadata: Metadata = {
+  title: "Support",
+  description: "Contact Wah Thali support for order help, refunds, cancellations, delivery issues, complaints, and WhatsApp assistance.",
+  alternates: { canonical: "/support" },
+};
 
 export default function SupportPage() {
   return (

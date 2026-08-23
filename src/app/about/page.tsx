@@ -1,9 +1,16 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft, Clock, HeartHandshake, MapPin, Phone, ShieldCheck, Store, UtensilsCrossed } from "lucide-react";
 import { Header } from "@/components/header";
 import { MobileNav } from "@/components/mobile-nav";
 import { SiteFooter } from "@/components/site-footer";
 import { aboutWahThali, business } from "@/lib/business";
+
+export const metadata: Metadata = {
+  title: "About",
+  description: "Learn about Wah Thali, a Kolkata kitchen serving fresh homestyle thalis, biryani, combos, and everyday meals with care and hygiene.",
+  alternates: { canonical: "/about" },
+};
 
 export default function AboutPage() {
   const highlights = [

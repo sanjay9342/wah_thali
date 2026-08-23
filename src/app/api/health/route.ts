@@ -99,6 +99,10 @@ export async function GET(request: Request) {
     META_WHATSAPP_OTP_BUTTON_SUB_TYPE: envConfigured("META_WHATSAPP_OTP_BUTTON_SUB_TYPE", ["WHATSAPP_OTP_BUTTON_SUB_TYPE"]),
     META_WHATSAPP_OTP_BUTTON_INDEX: envConfigured("META_WHATSAPP_OTP_BUTTON_INDEX", ["WHATSAPP_OTP_BUTTON_INDEX"]),
     META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME: envConfigured("META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"),
+    META_WHATSAPP_ORDER_NEW_TEMPLATE_NAME: envConfigured("META_WHATSAPP_ORDER_NEW_TEMPLATE_NAME"),
+    META_WHATSAPP_ORDER_DELIVERED_TEMPLATE_NAME: envConfigured("META_WHATSAPP_ORDER_DELIVERED_TEMPLATE_NAME"),
+    META_WHATSAPP_ORDER_DECLINED_TEMPLATE_NAME: envConfigured("META_WHATSAPP_ORDER_DECLINED_TEMPLATE_NAME"),
+    META_WHATSAPP_ORDER_CANCELLED_TEMPLATE_NAME: envConfigured("META_WHATSAPP_ORDER_CANCELLED_TEMPLATE_NAME"),
     META_WHATSAPP_COUPON_TEMPLATE_NAME: envConfigured("META_WHATSAPP_COUPON_TEMPLATE_NAME", ["META_WHATSAPP_OFFER_TEMPLATE_NAME"]),
     META_WHATSAPP_FREEFORM_NOTIFICATIONS: envConfigured("META_WHATSAPP_FREEFORM_NOTIFICATIONS"),
   };
@@ -138,6 +142,13 @@ export async function GET(request: Request) {
         orderNotificationsReady: whatsAppNotificationStatus.orderNotificationsReady,
         couponNotificationsReady: whatsAppNotificationStatus.couponNotificationsReady,
         freeformEnabled: whatsAppNotificationStatus.freeformEnabled,
+        orderTemplates: {
+          status: whatsAppNotificationStatus.orderStatusTemplateConfigured,
+          placed: whatsAppNotificationStatus.orderPlacedTemplateConfigured,
+          delivered: whatsAppNotificationStatus.orderDeliveredTemplateConfigured,
+          declined: whatsAppNotificationStatus.orderDeclinedTemplateConfigured,
+          cancelled: whatsAppNotificationStatus.orderCancelledTemplateConfigured,
+        },
         missing: whatsAppNotificationStatus.missing,
         message: whatsAppNotificationStatus.configured
           ? "WhatsApp customer notification credentials are configured."

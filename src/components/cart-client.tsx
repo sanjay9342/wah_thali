@@ -656,10 +656,10 @@ export function CartClient({
 
   if (!customerSession?.mobile) {
     return (
-      <div className="mx-5 mt-10 rounded-[28px] bg-white p-6 text-center shadow-sm ring-1 ring-border">
+      <div className="mx-auto mt-10 w-full max-w-[calc(100vw-4rem)] overflow-hidden rounded-2xl bg-white p-5 text-center shadow-sm ring-1 ring-border sm:max-w-md sm:p-6">
         <h1 className="text-2xl font-black text-maroon">Login to view cart</h1>
         <p className="mt-3 text-sm font-bold leading-6 text-muted">Your cart is saved to your account, so every customer sees only their own dishes.</p>
-        <Link href="/login?next=/cart" className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-2xl bg-maroon px-5 font-black text-white">
+        <Link href="/login?next=/cart" className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-maroon px-4 py-3 font-black leading-tight text-white">
           Login or Sign Up
         </Link>
       </div>

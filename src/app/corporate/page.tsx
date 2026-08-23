@@ -1,4 +1,11 @@
+import type { Metadata } from "next";
 import { SimpleCustomerPage } from "@/components/simple-customer-page";
+
+export const metadata: Metadata = {
+  title: "Corporate Meals",
+  description: "Plan office lunches, team meals, corporate thalis, GST billing, tastings, and monthly food service with Wah Thali in Kolkata.",
+  alternates: { canonical: "/corporate" },
+};
 
 export default function CorporatePage() {
   return (

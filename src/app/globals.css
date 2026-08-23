@@ -35,6 +35,8 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-nunito), Arial, Helvetica, sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 .foodie-display {
@@ -367,24 +369,24 @@ textarea:disabled {
 }
 
 ::view-transition-group(site-page) {
-  animation-duration: 260ms;
+  animation-duration: 300ms;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 ::view-transition-old(.wt-page-share) {
-  animation: 130ms ease-out both wt-page-fade-out;
+  animation: 150ms ease-out both wt-page-fade-out;
 }
 
 ::view-transition-new(.wt-page-share) {
-  animation: 230ms cubic-bezier(0.22, 1, 0.36, 1) both wt-page-fade-in;
+  animation: 260ms cubic-bezier(0.22, 1, 0.36, 1) both wt-page-fade-in;
 }
 
 ::view-transition-old(.wt-page-exit) {
-  animation: 130ms ease-out both wt-page-fade-out;
+  animation: 150ms ease-out both wt-page-fade-out;
 }
 
 ::view-transition-new(.wt-page-enter) {
-  animation: 230ms cubic-bezier(0.22, 1, 0.36, 1) both wt-page-enter;
+  animation: 280ms cubic-bezier(0.22, 1, 0.36, 1) both wt-page-enter;
 }
 
 ::view-transition-group(site-header),
@@ -413,14 +415,27 @@ textarea:disabled {
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.72), transparent);
-  animation: wt-skeleton-shimmer 1.2s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.78), transparent);
+  animation: wt-skeleton-shimmer 1.25s ease-in-out infinite;
+}
+
+.wt-route-progress {
+  opacity: 0;
+  transform: scaleX(0);
+  transition: opacity 160ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow: 0 0 14px rgba(141, 0, 33, 0.35);
+}
+
+.wt-route-progress-active {
+  opacity: 1;
+  transform: scaleX(0.78);
+  animation: wt-route-progress 900ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
 @keyframes wt-page-enter {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(12px);
   }
   to {
     opacity: 1;
@@ -449,6 +464,18 @@ textarea:disabled {
 @keyframes wt-skeleton-shimmer {
   100% {
     transform: translateX(100%);
+  }
+}
+
+@keyframes wt-route-progress {
+  0% {
+    transform: scaleX(0.18);
+  }
+  55% {
+    transform: scaleX(0.72);
+  }
+  100% {
+    transform: scaleX(0.94);
   }
 }
 

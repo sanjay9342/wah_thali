@@ -1,7 +1,14 @@
+import type { Metadata } from "next";
 import { MenuExperience } from "@/components/menu-experience";
 import { getCategoriesFromDb, getCategoryImagesFromDb, getCategoryOffersFromDb, getHomeSlidesFromDb, getProductsFromDb, getRestaurantSettingsFromDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Menu",
+  description: "Browse Wah Thali's fresh thalis, biryani, Chinese combos, mini meals, offers, and homestyle dishes for online ordering in Kolkata.",
+  alternates: { canonical: "/menu" },
+};
 
 export default async function MenuPage({
   searchParams,

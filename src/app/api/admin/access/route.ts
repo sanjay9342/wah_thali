@@ -37,26 +37,35 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const actor = identityFromSearchParams(searchParams);
+  const query = searchParams.get("q")?.trim() ?? "";
+  const mobileQuery = query.replace(/\D/g, "").slice(-10);
   const actorAccess = await getAdminAccessForIdentity(actor);
   if (actorAccess.role !== "ADMIN") {
     return NextResponse.json({ error: "Only admins can view staff access.", access: actorAccess }, { status: 403 });
   }
 
-  const [assignments, customers] = await Promise.all([
-    getAdminAccessAssignments(),
-    prisma.customer.findMany({
-      orderBy: { updatedAt: "desc" },
-      take: 250,
-      select: {
-        id: true,
-        name: true,
-        mobile: true,
-        email: true,
-      },
-    }),
-  ]);
+  const assignments = await getAdminAccessAssignments();
+  const customers = query.length >= 2
+    ? await prisma.customer.findMany({
+        where: {
+          OR: [
+            { name: { contains: query, mode: "insensitive" } },
+            { email: { contains: query, mode: "insensitive" } },
+            { mobile: { contains: mobileQuery || query } },
+          ],
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 25,
+        select: {
+          id: true,
+          name: true,
+          mobile: true,
+          email: true,
+        },
+      })
+    : [];
 
-  return NextResponse.json({ assignments, customers, access: actorAccess });
+  return NextResponse.json({ assignments, customers, access: actorAccess, queryRequired: query.length < 2 });
 }
 
 export async function PATCH(request: Request) {
