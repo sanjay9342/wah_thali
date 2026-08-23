@@ -27,11 +27,20 @@ export default function sitemap(): MetadataRoute.Sitemap {
     changeFrequency: "yearly" as const,
     priority: 0.45,
   }));
+  const seenPaths = new Set<string>();
 
-  return [...publicRoutes, ...policyRoutes].map((route) => ({
-    url: `${siteUrl}${route.path}`,
-    lastModified,
-    changeFrequency: route.changeFrequency,
-    priority: route.priority,
-  }));
+  return [...publicRoutes, ...policyRoutes]
+    .filter((route) => {
+      if (seenPaths.has(route.path)) {
+        return false;
+      }
+      seenPaths.add(route.path);
+      return true;
+    })
+    .map((route) => ({
+      url: `${siteUrl}${route.path}`,
+      lastModified,
+      changeFrequency: route.changeFrequency,
+      priority: route.priority,
+    }));
 }
