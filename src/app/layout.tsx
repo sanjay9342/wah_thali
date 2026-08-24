@@ -1,20 +1,15 @@
 import type { Metadata, Viewport } from "next";
-import { Chewy, Nunito } from "next/font/google";
+import { Nunito_Sans } from "next/font/google";
 import { LegacyStorageCleanup } from "@/components/legacy-storage-cleanup";
 import { NavigationPerformance } from "@/components/navigation-performance";
 import { business } from "@/lib/business";
 import "./globals.css";
 
-const nunito = Nunito({
-  variable: "--font-nunito",
+const foodieSans = Nunito_Sans({
+  variable: "--font-foodie-sans",
   subsets: ["latin"],
-  weight: ["400", "600", "700", "800", "900"],
-});
-
-const chewy = Chewy({
-  variable: "--font-display",
-  subsets: ["latin"],
-  weight: "400",
+  weight: ["400", "500", "600", "700", "800", "900"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -125,7 +120,8 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${nunito.variable} ${chewy.variable} h-full antialiased`}
+      className={`${foodieSans.variable} h-full antialiased`}
+      data-scroll-behavior="smooth"
     >
       <body className="min-h-full flex flex-col">
         <script

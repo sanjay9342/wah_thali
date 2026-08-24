@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { BellRing, CalendarDays, CheckCircle2, Clock, Filter, Mail, MapPin, MessageCircle, Printer, ReceiptText, RefreshCw, Star, Timer, UserRound, Utensils, XCircle } from "lucide-react";
+import { AlertTriangle, BellRing, CalendarDays, CheckCircle2, Clock, Filter, Mail, MapPin, MessageCircle, Printer, ReceiptText, RefreshCw, Star, Timer, Trash2, UserRound, Utensils, XCircle } from "lucide-react";
+import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { business } from "@/lib/business";
+import { adminFetch } from "@/lib/admin-client-auth";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 import { formatRupees } from "@/lib/pricing";
 import { canTransitionOrder } from "@/lib/state-machines";
@@ -46,6 +48,7 @@ const actionCopy: Partial<Record<OrderStatus, string>> = {
 const incomingStatuses = new Set<OrderStatus>(["NEW", "PENDING_PAYMENT"]);
 const activeStatuses = new Set<OrderStatus>(["CONFIRMED", "PREPARING", "PACKED", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"]);
 const progressStatuses: OrderStatus[] = ["NEW", "CONFIRMED", "PREPARING", "PACKED", "OUT_FOR_DELIVERY", "DELIVERED"];
+const RESET_CONFIRMATION_TEXT = "RESET ORDERS";
 
 export function AdminOrdersClient({
   initialOrders,
@@ -62,26 +65,33 @@ export function AdminOrdersClient({
   const [etaByOrder, setEtaByOrder] = useState<Record<string, string>>({});
   const [locationByOrder, setLocationByOrder] = useState<Record<string, string>>({});
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  const [dateRange, setDateRange] = useState({ from: "", to: "" });
   const [priceFilter, setPriceFilter] = useState<PriceFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [message, setMessage] = useState("");
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetConfirmation, setResetConfirmation] = useState("");
+  const [resetAcknowledged, setResetAcknowledged] = useState(false);
   const [newOrderAlert, setNewOrderAlert] = useState<AdminOrder | null>(null);
   const [cancelledOrderAlert, setCancelledOrderAlert] = useState<AdminOrder | null>(null);
   const [animatedOrderNumbers, setAnimatedOrderNumbers] = useState<Set<string>>(() => new Set());
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [isPending, startTransition] = useTransition();
+  const adminAccess = useAdminAccess();
   const knownOrders = useRef(new Set(initialOrders.map((order) => order.orderNumber)));
   const orderStatusByNumber = useRef(new Map(initialOrders.map((order) => [order.orderNumber, order.status])));
   const newOrderTimers = useRef<number[]>([]);
+  const canResetOrders = adminAccess?.permissions.includes("settings") ?? false;
+  const resetIsConfirmed = resetAcknowledged && resetConfirmation.trim().toUpperCase() === RESET_CONFIRMATION_TEXT;
 
   const incomingOrders = orders.filter((order) => order.status === "NEW" || order.status === "PENDING_PAYMENT");
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => (
       matchesStatusFilter(order, statusFilter) &&
-      matchesDateFilter(order, dateFilter) &&
+      matchesDateFilter(order, dateFilter, dateRange) &&
       matchesPriceFilter(order, priceFilter)
     ));
-  }, [dateFilter, orders, priceFilter, statusFilter]);
+  }, [dateFilter, dateRange, orders, priceFilter, statusFilter]);
 
   const notifyAdmin = useCallback((order: AdminOrder) => {
     document.title = `New order ${order.orderNumber} - Wah Thali Admin`;
@@ -112,7 +122,7 @@ export function AdminOrdersClient({
   }, []);
 
   const refresh = useCallback(async (silent = false) => {
-    const response = await fetch("/api/orders", { cache: "no-store" });
+    const response = await adminFetch(adminAccess?.session, "/api/orders", { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) {
       if (!silent) setMessage(data.error ?? "Could not refresh orders.");
@@ -129,7 +139,7 @@ export function AdminOrdersClient({
       gst: number;
       grandTotal: number;
       items: { productId?: string; quantity: number; name: string; price: number }[];
-      payments: { provider: string; status: string }[];
+      payments: { provider: string; status: string; amount: number; providerPaymentId?: string | null }[];
       createdAt: string;
       timeline: { toStatus: string; note?: string | null; createdAt: string }[];
     }) => ({
@@ -144,6 +154,12 @@ export function AdminOrdersClient({
       amount: order.grandTotal,
       items: order.items.map((item) => ({ productId: item.productId, name: item.name, quantity: item.quantity, price: item.price })),
       itemSummary: order.items.map((item) => `${item.quantity} x ${item.name}`).join(", "),
+      payments: order.payments.map((payment) => ({
+        provider: payment.provider,
+        status: payment.status,
+        amount: payment.amount,
+        providerPaymentId: payment.providerPaymentId,
+      })),
       paymentSummary: getPaymentSummary(order.payments[0]),
       createdAt: order.createdAt,
       timeline: order.timeline,
@@ -189,10 +205,11 @@ export function AdminOrdersClient({
       notifyAdminCancellation(newlyCancelled);
     }
     return true;
-  }, [notifyAdmin, notifyAdminCancellation]);
+  }, [adminAccess?.session, notifyAdmin, notifyAdminCancellation]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       refresh(true);
     }, 15000);
     return () => window.clearInterval(timer);
@@ -209,7 +226,7 @@ export function AdminOrdersClient({
       const eta = etaByOrder[order.orderNumber]?.trim();
       const location = locationByOrder[order.orderNumber]?.trim();
       const staffNote = [note, eta ? `ETA: ${eta} min` : "", location ? `Location: ${location}` : ""].filter(Boolean).join(" | ");
-      const response = await fetch(`/api/orders/${order.orderNumber}`, {
+      const response = await adminFetch(adminAccess?.session, `/api/orders/${order.orderNumber}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status, note: staffNote }),
@@ -231,11 +248,81 @@ export function AdminOrdersClient({
     });
   }
 
+  function refundOrder(order: AdminOrder) {
+    const refundInfo = getRefundInfo(order);
+    if (!refundInfo.canRefund) {
+      setMessage(refundInfo.label);
+      return;
+    }
+
+    const confirmed = window.confirm(`Refund ${formatRupees(refundInfo.amount)} to the original payment method for order ${order.orderNumber}?`);
+    if (!confirmed) return;
+
+    startTransition(async () => {
+      setMessage("");
+      const response = await adminFetch(adminAccess?.session, `/api/orders/${order.orderNumber}/refund`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "Restaurant declined order", speed: "normal" }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setMessage(data.error ?? "Refund could not be initiated.");
+        return;
+      }
+
+      setOrders((current) => current.map((item) => item.orderNumber === order.orderNumber ? {
+        ...item,
+        payments: data.order?.payments ?? item.payments,
+        paymentSummary: getPaymentSummary(data.order?.payments?.[0] ?? item.payments[0]),
+        timeline: data.order?.timeline ?? item.timeline,
+      } : item));
+      await refresh(true);
+      setMessage(`Refund initiated for ${order.orderNumber}. Razorpay refund id: ${data.refund?.id ?? "pending"}.`);
+    });
+  }
+
   function handleRefresh() {
     startTransition(async () => {
       setMessage("");
       const refreshed = await refresh(false);
       if (refreshed) setMessage("Kitchen board refreshed from live orders.");
+    });
+  }
+
+  function closeResetDialog() {
+    setResetDialogOpen(false);
+    setResetConfirmation("");
+    setResetAcknowledged(false);
+  }
+
+  function resetOrders() {
+    if (!resetIsConfirmed || !canResetOrders) return;
+
+    startTransition(async () => {
+      setMessage("");
+      const response = await adminFetch(adminAccess?.session, "/api/admin/orders/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmation: RESET_CONFIRMATION_TEXT }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setMessage(data.error ?? "Order reset failed.");
+        return;
+      }
+
+      setOrders([]);
+      knownOrders.current = new Set();
+      orderStatusByNumber.current = new Map();
+      setDateFilter("all");
+      setDateRange({ from: "", to: "" });
+      setPriceFilter("all");
+      setStatusFilter("all");
+      setNewOrderAlert(null);
+      setCancelledOrderAlert(null);
+      closeResetDialog();
+      setMessage(`Reset complete. Deleted ${data.deleted?.orders ?? 0} orders, customer order history is clear, and customer accounts were kept.`);
     });
   }
 
@@ -437,13 +524,14 @@ export function AdminOrdersClient({
               </h2>
               <p className="mt-1 text-xs font-bold text-muted">Filter orders by date, bill value, and kitchen status.</p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3 lg:w-[760px]">
+            <div className="grid gap-3 sm:grid-cols-2 lg:w-[920px] lg:grid-cols-[1fr_1.6fr_1fr_1fr]">
               <FilterSelect label="Date" value={dateFilter} onChange={(value) => setDateFilter(value as DateFilter)} options={[
                 ["all", "All dates"],
                 ["today", "Today"],
                 ["yesterday", "Yesterday"],
                 ["week", "Last 7 days"],
               ]} />
+              <DateRangeInputs value={dateRange} onChange={setDateRange} />
               <FilterSelect label="Price" value={priceFilter} onChange={(value) => setPriceFilter(value as PriceFilter)} options={[
                 ["all", "All bills"],
                 ["under500", "Below Rs 500"],
@@ -472,6 +560,7 @@ export function AdminOrdersClient({
               {(() => {
                 const details = getOrderDetails(order);
                 const tone = getOrderCardTone(order.status);
+                const refundInfo = getRefundInfo(order);
                 return (
                   <>
               <div className={`mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-4 py-2 text-xs font-black uppercase tracking-wide ${tone.banner}`}>
@@ -509,6 +598,21 @@ export function AdminOrdersClient({
                   <a href={`https://wa.me/91${order.customerMobile}?text=${encodeURIComponent(buildCustomerMessage(order, order.status))}`} className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-black ${tone.action}`}>
                     <MessageCircle size={16} /> Message
                   </a>
+                  {refundInfo.visible ? (
+                    <button
+                      type="button"
+                      onClick={() => refundOrder(order)}
+                      disabled={isPending || !refundInfo.canRefund}
+                      className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-black disabled:opacity-60 ${
+                        refundInfo.canRefund
+                          ? "border-[#a8d8b8] bg-[#effaf4] text-[#0f7a45] hover:bg-[#dff6e8]"
+                          : "border-[#d8dde7] bg-white text-[#64748b]"
+                      }`}
+                      title={refundInfo.label}
+                    >
+                      <RefreshCw size={16} /> {refundInfo.label}
+                    </button>
+                  ) : null}
                 </div>
               </div>
               <div className="mt-4 grid gap-3 lg:grid-cols-4">
@@ -597,6 +701,32 @@ export function AdminOrdersClient({
             </div>
           )}
         </section>
+
+        {canResetOrders ? (
+          <section className="mt-8 rounded-2xl border border-[#f2b6bc] bg-[#fff8f9] p-5 shadow-sm">
+            <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
+              <div className="flex min-w-0 gap-3">
+                <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-red text-white">
+                  <AlertTriangle size={21} />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="text-lg font-black text-maroon">Reset customer orders</h2>
+                  <p className="mt-1 text-sm font-bold leading-6 text-muted">
+                    Clears all orders, payments, order status history, item rows, and reviews. Customer accounts stay saved.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => setResetDialogOpen(true)}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-red px-4 text-sm font-black text-white disabled:opacity-60"
+              >
+                <Trash2 size={17} /> Reset orders
+              </button>
+            </div>
+          </section>
+        ) : null}
       </div>
 
       {declineOrder ? (
@@ -618,6 +748,55 @@ export function AdminOrdersClient({
                 className="h-10 rounded-lg bg-red px-4 font-black text-white disabled:opacity-60"
               >
                 Decline order
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {resetDialogOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-charcoal/45 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-red text-white">
+                <AlertTriangle size={22} />
+              </span>
+              <div>
+                <h2 className="text-xl font-black text-maroon">Reset all customer orders?</h2>
+                <p className="mt-2 text-sm font-bold leading-6 text-muted">
+                  This permanently deletes every order and clears order history from customer accounts. Customers, addresses, products, settings, and staff access are kept.
+                </p>
+              </div>
+            </div>
+
+            <label className="mt-5 flex items-start gap-3 rounded-xl border border-[#f2b6bc] bg-[#fff8f9] p-3 text-sm font-bold leading-5 text-charcoal">
+              <input
+                type="checkbox"
+                checked={resetAcknowledged}
+                onChange={(event) => setResetAcknowledged(event.target.checked)}
+                className="mt-1 h-4 w-4 accent-[#8d0021]"
+              />
+              I understand this cannot be undone from the website.
+            </label>
+
+            <label className="mt-4 grid gap-2 text-sm font-black text-charcoal">
+              Type {RESET_CONFIRMATION_TEXT}
+              <input
+                value={resetConfirmation}
+                onChange={(event) => setResetConfirmation(event.target.value)}
+                className="h-11 rounded-lg border border-border bg-cream px-3 text-sm font-black uppercase tracking-wide text-charcoal"
+                placeholder={RESET_CONFIRMATION_TEXT}
+              />
+            </label>
+
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button onClick={closeResetDialog} className="h-10 rounded-lg border border-border px-4 font-black">Cancel</button>
+              <button
+                disabled={isPending || !resetIsConfirmed}
+                onClick={resetOrders}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red px-4 font-black text-white disabled:opacity-60"
+              >
+                <Trash2 size={16} /> {isPending ? "Resetting..." : "Delete orders"}
               </button>
             </div>
           </div>
@@ -651,6 +830,36 @@ function FilterSelect({
         ))}
       </select>
     </label>
+  );
+}
+
+function DateRangeInputs({
+  value,
+  onChange,
+}: {
+  value: { from: string; to: string };
+  onChange: (value: { from: string; to: string }) => void;
+}) {
+  return (
+    <div className="grid gap-2 text-xs font-black uppercase tracking-wide text-muted">
+      <span className="flex items-center gap-2"><CalendarDays size={15} /> Date range</span>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <input
+          type="date"
+          value={value.from}
+          onChange={(event) => onChange({ ...value, from: event.target.value })}
+          className="h-11 min-w-0 rounded-lg border border-border bg-cream px-3 text-sm font-black normal-case tracking-normal text-charcoal"
+          aria-label="From date"
+        />
+        <input
+          type="date"
+          value={value.to}
+          onChange={(event) => onChange({ ...value, to: event.target.value })}
+          className="h-11 min-w-0 rounded-lg border border-border bg-cream px-3 text-sm font-black normal-case tracking-normal text-charcoal"
+          aria-label="To date"
+        />
+      </div>
+    </div>
   );
 }
 
@@ -792,10 +1001,13 @@ function matchesStatusFilter(order: AdminOrder, filter: StatusFilter) {
   return order.status === "CANCELLED";
 }
 
-function matchesDateFilter(order: AdminOrder, filter: DateFilter) {
+function matchesDateFilter(order: AdminOrder, filter: DateFilter, range: { from: string; to: string }) {
+  const orderDay = getIstDateInputValue(order.createdAt);
+  if (range.from && orderDay < range.from) return false;
+  if (range.to && orderDay > range.to) return false;
+
   if (filter === "all") return true;
 
-  const orderDay = getIstDateInputValue(order.createdAt);
   if (filter === "today") return orderDay === getIstDateInputValue();
   if (filter === "yesterday") return orderDay === getIstDateInputValue(new Date(), -1);
 
@@ -934,9 +1146,41 @@ function getNextOrderActions(status: OrderStatus): OrderStatus[] {
 function getPaymentSummary(payment?: { provider: string; status: string }) {
   if (!payment) return "Cash on Delivery";
   if (payment.provider === "COD") return "Cash on Delivery";
+  if (payment.status === "REFUND_PENDING") return "Refund pending";
+  if (payment.status === "PARTIALLY_REFUNDED") return "Partially refunded";
+  if (payment.status === "REFUNDED") return "Refunded";
   if (payment.status === "PAID" || payment.status === "AUTHORIZED") return "Online payment received";
   if (payment.status === "CREATED") return "Online payment pending";
   return "Online payment";
+}
+
+function getRefundInfo(order: AdminOrder) {
+  const payment = order.payments.find((item) => item.provider === "RAZORPAY");
+  if (!payment) {
+    return { visible: false, canRefund: false, amount: 0, label: "No online payment" };
+  }
+
+  if (payment.status === "REFUND_PENDING") {
+    return { visible: true, canRefund: false, amount: payment.amount, label: "Refund pending" };
+  }
+
+  if (payment.status === "PARTIALLY_REFUNDED") {
+    return { visible: true, canRefund: false, amount: payment.amount, label: "Partially refunded" };
+  }
+
+  if (payment.status === "REFUNDED") {
+    return { visible: true, canRefund: false, amount: payment.amount, label: "Refunded" };
+  }
+
+  if (order.status !== "CANCELLED") {
+    return { visible: false, canRefund: false, amount: payment.amount, label: "Refund after decline" };
+  }
+
+  if (payment.status !== "PAID") {
+    return { visible: true, canRefund: false, amount: payment.amount, label: "Payment not refundable" };
+  }
+
+  return { visible: true, canRefund: true, amount: payment.amount, label: `Refund ${formatRupees(payment.amount)}` };
 }
 
 function getOrderDetails(order: AdminOrder) {

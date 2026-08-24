@@ -2,7 +2,7 @@ import type { BusinessSettings } from "@/lib/types";
 
 export type DeliveryCoverageSettings = Pick<
   BusinessSettings,
-  "deliveryRadiusKm" | "kitchenLatitude" | "kitchenLongitude" | "locationRestrictionEnabled" | "serviceablePins"
+  "deliveryRadiusKm" | "kitchenLatitude" | "kitchenLongitude" | "locationRestrictionEnabled" | "serviceablePins" | "deliveryFeeMode"
 >;
 
 export type DeliveryPoint = {
@@ -21,27 +21,36 @@ export type DeliveryCoverageResult = {
 const EARTH_RADIUS_KM = 6371;
 
 export function getDeliveryCoverage(location: DeliveryPoint, settings: DeliveryCoverageSettings): DeliveryCoverageResult {
-  if (!settings.locationRestrictionEnabled) {
-    return {
-      serviceable: true,
-      needsLocation: false,
-      distanceKm: null,
-      message: "Delivery is open for all locations.",
-    };
-  }
-
+  const distanceRequired = settings.locationRestrictionEnabled || settings.deliveryFeeMode === "DISTANCE";
   const kitchenLatitude = parseCoordinate(settings.kitchenLatitude);
   const kitchenLongitude = parseCoordinate(settings.kitchenLongitude);
   const customerLatitude = parseCoordinate(location.latitude);
   const customerLongitude = parseCoordinate(location.longitude);
+
+  if (!distanceRequired) {
+    const optionalDistance = kitchenLatitude !== null && kitchenLongitude !== null && customerLatitude !== null && customerLongitude !== null
+      ? getDistanceKm(
+        { latitude: kitchenLatitude, longitude: kitchenLongitude },
+        { latitude: customerLatitude, longitude: customerLongitude },
+      )
+      : null;
+
+    return {
+      serviceable: true,
+      needsLocation: false,
+      distanceKm: optionalDistance,
+      message: optionalDistance === null ? "Delivery is open for all locations." : `Delivery available. Your location is ${formatDistanceKm(optionalDistance)} from the kitchen.`,
+    };
+  }
+
   const radiusKm = Number(settings.deliveryRadiusKm);
 
-  if (kitchenLatitude === null || kitchenLongitude === null || !Number.isFinite(radiusKm) || radiusKm <= 0) {
+  if (kitchenLatitude === null || kitchenLongitude === null || (settings.locationRestrictionEnabled && (!Number.isFinite(radiusKm) || radiusKm <= 0))) {
     return {
       serviceable: false,
       needsLocation: false,
       distanceKm: null,
-      message: "Delivery area is not configured yet. Please contact the restaurant before placing an order.",
+      message: "Delivery distance is not configured yet. Please contact the restaurant before placing an order.",
     };
   }
 
@@ -50,7 +59,9 @@ export function getDeliveryCoverage(location: DeliveryPoint, settings: DeliveryC
       serviceable: false,
       needsLocation: true,
       distanceKm: null,
-      message: "Use current location so we can check if your address is inside our delivery radius.",
+      message: settings.deliveryFeeMode === "DISTANCE"
+        ? "Use current location so we can calculate the distance wise delivery charge."
+        : "Use current location so we can check if your address is inside our delivery radius.",
     };
   }
 
@@ -59,7 +70,7 @@ export function getDeliveryCoverage(location: DeliveryPoint, settings: DeliveryC
     { latitude: customerLatitude, longitude: customerLongitude },
   );
 
-  if (distanceKm <= radiusKm) {
+  if (!settings.locationRestrictionEnabled || distanceKm <= radiusKm) {
     return {
       serviceable: true,
       needsLocation: false,

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BellRing, Volume2 } from "lucide-react";
+import { useAdminAccess } from "@/components/admin-access-gate";
+import { adminFetch } from "@/lib/admin-client-auth";
 import { getNewOrderSound, getNewOrderSoundSteps } from "@/lib/order-sounds";
 import type { NewOrderSound, OrderStatus } from "@/lib/types";
 
@@ -24,6 +26,7 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
   const [audioReady, setAudioReady] = useState(false);
   const knownOrders = useRef<Set<string>>(new Set());
   const audioContext = useRef<AudioContext | null>(null);
+  const adminAccess = useAdminAccess();
 
   const getAudioContext = useCallback(() => {
     if (audioContext.current) return audioContext.current;
@@ -88,7 +91,7 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
       return;
     }
 
-    const response = await fetch("/api/orders", { cache: "no-store" });
+    const response = await adminFetch(adminAccess?.session, "/api/orders", { cache: "no-store" });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !Array.isArray(data.orders)) return;
 
@@ -102,7 +105,7 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
       document.title = `New order ${newIncoming.orderNumber} - Wah Thali Admin`;
       await playAlarmSound();
     }
-  }, [alertEnabled, playAlarmSound]);
+  }, [adminAccess?.session, alertEnabled, playAlarmSound]);
 
   const refreshAlertSettings = useCallback(async () => {
     const response = await fetch("/api/settings", { cache: "no-store" });

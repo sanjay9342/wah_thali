@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { deleteCouponRule, logActivity, saveCouponRule } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { parseIstDateInput } from "@/lib/time";
@@ -22,14 +23,17 @@ const couponSchema = z.object({
   startsAt: istDateSchema("start").optional(),
   endsAt: istDateSchema("end").optional(),
   active: z.boolean().optional(),
-  audience: z.enum(["ALL", "VIP", "POINTS"]).optional(),
+  audience: z.enum(["ALL", "VIP", "POINTS", "TAGS"]).optional(),
   minPoints: z.coerce.number().int().nonnegative().optional(),
+  tagNames: z.array(z.string().min(1)).optional(),
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ code: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
+  const access = await requireAdminPermission(request, "coupons");
+  if (!access.ok) return access.response;
 
   const { code } = await params;
   const parsed = couponSchema.safeParse(await request.json());
@@ -37,13 +41,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
     return NextResponse.json({ error: "Invalid coupon update", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { audience, minPoints, ...couponData } = parsed.data;
+  const { audience, minPoints, tagNames, ...couponData } = parsed.data;
   const coupon = await prisma.coupon.update({
     where: { code: code.toUpperCase() },
     data: couponData,
   });
-  if (audience !== undefined || minPoints !== undefined) {
-    await saveCouponRule(coupon.code, { audience: audience ?? "ALL", minPoints: minPoints ?? 0 });
+  if (audience !== undefined || minPoints !== undefined || tagNames !== undefined) {
+    await saveCouponRule(coupon.code, { audience: audience ?? "ALL", minPoints: minPoints ?? 0, tagNames: tagNames ?? [] });
   }
 
   await logActivity({
@@ -56,10 +60,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
   return NextResponse.json({ coupon });
 }
 
-export async function DELETE(_request: Request, { params }: { params: Promise<{ code: string }> }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ code: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
+  const access = await requireAdminPermission(request, "coupons");
+  if (!access.ok) return access.response;
 
   const { code } = await params;
   const coupon = await prisma.coupon.delete({ where: { code: code.toUpperCase() } });

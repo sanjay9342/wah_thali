@@ -27,7 +27,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { calculateCartTotals, formatRupees, getPricableCartLines, isCouponEligibleForCustomer } from "@/lib/pricing";
+import { calculateCartTotals, formatRupees, getPricableCartLines, getProductUnitPricing, isCouponEligibleForCustomer } from "@/lib/pricing";
 import { writeStoredCart } from "@/lib/cart-storage";
 import { readCustomerSession, saveCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 import { extractPinCode, getDeliveryLocationCoverage, saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
@@ -35,10 +35,10 @@ import { addNotification } from "@/lib/notifications";
 import { useStoredCart } from "@/lib/use-stored-cart";
 import { getStoreOrderingStatus } from "@/lib/store-hours";
 import { OrderPlacingOverlay } from "@/components/order-placing-overlay";
-import type { CartLine, Coupon, Product, RestaurantSettings } from "@/lib/types";
+import type { CartLine, CategoryOfferMap, Coupon, Product, RestaurantSettings } from "@/lib/types";
 
 type PaymentMethod = "COD" | "RAZORPAY";
-type CouponCustomer = { isVip: boolean; points: number };
+type CouponCustomer = { isVip: boolean; orderCount: number; points: number; tags: string[] };
 
 declare global {
   interface Window {
@@ -90,11 +90,13 @@ export function CartClient({
   initialProducts,
   initialCoupons,
   restaurantSettings,
+  initialCategoryOffers = {},
 }: {
   addProductId?: string;
   initialProducts: Product[];
   initialCoupons: Coupon[];
   restaurantSettings: RestaurantSettings;
+  initialCategoryOffers?: CategoryOfferMap;
 }) {
   const router = useRouter();
   const [coupon, setCoupon] = useState<string | undefined>();
@@ -110,7 +112,7 @@ export function CartClient({
   const [showOrderConfirmSheet, setShowOrderConfirmSheet] = useState(false);
   const [locating, setLocating] = useState(false);
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
-  const [couponCustomer, setCouponCustomer] = useState<CouponCustomer>({ isVip: false, points: 0 });
+  const [couponCustomer, setCouponCustomer] = useState<CouponCustomer>({ isVip: false, orderCount: 0, points: 0, tags: [] });
   const [checkoutMessage, setCheckoutMessage] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
     restaurantSettings.onlinePaymentsEnabled ? "RAZORPAY" : "COD",
@@ -135,13 +137,13 @@ export function CartClient({
   const validLines = useMemo(() => getPricableCartLines(lines, initialProducts), [initialProducts, lines]);
   const selectedCoupon = initialCoupons.find((item) => item.code === coupon);
   const couponEligible = selectedCoupon ? isCouponEligibleForCustomer(selectedCoupon, couponCustomer) : true;
-
-  const totals = useMemo(
-    () => calculateCartTotals(validLines, couponEligible ? coupon : undefined, initialProducts, initialCoupons, restaurantSettings, couponCustomer),
-    [couponCustomer, couponEligible, initialCoupons, initialProducts, validLines, coupon, restaurantSettings],
-  );
   const deliveryCoverage = getDeliveryLocationCoverage(deliveryLocation, restaurantSettings);
   const serviceable = deliveryCoverage.serviceable;
+
+  const totals = useMemo(
+    () => calculateCartTotals(validLines, couponEligible ? coupon : undefined, initialProducts, initialCoupons, restaurantSettings, couponCustomer, initialCategoryOffers, deliveryCoverage.distanceKm),
+    [couponCustomer, couponEligible, deliveryCoverage.distanceKm, initialCategoryOffers, initialCoupons, initialProducts, validLines, coupon, restaurantSettings],
+  );
   const suggestions = initialProducts.filter((product) => !validLines.some((line) => line.productId === product.id)).slice(0, 6);
   const orderingStatus = getStoreOrderingStatus(restaurantSettings);
   const storeOrderingDisabled = orderingStatus.unavailable;
@@ -153,9 +155,9 @@ export function CartClient({
       initialCoupons.filter((item) => (
         totals.subtotal >= item.minOrder &&
         isCouponEligibleForCustomer(item, couponCustomer) &&
-        calculateCartTotals(validLines, item.code, initialProducts, initialCoupons, restaurantSettings, couponCustomer).discount > 0
+        calculateCartTotals(validLines, item.code, initialProducts, initialCoupons, restaurantSettings, couponCustomer, initialCategoryOffers, deliveryCoverage.distanceKm).discount > 0
       )),
-    [couponCustomer, initialCoupons, initialProducts, restaurantSettings, totals.subtotal, validLines],
+    [couponCustomer, deliveryCoverage.distanceKm, initialCategoryOffers, initialCoupons, initialProducts, restaurantSettings, totals.subtotal, validLines],
   );
   const featuredCoupon = availableCoupons[0];
   const featuredCouponValue = featuredCoupon ? getCouponBenefitText(featuredCoupon) : "";
@@ -167,8 +169,14 @@ export function CartClient({
   const paymentLabel = getPaymentLabel(selectedPaymentMethod);
   const itemSavings = validLines.reduce((total, line) => {
     const product = initialProducts.find((item) => item.id === line.productId);
-    if (!product?.originalPrice) return total;
-    return total + Math.max(product.originalPrice - product.price, 0) * line.quantity;
+    if (!product) return total;
+    const variant = product.variants.find((item) => item.id === line.variantId);
+    if (!variant) return total;
+    const addonTotal = line.addonIds.reduce((addonSum, addonId) => {
+      const addon = product.addons.find((item) => item.id === addonId);
+      return addonSum + (addon?.price ?? 0);
+    }, 0);
+    return total + getProductUnitPricing(product, initialCategoryOffers, variant.price, addonTotal).discountPerUnit * line.quantity;
   }, 0);
   const totalSavings = itemSavings + totals.discount;
   const cartItemCount = validLines.reduce((total, line) => total + line.quantity, 0);
@@ -229,7 +237,7 @@ export function CartClient({
 
     async function loadCouponCustomer() {
       if (!customerSession?.mobile) {
-        setCouponCustomer({ isVip: false, points: 0 });
+        setCouponCustomer({ isVip: false, orderCount: 0, points: 0, tags: [] });
         return;
       }
 
@@ -237,12 +245,15 @@ export function CartClient({
         const response = await fetch(`/api/customers/profile?mobile=${encodeURIComponent(customerSession.mobile)}`, { cache: "no-store" });
         const data = await response.json();
         if (!response.ok || !data.customer || cancelled) return;
+        const orderCount = Number(data.customer.rewardOrderCount ?? data.customer.loyalty?.points ?? 0);
         setCouponCustomer({
           isVip: Boolean(data.customer.isVip),
-          points: Number(data.customer.rewardOrderCount ?? data.customer.loyalty?.points ?? 0),
+          orderCount,
+          points: orderCount,
+          tags: getCustomerTagNames(data.customer.tags),
         });
       } catch {
-        if (!cancelled) setCouponCustomer({ isVip: false, points: 0 });
+        if (!cancelled) setCouponCustomer({ isVip: false, orderCount: 0, points: 0, tags: [] });
       }
     }
 
@@ -450,12 +461,12 @@ export function CartClient({
   }
 
   async function cancelUnpaidOrder(orderNumber: string) {
-    await fetch(`/api/orders/${orderNumber}`, {
-      method: "PATCH",
+    await fetch(`/api/orders/${orderNumber}/customer-cancel`, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        status: "CANCELLED",
         note: "Online payment was not completed. Checkout attempt cancelled before sending to kitchen.",
+        notifyCustomer: false,
       }),
     }).catch(() => undefined);
   }
@@ -753,9 +764,13 @@ export function CartClient({
               const addons = line.addonIds
                 .map((addonId) => product.addons.find((item) => item.id === addonId)?.name)
                 .filter(Boolean);
-              const unitPrice = product.price + (variant?.price ?? 0);
-              const lineTotal = unitPrice * line.quantity;
-              const originalTotal = product.originalPrice ? product.originalPrice * line.quantity : undefined;
+              const addonTotal = line.addonIds.reduce((total, addonId) => {
+                const addon = product.addons.find((item) => item.id === addonId);
+                return total + (addon?.price ?? 0);
+              }, 0);
+              const pricing = getProductUnitPricing(product, initialCategoryOffers, variant?.price ?? 0, addonTotal);
+              const lineTotal = pricing.unitPrice * line.quantity;
+              const originalTotal = pricing.discountPerUnit > 0 ? pricing.originalUnitPrice * line.quantity : undefined;
 
               return (
                 <article key={`${line.productId}-${index}`} className="grid grid-cols-[132px_minmax(0,1fr)_150px] items-center gap-6 rounded-[18px] border border-[#f1e7e4] bg-white p-5 shadow-[0_14px_34px_rgba(34,31,32,0.05)]">
@@ -828,7 +843,7 @@ export function CartClient({
                       />
                     </div>
                     <h3 className="mt-3 line-clamp-1 text-base font-black text-charcoal">{product.name}</h3>
-                    <p className="mt-2 text-lg font-black text-maroon">{formatRupees(product.price)}</p>
+                    <p className="mt-2 text-lg font-black text-maroon">{formatRupees(getProductUnitPricing(product, initialCategoryOffers).unitPrice)}</p>
                     <button
                       onClick={() => addSuggestedProduct(product)}
                       className="mt-4 h-10 w-full rounded-xl bg-maroon text-sm font-black text-white shadow-[0_10px_22px_rgba(141,0,33,0.16)]"
@@ -931,7 +946,7 @@ export function CartClient({
       </div>
 
       <div className="lg:hidden">
-      <div className="flex items-center gap-3 px-5 pb-1 pt-4 lg:px-6">
+      <div className="flex items-center gap-3 px-4 pb-1 pt-4 lg:px-6">
         <Link href="/menu" className="grid h-10 w-10 place-items-center rounded-full bg-white text-maroon shadow-sm ring-1 ring-border" aria-label="Back to menu">
           <ChevronLeft size={25} strokeWidth={2.7} />
         </Link>
@@ -939,14 +954,14 @@ export function CartClient({
       </div>
 
       {totalSavings > 0 ? (
-      <div className="mx-5 mt-3 flex items-center gap-2 rounded-[14px] bg-[#e9f2ff] px-3 py-2 text-[13px] font-black text-[#1769c2]">
+      <div className="mx-4 mt-3 flex items-center gap-2 rounded-[14px] bg-[#e9f2ff] px-3 py-2 text-[13px] font-black text-[#1769c2]">
         <BadgeCheck size={16} className="shrink-0" />
         <span>You saved {formatRupees(totalSavings)} on this order</span>
       </div>
       ) : null}
 
       {showStoreStatus ? (
-        <div className="mx-5 mt-4 rounded-2xl border border-red/20 bg-white p-4 text-sm text-maroon">
+        <div className="mx-4 mt-4 rounded-2xl border border-red/20 bg-white p-4 text-sm text-maroon">
           <p className="flex items-center gap-2 font-black">
             <Store size={17} className="text-red" />
             {orderingStatus.title}
@@ -955,7 +970,7 @@ export function CartClient({
         </div>
       ) : null}
       {!serviceable ? (
-        <div className="mx-5 mt-4 rounded-2xl border border-maroon/15 bg-white p-4 text-sm text-maroon">
+        <div className="mx-4 mt-4 rounded-2xl border border-maroon/15 bg-white p-4 text-sm text-maroon">
           <p className="flex items-center gap-2 font-black">
             <MapPin size={17} />
             {deliveryCoverage.needsLocation ? "Current location required" : "Service not available"}
@@ -969,7 +984,7 @@ export function CartClient({
         </div>
       ) : null}
 
-      <div className="mx-5 mt-4 rounded-[18px] bg-white p-3 shadow-[0_8px_24px_rgba(17,24,39,0.05)] ring-1 ring-[#eef1f6]">
+      <div className="mx-4 mt-4 rounded-[18px] bg-white p-3 shadow-[0_8px_24px_rgba(17,24,39,0.05)] ring-1 ring-[#eef1f6]">
         <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-5 lg:space-y-0">
         {validLines.map((line, index) => {
           const product = initialProducts.find((item) => item.id === line.productId);
@@ -978,8 +993,13 @@ export function CartClient({
           const addons = line.addonIds
             .map((addonId) => product.addons.find((item) => item.id === addonId)?.name)
             .filter(Boolean);
-          const lineTotal = (product.price + (variant?.price ?? 0)) * line.quantity;
-          const originalTotal = product.originalPrice ? product.originalPrice * line.quantity : undefined;
+          const addonTotal = line.addonIds.reduce((total, addonId) => {
+            const addon = product.addons.find((item) => item.id === addonId);
+            return total + (addon?.price ?? 0);
+          }, 0);
+          const pricing = getProductUnitPricing(product, initialCategoryOffers, variant?.price ?? 0, addonTotal);
+          const lineTotal = pricing.unitPrice * line.quantity;
+          const originalTotal = pricing.discountPerUnit > 0 ? pricing.originalUnitPrice * line.quantity : undefined;
 
           return (
             <article key={`${line.productId}-${index}`} className="grid grid-cols-[1fr_auto_auto] items-start gap-3">
@@ -1050,7 +1070,7 @@ export function CartClient({
       </div>
 
       {suggestions.length ? (
-        <div className="mx-5 mt-5 rounded-[24px] bg-white p-4 shadow-sm">
+        <div className="mx-4 mt-5 rounded-[24px] bg-white p-4 shadow-sm">
           <h2 className="text-[15px] font-black uppercase tracking-[0.22em] text-muted">Complete your meal</h2>
           <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
             {suggestions.map((product) => (
@@ -1076,14 +1096,14 @@ export function CartClient({
                   </span>
                   <p className="line-clamp-2 text-[13px] font-semibold leading-4 text-charcoal">{product.name}</p>
                 </div>
-                <p className="mt-2 text-[15px] font-bold text-charcoal">{formatRupees(product.price)}</p>
+                <p className="mt-2 text-[15px] font-bold text-charcoal">{formatRupees(getProductUnitPricing(product, initialCategoryOffers).unitPrice)}</p>
               </article>
             ))}
           </div>
         </div>
       ) : null}
 
-      <div className="mx-5 mt-5 overflow-hidden rounded-[24px] bg-white shadow-sm">
+      <div className="mx-4 mt-5 overflow-hidden rounded-[24px] bg-white shadow-sm">
         <h2 className="px-4 pb-3 pt-5 text-[15px] font-black uppercase tracking-[0.22em] text-muted">Savings corner</h2>
         <div className="divide-y divide-border">
           <button
@@ -1118,7 +1138,7 @@ export function CartClient({
       </div>
 
       {featuredCoupon ? (
-      <div className="mx-5 mt-5">
+      <div className="mx-4 mt-5">
         <button
           type="button"
           onClick={() => selectCoupon(featuredCoupon.code)}
@@ -1139,7 +1159,7 @@ export function CartClient({
       </div>
       ) : null}
 
-      <div className="mx-5 mt-5 overflow-hidden rounded-[18px] bg-white shadow-sm ring-1 ring-[#eef1f6]">
+      <div className="mx-4 mt-5 overflow-hidden rounded-[18px] bg-white shadow-sm ring-1 ring-[#eef1f6]">
         <div className="divide-y divide-[#eef1f6]">
           <CartInfoRow
             icon={<Clock3 size={18} />}
@@ -1167,14 +1187,14 @@ export function CartClient({
         </div>
       </div>
 
-      <div className="mx-5 mt-5 rounded-[18px] bg-[#f6f7fb] px-1 pb-1">
+      <div className="mx-4 mt-5 rounded-[18px] bg-[#f6f7fb] px-1 pb-1">
         <h2 className="text-[13px] font-black uppercase tracking-[0.28em] text-muted">Cancellation Policy</h2>
         <p className="mt-2 text-[12px] font-semibold leading-5 text-muted">
           A 100% cancellation charge will apply. This helps us compensate the restaurant partner for food preparation.
         </p>
       </div>
       {paymentOptions.length > 1 ? (
-        <div className="mx-5 mt-5 grid grid-cols-2 gap-2 rounded-[18px] bg-white p-2 shadow-sm ring-1 ring-[#eef1f6]">
+        <div className="mx-4 mt-5 grid grid-cols-2 gap-2 rounded-[18px] bg-white p-2 shadow-sm ring-1 ring-[#eef1f6]">
           {paymentOptions.map((option) => (
             <button
               key={option}
@@ -1190,7 +1210,7 @@ export function CartClient({
         </div>
       ) : null}
       {checkoutMessage ? (
-        <p className="mx-5 mt-4 rounded-2xl bg-white p-3 text-center text-xs font-black leading-5 text-muted shadow-sm ring-1 ring-border" aria-live="polite">
+        <p className="mx-4 mt-4 rounded-2xl bg-white p-3 text-center text-xs font-black leading-5 text-muted shadow-sm ring-1 ring-border" aria-live="polite">
           {checkoutMessage}
         </p>
       ) : null}
@@ -1380,6 +1400,8 @@ export function CartClient({
           products={initialProducts}
           lines={validLines}
           restaurantSettings={restaurantSettings}
+          categoryOffers={initialCategoryOffers}
+          deliveryDistanceKm={deliveryCoverage.distanceKm}
           onClose={() => setShowCouponSheet(false)}
           onSelect={selectCoupon}
         />
@@ -1616,6 +1638,8 @@ function CouponSheet({
   products,
   lines,
   restaurantSettings,
+  categoryOffers,
+  deliveryDistanceKm,
   onClose,
   onSelect,
 }: {
@@ -1626,6 +1650,8 @@ function CouponSheet({
   products: Product[];
   lines: CartLine[];
   restaurantSettings: RestaurantSettings;
+  categoryOffers: CategoryOfferMap;
+  deliveryDistanceKm?: number | null;
   onClose: () => void;
   onSelect: (code: string) => void;
 }) {
@@ -1636,7 +1662,7 @@ function CouponSheet({
           const eligibleForCustomer = isCouponEligibleForCustomer(coupon, customer);
           const minOrderGap = Math.max(coupon.minOrder - subtotal, 0);
           const available = eligibleForCustomer && minOrderGap === 0;
-          const estimatedDiscount = calculateCartTotals(lines, coupon.code, products, coupons, restaurantSettings, customer).discount;
+          const estimatedDiscount = calculateCartTotals(lines, coupon.code, products, coupons, restaurantSettings, customer, categoryOffers, deliveryDistanceKm).discount;
           const selected = selectedCode === coupon.code;
 
           return (
@@ -1789,8 +1815,31 @@ function getCouponDescription(coupon: Coupon) {
 
 function getCouponEligibilityMessage(coupon: Coupon) {
   if (coupon.audience === "VIP") return "This coupon is only for VIP customers.";
-  if (coupon.audience === "POINTS") return `This reward unlocks after ${coupon.minPoints ?? 0} placed orders.`;
+  if (coupon.audience === "POINTS") return `This reward unlocks after ${getCouponOrderCountRequirement(coupon)} placed orders.`;
+  if (coupon.audience === "TAGS") return `This coupon is only for ${formatCouponTags(coupon.tagNames)} customers.`;
   return "This coupon is not eligible for this account.";
+}
+
+function getCouponOrderCountRequirement(coupon: Pick<Coupon, "minPoints">) {
+  return Math.max(1, Number(coupon.minPoints ?? 1));
+}
+
+function formatCouponTags(tags: string[] | undefined) {
+  return tags?.length ? tags.join(", ") : "selected";
+}
+
+function getCustomerTagNames(tags: unknown): string[] {
+  if (!Array.isArray(tags)) return [];
+  return tags
+    .map((tag) => {
+      if (typeof tag === "string") return tag;
+      if (tag && typeof tag === "object" && "tag" in tag) {
+        const nested = (tag as { tag?: { name?: unknown } }).tag;
+        return typeof nested?.name === "string" ? nested.name : "";
+      }
+      return "";
+    })
+    .filter(Boolean);
 }
 
 function getPaymentLabel(method?: PaymentMethod) {

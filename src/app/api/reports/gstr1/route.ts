@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
+import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { getGstr1Rows } from "@/lib/invoice";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const access = await requireAdminPermission(request, "settings");
+  if (!access.ok) return access.response;
+
   const header = [
     "GSTIN/UIN of Recipient",
     "Invoice Number",

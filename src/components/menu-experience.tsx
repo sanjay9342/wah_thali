@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState, type ReactNode, type SyntheticEvent } from "react";
+import { useDeferredValue, useEffect, useMemo, useState, type ReactNode, type SyntheticEvent } from "react";
 import {
   ArrowLeft,
   BadgeCheck,
@@ -36,18 +36,12 @@ import { categories as fallbackCategories, products as fallbackProducts } from "
 import { writeStoredCart } from "@/lib/cart-storage";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 import { getDeliveryLocationCoverage, useDeliveryLocation } from "@/lib/delivery-location";
-import { formatRupees, getPricableCartLines, getProductPrice } from "@/lib/pricing";
+import { formatRupees, getPricableCartLines, getProductPrice, getProductUnitPricing } from "@/lib/pricing";
 import { getStoreOrderingStatus } from "@/lib/store-hours";
 import { useStoredCart } from "@/lib/use-stored-cart";
 import { useStoredWishlist } from "@/lib/use-stored-wishlist";
 import type { CartLine, CategoryOfferMap, Coupon, HomeSlide, Product, RestaurantSettings } from "@/lib/types";
 import { writeStoredWishlist } from "@/lib/wishlist-storage";
-
-function getQuantity(lines: CartLine[], productId: string) {
-  return lines
-    .filter((line) => line.productId === productId)
-    .reduce((total, line) => total + line.quantity, 0);
-}
 
 function getVariantQuantity(lines: CartLine[], productId: string, variantId: string) {
   return lines
@@ -55,22 +49,19 @@ function getVariantQuantity(lines: CartLine[], productId: string, variantId: str
     .reduce((total, line) => total + line.quantity, 0);
 }
 
-type MenuFilterId = "veg" | "bestseller" | "offers" | "rating" | "fast" | "under199";
+type MenuFilterId = "veg" | "offers" | "rating" | "under199";
 
 const menuFilterOptions: { id: MenuFilterId; label: string; helper: string }[] = [
   { id: "veg", label: "Pure Veg", helper: "Veg and Jain dishes" },
   { id: "offers", label: "Offers", helper: "Deals and discounts" },
   { id: "rating", label: "Rating 4.5+", helper: "Top rated items" },
-  { id: "fast", label: "Under 30 min", helper: "Quick prep dishes" },
   { id: "under199", label: "Under Rs 199", helper: "Budget picks" },
 ];
 
 function MenuFilterIcon({ filterId, className }: { filterId: MenuFilterId; className?: string }) {
   if (filterId === "veg") return <Leaf size={15} strokeWidth={2.6} className={className} />;
-  if (filterId === "bestseller") return <Star size={15} strokeWidth={2.6} className={className} />;
   if (filterId === "offers") return <BadgePercent size={15} strokeWidth={2.6} className={className} />;
   if (filterId === "rating") return <Star size={15} strokeWidth={2.6} className={className} />;
-  if (filterId === "fast") return <TimerReset size={15} strokeWidth={2.6} className={className} />;
   return <IndianRupee size={15} strokeWidth={2.6} className={className} />;
 }
 
@@ -79,10 +70,8 @@ function productMatchesMenuFilters(product: Product, activeFilters: MenuFilterId
 
   return activeFilters.every((filterId) => {
     if (filterId === "veg") return product.dietaryType === "VEG" || product.dietaryType === "JAIN";
-    if (filterId === "bestseller") return Boolean(product.bestseller);
     if (filterId === "offers") return Boolean(getProductOffer(product, categoryOffers) || product.originalPrice);
     if (filterId === "rating") return product.rating >= 4.5;
-    if (filterId === "fast") return product.prepTimeMinutes <= 30;
     return product.price <= 199;
   });
 }
@@ -115,13 +104,13 @@ function SearchFilterControl({
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          className="min-w-0 bg-transparent text-[12px] font-semibold text-charcoal outline-none placeholder:text-muted lg:text-sm"
+          className="min-w-0 bg-transparent text-[11px] font-semibold text-charcoal outline-none placeholder:text-muted lg:text-[13px]"
           placeholder={placeholder}
         />
         <button
           type="button"
           onClick={onToggleFiltersOpen}
-          className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-[11px] px-2.5 text-[11px] font-black transition-colors lg:px-3 lg:text-xs ${
+          className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-[11px] px-2.5 text-[10px] font-black transition-colors lg:px-3 lg:text-[11px] ${
             activeFilters.length ? "bg-red text-white" : "bg-[#f7f8fc] text-charcoal ring-1 ring-[#e7ebf2]"
           }`}
           aria-expanded={filtersOpen}
@@ -179,18 +168,20 @@ function QuantityControl({
   onAdd,
   onDecrease,
   disabled,
+  disabledLabel = "Closed",
   wide = false,
 }: {
   quantity: number;
   onAdd: () => void;
   onDecrease: () => void;
   disabled: boolean;
+  disabledLabel?: string;
   wide?: boolean;
 }) {
   if (disabled) {
     return (
       <button disabled className={`${wide ? "min-w-[132px] shrink-0" : ""} h-8 rounded-[8px] bg-[#f2eef0] px-3 text-[10px] font-black text-muted sm:h-9 sm:px-4 sm:text-xs`}>
-        Closed
+        {disabledLabel}
       </button>
     );
   }
@@ -284,6 +275,7 @@ function needsDishDetail(product: Product) {
 function ProductCard({
   product,
   offer,
+  prepMinutes,
   quantity,
   saved,
   onAdd,
@@ -294,6 +286,7 @@ function ProductCard({
 }: {
   product: Product;
   offer?: string;
+  prepMinutes: number;
   quantity: number;
   saved: boolean;
   onAdd: () => void;
@@ -302,13 +295,17 @@ function ProductCard({
   onToggleSave: () => void;
   orderingDisabled: boolean;
 }) {
+  const unavailable = !product.available;
+  const pricing = getProductUnitPricing(product, offer ? { [slugifyCategory(product.category)]: offer } : {});
   return (
-    <article className="min-w-[104px] overflow-hidden rounded-[20px] border border-[#f0e8e2] bg-white shadow-[0_10px_22px_rgba(34,31,32,0.055)] sm:min-w-0 sm:rounded-[26px] sm:shadow-[0_14px_34px_rgba(34,31,32,0.07)]">
-      <div className="relative aspect-[1.58/1] w-full overflow-hidden bg-[#f6f1ed] sm:aspect-[1.42/1]">
+    <article className={`group min-w-[104px] overflow-hidden rounded-[20px] border border-[#f0e8e2] bg-white shadow-[0_10px_22px_rgba(34,31,32,0.055)] transition duration-200 hover:-translate-y-1 hover:border-maroon/25 hover:shadow-[0_20px_42px_rgba(34,31,32,0.12)] sm:min-w-0 sm:rounded-[26px] sm:shadow-[0_14px_34px_rgba(34,31,32,0.07)] ${unavailable ? "grayscale" : ""}`}>
+      <div className="relative aspect-[1.58/1] w-full overflow-hidden bg-[#f6f1ed] transition duration-300 group-hover:bg-[#fff4f5] sm:aspect-[1.42/1]">
         <button className="block h-full w-full text-left" onClick={onOpen} aria-label={`View details for ${product.name}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="lazy" decoding="async" onError={useFallbackImage} />
+          <img src={product.image} alt={product.name} className={`h-full w-full object-cover transition duration-300 ease-out group-hover:scale-[1.08] group-hover:saturate-[1.08] ${unavailable ? "opacity-70" : ""}`} loading="lazy" decoding="async" onError={useFallbackImage} />
         </button>
+        <span className="pointer-events-none absolute inset-0 opacity-0 ring-2 ring-inset ring-maroon/25 transition-opacity duration-300 group-hover:opacity-100" />
+        {unavailable ? <span className="absolute inset-x-3 bottom-3 rounded-lg bg-charcoal/82 px-2 py-1 text-center text-[10px] font-black uppercase tracking-wide text-white">Unavailable</span> : null}
         <button
           className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-white text-red shadow-[0_8px_18px_rgba(34,31,32,0.12)] sm:right-3 sm:top-3 sm:h-9 sm:w-9"
           onClick={onToggleSave}
@@ -322,10 +319,10 @@ function ProductCard({
         <div className="flex items-start justify-between gap-2">
           <button className="min-w-0 text-left" onClick={onOpen}>
             <span className="flex min-w-0 items-center justify-between gap-1.5">
-              <h3 className="line-clamp-1 min-w-0 text-[10px] font-black leading-tight text-charcoal sm:text-base">{product.name}</h3>
+              <h3 className="line-clamp-1 min-w-0 text-[10px] font-black leading-tight text-charcoal sm:text-[13px]">{product.name}</h3>
               <DietMark type={product.dietaryType} compact />
             </span>
-            <p className="mt-1 line-clamp-1 text-[8px] font-black uppercase tracking-wide text-muted sm:text-[11px]">{product.category}</p>
+            <p className="mt-1 line-clamp-1 text-[8px] font-black uppercase tracking-wide text-muted sm:text-[10px]">{product.category}</p>
           </button>
         </div>
 
@@ -334,14 +331,17 @@ function ProductCard({
             <Star size={8} className="fill-red sm:h-[11px] sm:w-[11px]" />
             {product.rating}
           </span>
-          <span>{product.prepTimeMinutes}-{product.prepTimeMinutes + 8} min</span>
+          <span>{prepMinutes}-{prepMinutes + 8} min</span>
         </div>
 
         {offer ? <p className="mt-1.5 line-clamp-1 text-[8px] font-black text-maroon sm:mt-2.5 sm:text-[11px]">{offer}</p> : null}
 
         <div className={`${offer ? "mt-2.5 sm:mt-3" : "mt-2 sm:mt-2.5"} flex items-center justify-between gap-1.5 sm:gap-3`}>
-          <span className="text-[10px] font-black text-charcoal sm:text-base">{formatRupees(product.price)}</span>
-          <QuantityControl quantity={quantity} onAdd={onAdd} onDecrease={onDecrease} disabled={orderingDisabled} />
+          <span className="min-w-0">
+            {pricing.discountPerUnit > 0 ? <span className="block text-[8px] font-bold text-muted line-through sm:text-[11px]">{formatRupees(pricing.originalUnitPrice)}</span> : null}
+            <span className="block text-[10px] font-black text-charcoal sm:text-[13px]">{formatRupees(pricing.unitPrice)}</span>
+          </span>
+          <QuantityControl quantity={quantity} onAdd={onAdd} onDecrease={onDecrease} disabled={orderingDisabled || unavailable} disabledLabel={unavailable ? "Unavailable" : "Closed"} />
         </div>
       </div>
     </article>
@@ -351,6 +351,7 @@ function ProductCard({
 function FoodieProductCard({
   product,
   offer,
+  prepMinutes,
   quantity,
   saved,
   onAdd,
@@ -361,6 +362,7 @@ function FoodieProductCard({
 }: {
   product: Product;
   offer?: string;
+  prepMinutes: number;
   quantity: number;
   saved: boolean;
   onAdd: () => void;
@@ -369,13 +371,17 @@ function FoodieProductCard({
   onToggleSave: () => void;
   orderingDisabled: boolean;
 }) {
+  const unavailable = !product.available;
+  const pricing = getProductUnitPricing(product, offer ? { [slugifyCategory(product.category)]: offer } : {});
   return (
-    <article className="flex h-full min-w-0 flex-col overflow-hidden rounded-[20px] bg-white shadow-[0_8px_18px_rgba(34,31,32,0.055)] ring-1 ring-[#eef1f6]">
-      <div className="relative aspect-[1.55/1] overflow-hidden bg-[#f3f5f8]">
+    <article className={`group flex h-full min-w-0 flex-col overflow-hidden rounded-[20px] bg-white shadow-[0_8px_18px_rgba(34,31,32,0.055)] ring-1 ring-[#eef1f6] transition duration-200 hover:-translate-y-1 hover:ring-maroon/25 hover:shadow-[0_18px_38px_rgba(34,31,32,0.12)] ${unavailable ? "grayscale" : ""}`}>
+      <div className="relative aspect-[1.55/1] overflow-hidden bg-[#f3f5f8] transition duration-300 group-hover:bg-[#fff4f5]">
         <button className="block h-full w-full text-left" onClick={onOpen} aria-label={`View details for ${product.name}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="lazy" decoding="async" onError={useFallbackImage} />
+          <img src={product.image} alt={product.name} className={`h-full w-full object-cover transition duration-300 ease-out group-hover:scale-[1.08] group-hover:saturate-[1.08] ${unavailable ? "opacity-70" : ""}`} loading="lazy" decoding="async" onError={useFallbackImage} />
         </button>
+        <span className="pointer-events-none absolute inset-0 opacity-0 ring-2 ring-inset ring-maroon/25 transition-opacity duration-300 group-hover:opacity-100" />
+        {unavailable ? <span className="absolute inset-x-3 bottom-3 rounded-lg bg-[#111827]/85 px-2 py-1 text-center text-[10px] font-black uppercase tracking-wide text-white">Unavailable</span> : null}
         <button
           className="absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-full bg-white text-[#98a0ad] shadow-[0_8px_18px_rgba(34,31,32,0.12)]"
           onClick={onToggleSave}
@@ -388,18 +394,18 @@ function FoodieProductCard({
       <div className="flex flex-1 flex-col px-3 pb-2 pt-2.5">
         <button className="block w-full text-left" onClick={onOpen}>
           <span className="flex min-w-0 items-center justify-between gap-1.5">
-            <h3 className="line-clamp-1 min-w-0 text-[14px] font-black leading-tight text-[#111827]">{product.name}</h3>
+            <h3 className="line-clamp-1 min-w-0 text-[12px] font-black leading-tight text-[#111827]">{product.name}</h3>
             <DietMark type={product.dietaryType} compact />
           </span>
-          <p className="mt-1 line-clamp-1 text-[10px] font-black uppercase tracking-wide text-[#a0a6b0]">{foodieCategoryLabel(product.category)}</p>
+          <p className="mt-1 line-clamp-1 text-[9px] font-black uppercase tracking-wide text-[#a0a6b0]">{foodieCategoryLabel(product.category)}</p>
         </button>
         <div className="mt-1.5 flex items-center gap-2 text-[10px] font-extrabold text-[#5f6875]">
-          <span className="inline-flex items-center gap-1 rounded-lg bg-[#fff6ed] px-1.5 py-0.5 font-black text-[#ff6b00]">
-            <Star size={10} className="fill-[#ff6b00]" />
+          <span className="inline-flex items-center gap-1 rounded-lg bg-[#fff4f5] px-1.5 py-0.5 font-black text-maroon">
+            <Star size={10} className="fill-maroon" />
             {product.rating}
           </span>
           <span className="text-[#d8dce3]">•</span>
-          <span>{product.prepTimeMinutes}-{product.prepTimeMinutes + 5} min</span>
+          <span>{prepMinutes}-{prepMinutes + 5} min</span>
         </div>
         {offer ? (
           <div className="mt-1.5 border-t border-[#eef1f6] pt-1.5">
@@ -410,8 +416,11 @@ function FoodieProductCard({
           </div>
         ) : null}
         <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-          <span className="text-[13px] font-black text-[#111827]">{formatRupees(product.price)}</span>
-          <QuantityControl quantity={quantity} onAdd={onAdd} onDecrease={onDecrease} disabled={orderingDisabled} />
+          <span className="min-w-0">
+            {pricing.discountPerUnit > 0 ? <span className="block text-[10px] font-bold text-[#98a0ad] line-through">{formatRupees(pricing.originalUnitPrice)}</span> : null}
+            <span className="block text-[12px] font-black text-[#111827]">{formatRupees(pricing.unitPrice)}</span>
+          </span>
+          <QuantityControl quantity={quantity} onAdd={onAdd} onDecrease={onDecrease} disabled={orderingDisabled || unavailable} disabledLabel={unavailable ? "Unavailable" : "Closed"} />
         </div>
       </div>
     </article>
@@ -428,8 +437,9 @@ function DesktopSearchPage({
   onClearFilters,
   searchGroups,
   categoryOffers,
-  validCart,
-  savedProductIds,
+  prepMinutes,
+  quantityByProduct,
+  savedProductIdSet,
   orderingDisabled,
   onAdd,
   onDecrease,
@@ -445,8 +455,9 @@ function DesktopSearchPage({
   onClearFilters: () => void;
   searchGroups: { category: string; items: Product[] }[];
   categoryOffers: CategoryOfferMap;
-  validCart: CartLine[];
-  savedProductIds: string[];
+  prepMinutes: number;
+  quantityByProduct: Map<string, number>;
+  savedProductIdSet: Set<string>;
   orderingDisabled: boolean;
   onAdd: (product: Product) => void;
   onDecrease: (product: Product) => void;
@@ -491,8 +502,9 @@ function DesktopSearchPage({
                     key={product.id}
                     product={product}
                     offer={getProductOffer(product, categoryOffers)}
-                    quantity={getQuantity(validCart, product.id)}
-                    saved={savedProductIds.includes(product.id)}
+                    prepMinutes={prepMinutes}
+                    quantity={quantityByProduct.get(product.id) ?? 0}
+                    saved={savedProductIdSet.has(product.id)}
                     onAdd={() => onAdd(product)}
                     onDecrease={() => onDecrease(product)}
                     onOpen={() => onOpen(product)}
@@ -589,6 +601,7 @@ function DishDetailSheet({
   onSelectProduct,
   orderingDisabled,
   offer,
+  prepMinutes,
   relatedProducts,
   freeDeliveryThreshold,
   cartCount,
@@ -601,6 +614,7 @@ function DishDetailSheet({
   onSelectProduct: (product: Product) => void;
   orderingDisabled: boolean;
   offer?: string;
+  prepMinutes: number;
   relatedProducts: Product[];
   freeDeliveryThreshold?: number;
   cartCount: number;
@@ -619,10 +633,11 @@ function DishDetailSheet({
     [addonQuantities, product.addons],
   );
   const addonTotal = product.addons.reduce((total, addon) => total + addon.price * (addonQuantities[addon.id] ?? 0), 0);
-  const selectedPrice = product.price + selectedVariant.price;
-  const totalPrice = selectedPrice + addonTotal;
-  const discountPercent = product.originalPrice
-    ? Math.max(Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100), 0)
+  const pricing = getProductUnitPricing(product, offer ? { [slugifyCategory(product.category)]: offer } : {}, selectedVariant.price, addonTotal);
+  const totalPrice = pricing.unitPrice;
+  const unavailable = !product.available;
+  const discountPercent = pricing.originalUnitPrice > 0
+    ? Math.max(Math.round((pricing.discountPerUnit / pricing.originalUnitPrice) * 100), 0)
     : 0;
 
   function addAddon(addonId: string) {
@@ -653,22 +668,25 @@ function DishDetailSheet({
         aria-modal="true"
         aria-labelledby="dish-detail-title"
       >
+        <div className="pointer-events-none fixed left-1/2 top-4 z-[3] flex w-full max-w-[430px] -translate-x-1/2 items-center justify-between px-4">
+          <button
+            type="button"
+            className="pointer-events-auto grid h-10 w-10 place-items-center rounded-full bg-white/95 text-charcoal shadow-lg ring-1 ring-white/70"
+            onClick={onClose}
+            aria-label="Close dish details"
+          >
+            <ArrowLeft size={22} strokeWidth={3} />
+          </button>
+          <Link href="/cart" className="pointer-events-auto relative grid h-10 w-10 place-items-center rounded-full bg-white/95 text-maroon shadow-lg ring-1 ring-white/70" aria-label="Open cart">
+            <ShoppingCart size={21} strokeWidth={2.7} />
+            {cartCount ? <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-maroon px-1.5 text-[9px] font-black text-white ring-2 ring-white">{cartCount}</span> : null}
+          </Link>
+        </div>
         <div className="min-h-0 flex-1 overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+92px)]">
           <div className="relative h-[242px] bg-[#f6f1ed]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
             <div className="absolute inset-0 bg-gradient-to-b from-charcoal/24 via-transparent to-charcoal/10" />
-            <button
-              className="absolute left-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white/92 text-charcoal shadow-lg"
-              onClick={onClose}
-              aria-label="Close dish details"
-            >
-              <ArrowLeft size={21} strokeWidth={3} />
-            </button>
-            <Link href="/cart" className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white/92 text-maroon shadow-lg" aria-label="Open cart">
-              <ShoppingCart size={20} strokeWidth={2.7} />
-              {cartCount ? <span className="absolute -right-1 -top-1 rounded-full bg-maroon px-1.5 text-[9px] font-black text-white">{cartCount}</span> : null}
-            </Link>
             <span className="absolute bottom-4 left-4">
               <DietMark type={product.dietaryType} />
             </span>
@@ -686,7 +704,7 @@ function DishDetailSheet({
             </h2>
             <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[10px] font-black text-muted">
               <span className="inline-flex items-center gap-1">
-                <TimerReset size={12} /> {product.prepTimeMinutes}-{product.prepTimeMinutes + 5} min
+                <TimerReset size={12} /> {prepMinutes}-{prepMinutes + 5} min
               </span>
               <span className="text-[#d8dce3]">•</span>
               <span className="inline-flex items-center gap-1">
@@ -695,7 +713,7 @@ function DishDetailSheet({
             </div>
             <div className="mt-4 flex flex-wrap items-end gap-2.5">
               <span className="text-[26px] font-black leading-none text-charcoal">{formatRupees(totalPrice)}</span>
-              {product.originalPrice ? <span className="text-sm font-bold text-muted line-through">{formatRupees(product.originalPrice + selectedVariant.price)}</span> : null}
+              {pricing.discountPerUnit > 0 ? <span className="text-sm font-bold text-muted line-through">{formatRupees(pricing.originalUnitPrice)}</span> : null}
               {discountPercent > 0 ? <span className="pb-0.5 text-xs font-black text-maroon">{discountPercent}% off</span> : null}
             </div>
           
@@ -704,7 +722,7 @@ function DishDetailSheet({
             <div className="mt-4 grid grid-cols-[28px_1fr_auto] items-center gap-3 rounded-[14px] border border-[#f0d7dd] bg-[#fff4f5] px-3.5 py-2.5 text-maroon">
               <BadgeCheck size={19} className="fill-maroon text-maroon" />
               <span className="text-[11px] font-black uppercase tracking-wide">{offer}</span>
-              <span className="text-[13px] font-black">{formatRupees(Math.max(Math.round(totalPrice * 0.8), 0))}</span>
+              <span className="text-[13px] font-black">{pricing.discountPerUnit > 0 ? `-${formatRupees(pricing.discountPerUnit)}` : "Offer"}</span>
             </div>
           ) : null}
 
@@ -713,7 +731,7 @@ function DishDetailSheet({
             <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-3">
               {variants.map((variant, index) => {
                 const active = variant.id === selectedVariant.id;
-                const variantPrice = product.price + variant.price;
+                const variantPricing = getProductUnitPricing(product, offer ? { [slugifyCategory(product.category)]: offer } : {}, variant.price);
                 return (
                   <button
                     key={variant.id}
@@ -728,8 +746,8 @@ function DishDetailSheet({
                     </span>
                     <span className="mt-2 block text-[11px] font-black">{variant.name}</span>
                     <span className="mt-1 block text-[11px] font-black text-muted">{index === 0 ? "1" : index === 1 ? "2" : String(index + 1)}</span>
-                    <span className="mt-1.5 block text-[12px] font-black">{formatRupees(variantPrice)}</span>
-                    {product.originalPrice ? <span className="mt-1 block text-[10px] font-bold text-muted line-through">{formatRupees(product.originalPrice + variant.price)}</span> : null}
+                    <span className="mt-1.5 block text-[12px] font-black">{formatRupees(variantPricing.unitPrice)}</span>
+                    {variantPricing.discountPerUnit > 0 ? <span className="mt-1 block text-[10px] font-bold text-muted line-through">{formatRupees(variantPricing.originalUnitPrice)}</span> : null}
                   </button>
                 );
               })}
@@ -789,8 +807,8 @@ function DishDetailSheet({
             <h3 className="border-b border-[#eef1f6] px-4 py-3 text-[14px] font-black text-charcoal">Product Info</h3>
             <div className="divide-y divide-[#eef1f6]">
               <div className="grid grid-cols-[1fr_auto] px-4 py-3 text-[12px] font-black">
-                <span className="inline-flex items-center gap-2 text-muted"><TimerReset size={16} /> Prep Time</span>
-                <span className="text-charcoal">{product.prepTimeMinutes}-{product.prepTimeMinutes + 5} min</span>
+                <span className="inline-flex items-center gap-2 text-muted"><TimerReset size={16} /> Restaurant prep</span>
+                <span className="text-charcoal">{prepMinutes}-{prepMinutes + 5} min</span>
               </div>
               <div className="grid grid-cols-[1fr_auto] px-4 py-3 text-[12px] font-black">
                 <span className="text-muted">Serves</span>
@@ -842,11 +860,12 @@ function DishDetailSheet({
         </div>
 
         <div className="shrink-0 border-t border-[#eef1f6] bg-white px-5 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3">
+          {unavailable ? <p className="mb-2 rounded-xl bg-[#f2f4f7] px-3 py-2 text-center text-xs font-black uppercase tracking-wide text-[#4b5563]">Currently unavailable</p> : null}
           <div className={`grid items-center gap-3 ${selectedQuantity > 0 ? "grid-cols-[minmax(0,1fr)_112px]" : "grid-cols-[minmax(0,1fr)_58px]"}`}>
             <button
               type="button"
               onClick={() => onAdd(selectedVariant.id, selectedAddonIds)}
-              disabled={orderingDisabled}
+              disabled={orderingDisabled || unavailable}
               className="grid h-13 min-w-0 grid-cols-[26px_minmax(0,1fr)_auto] items-center gap-2 rounded-[15px] bg-maroon px-4 text-white shadow-[0_12px_28px_rgba(141,0,33,0.25)] disabled:bg-muted/40"
             >
               <ShoppingCart size={20} strokeWidth={3} />
@@ -854,7 +873,7 @@ function DishDetailSheet({
               <span className="text-[13px] font-black">{formatRupees(totalPrice)}</span>
             </button>
             {selectedQuantity > 0 ? (
-              <DetailQuantityControl quantity={selectedQuantity} onAdd={() => onAdd(selectedVariant.id, selectedAddonIds)} onDecrease={() => onDecrease(selectedVariant.id)} disabled={orderingDisabled} />
+              <DetailQuantityControl quantity={selectedQuantity} onAdd={() => onAdd(selectedVariant.id, selectedAddonIds)} onDecrease={() => onDecrease(selectedVariant.id)} disabled={orderingDisabled || unavailable} />
             ) : (
               <button type="button" className="grid h-13 place-items-center rounded-[15px] border border-[#e0e3ea] bg-white text-muted" aria-label="Save dish">
                 <Heart size={24} />
@@ -876,6 +895,7 @@ export function MenuExperience({
   initialCoupons = [],
   restaurantSettings,
   initialActiveCategory,
+  initialHomeDishCategories = [],
 }: {
   initialCategories?: string[];
   initialProducts?: Product[];
@@ -885,12 +905,15 @@ export function MenuExperience({
   initialCoupons?: Coupon[];
   restaurantSettings?: RestaurantSettings;
   initialActiveCategory?: string;
+  initialHomeDishCategories?: string[];
 }) {
   const categories = initialCategories;
   const products = initialProducts;
   const categoryOffers = initialCategoryOffers;
   const pathname = usePathname();
   const router = useRouter();
+  const isHomePage = pathname === "/";
+  const isSearchPage = pathname === "/menu";
   const deliveryLocation = useDeliveryLocation();
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
   const [query, setQuery] = useState("");
@@ -906,10 +929,19 @@ export function MenuExperience({
   const [mobileCategory, setMobileCategory] = useState("All");
   const [hiddenCartCount, setHiddenCartCount] = useState(0);
   const [cartBarClosing, setCartBarClosing] = useState(false);
+  const deferredQuery = useDeferredValue(query);
   const cartOwnerId = customerSession?.mobile;
   const cart = useStoredCart(cartOwnerId);
   const savedProductIds = useStoredWishlist(cartOwnerId);
   const validCart = useMemo(() => getPricableCartLines(cart, products), [cart, products]);
+  const quantityByProduct = useMemo(() => {
+    const quantities = new Map<string, number>();
+    for (const line of validCart) {
+      quantities.set(line.productId, (quantities.get(line.productId) ?? 0) + line.quantity);
+    }
+    return quantities;
+  }, [validCart]);
+  const savedProductIdSet = useMemo(() => new Set(savedProductIds), [savedProductIds]);
   const storeMode = restaurantSettings?.storeMode ?? "OPEN";
   const orderingStatus = restaurantSettings ? getStoreOrderingStatus(restaurantSettings) : null;
   const outsideOrderingHours = orderingStatus?.outsideOrderingHours ?? false;
@@ -918,22 +950,36 @@ export function MenuExperience({
   const serviceable = deliveryCoverage?.serviceable ?? true;
   const orderingDisabled = storeClosed || !serviceable;
   const statusMessage = orderingStatus?.message ?? "Ordering is controlled by the restaurant.";
+  const displayPrepMinutes = restaurantSettings?.defaultPrepMinutes ?? 25;
+  const configuredHomeCategories = useMemo(
+    () => initialHomeDishCategories.filter((category) => categories.includes(category)),
+    [categories, initialHomeDishCategories],
+  );
+  const configuredHomeCategorySet = useMemo(() => new Set(configuredHomeCategories), [configuredHomeCategories]);
+  const usingConfiguredHomeDishes = isHomePage && activeCategory === "All" && !deferredQuery.trim() && activeFilters.length === 0 && configuredHomeCategories.length > 0;
 
   const visibleProducts = useMemo(() => {
-    const needle = query.trim().toLowerCase();
+    const needle = deferredQuery.trim().toLowerCase();
     return products.filter((product) => {
       const categoryMatch = activeCategory === "All" || product.category === activeCategory;
       const textMatch = !needle || `${product.name} ${product.category} ${product.description}`.toLowerCase().includes(needle);
       const filterMatch = productMatchesMenuFilters(product, activeFilters, categoryOffers);
-      return product.available && categoryMatch && textMatch && filterMatch;
-    });
-  }, [activeCategory, activeFilters, categoryOffers, products, query]);
+      return categoryMatch && textMatch && filterMatch;
+    }).sort(compareProductsForAvailability);
+  }, [activeCategory, activeFilters, categoryOffers, deferredQuery, products]);
 
-  const popularProducts = useMemo(() => {
-    const bestsellers = visibleProducts.filter((product) => product.bestseller);
-    const otherProducts = visibleProducts.filter((product) => !bestsellers.some((item) => item.id === product.id));
-    return [...bestsellers, ...otherProducts];
-  }, [visibleProducts]);
+  const homeProducts = useMemo(() => {
+    if (usingConfiguredHomeDishes) {
+      return visibleProducts.filter((product) => configuredHomeCategorySet.has(product.category));
+    }
+
+    if (activeCategory === "All" && !deferredQuery.trim() && activeFilters.length === 0) {
+      const bestsellers = visibleProducts.filter((product) => product.bestseller);
+      return bestsellers.length ? bestsellers : visibleProducts;
+    }
+
+    return visibleProducts;
+  }, [activeCategory, activeFilters.length, configuredHomeCategorySet, deferredQuery, usingConfiguredHomeDishes, visibleProducts]);
 
   const promoSlides = useMemo(() => {
     const slides = initialSlides?.length ? initialSlides : [
@@ -950,6 +996,11 @@ export function MenuExperience({
     ];
     return slides;
   }, [initialSlides]);
+
+  function openPromoSlide(slide?: HomeSlide) {
+    const targetCategory = slide?.targetCategory && categories.includes(slide.targetCategory) ? slide.targetCategory : "All";
+    selectHomeCategory(targetCategory);
+  }
 
   useEffect(() => {
     function refreshSession() {
@@ -1035,7 +1086,7 @@ export function MenuExperience({
     }
 
     writeStoredWishlist(
-      savedProductIds.includes(product.id)
+      savedProductIdSet.has(product.id)
         ? savedProductIds.filter((id) => id !== product.id)
         : [...savedProductIds, product.id],
       cartOwnerId,
@@ -1050,6 +1101,19 @@ export function MenuExperience({
 
   function clearFilters() {
     setActiveFilters([]);
+  }
+
+  function selectHomeCategory(category: string) {
+    setActiveCategory(category);
+    setMobileCategory(category);
+    setMobileMenuView("home");
+
+    if (isHomePage) {
+      const params = new URLSearchParams();
+      if (category !== "All") params.set("category", category);
+      router.replace(`/${params.toString() ? `?${params.toString()}` : ""}`, { scroll: false });
+      window.requestAnimationFrame(() => document.getElementById("menu-items")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+    }
   }
 
   function closeCartBarWithFlyout() {
@@ -1070,29 +1134,27 @@ export function MenuExperience({
     const source = mobileCategory === "All"
       ? products
       : products.filter((product) => product.category === mobileCategory);
-    return source.filter((product) => product.available);
+    return [...source].sort(compareProductsForAvailability);
   }, [mobileCategory, products]);
   const searchGroups = useMemo(() => {
-    const needle = query.trim().toLowerCase();
+    const needle = deferredQuery.trim().toLowerCase();
     return allProductCategories
       .map((category) => {
         const items = products.filter((product) => {
           const matchesCategory = product.category === category;
           const matchesText = !needle || `${product.name} ${product.category} ${product.description}`.toLowerCase().includes(needle);
           const filterMatch = productMatchesMenuFilters(product, activeFilters, categoryOffers);
-          return product.available && matchesCategory && matchesText && filterMatch;
-        });
+          return matchesCategory && matchesText && filterMatch;
+        }).sort(compareProductsForAvailability);
         return { category, items };
       })
       .filter((group) => group.items.length > 0);
-  }, [activeFilters, allProductCategories, categoryOffers, products, query]);
+  }, [activeFilters, allProductCategories, categoryOffers, deferredQuery, products]);
   const cartCount = validCart.reduce((total, line) => total + line.quantity, 0);
   const cartSubtotal = useMemo(
-    () => validCart.reduce((total, line) => total + getProductPrice(line, products), 0),
-    [products, validCart],
+    () => validCart.reduce((total, line) => total + getProductPrice(line, products, categoryOffers), 0),
+    [categoryOffers, products, validCart],
   );
-  const isHomePage = pathname === "/";
-  const isSearchPage = pathname === "/menu";
   const showCartBar = cartCount > 0 && hiddenCartCount !== cartCount;
   const homeOfferCards = getHomeOfferCards(initialCoupons);
 
@@ -1151,7 +1213,7 @@ export function MenuExperience({
   }
 
   return (
-    <main className="min-h-screen bg-white pb-24 text-charcoal lg:pb-0">
+    <main className="wt-soft-type min-h-screen bg-white pb-24 text-charcoal lg:pb-0">
       <div className={mobileMenuView === "category" || isSearchPage ? "hidden lg:block" : undefined}>
         <Header showLocation={isHomePage && mobileMenuView === "home"} />
       </div>
@@ -1189,8 +1251,9 @@ export function MenuExperience({
                       key={product.id}
                       product={product}
                       offer={getProductOffer(product, categoryOffers)}
-                      quantity={getQuantity(validCart, product.id)}
-                      saved={savedProductIds.includes(product.id)}
+                      prepMinutes={displayPrepMinutes}
+                      quantity={quantityByProduct.get(product.id) ?? 0}
+                      saved={savedProductIdSet.has(product.id)}
                       onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
                       onDecrease={() => decreaseProduct(product)}
                       onOpen={() => setSelectedProduct(product)}
@@ -1233,8 +1296,9 @@ export function MenuExperience({
           onClearFilters={clearFilters}
           searchGroups={searchGroups}
           categoryOffers={categoryOffers}
-          validCart={validCart}
-          savedProductIds={savedProductIds}
+          prepMinutes={displayPrepMinutes}
+          quantityByProduct={quantityByProduct}
+          savedProductIdSet={savedProductIdSet}
           orderingDisabled={orderingDisabled}
           onAdd={(product) => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
           onDecrease={decreaseProduct}
@@ -1261,21 +1325,19 @@ export function MenuExperience({
               <button
                 key={category}
                 onClick={() => {
-                  setMobileCategory(category);
-                  setActiveCategory(category);
-                  setMobileMenuView("category");
+                  selectHomeCategory(category);
                 }}
-                className="grid h-[86px] place-items-center rounded-[16px] bg-[#f0f4fc] px-1 text-center shadow-[inset_0_0_0_1px_#e1e7f1]"
+                className="group grid h-[86px] place-items-center rounded-[16px] bg-[#f8f1f3] px-1 text-center shadow-[inset_0_0_0_1px_#eadfe3] transition duration-200 hover:-translate-y-1 hover:bg-[#fff4f5] hover:shadow-[inset_0_0_0_1px_rgba(141,0,33,0.2),0_14px_28px_rgba(34,31,32,0.08)]"
               >
-                <span className="grid h-[42px] w-[42px] place-items-center overflow-hidden rounded-full bg-white shadow-[0_8px_18px_rgba(34,31,32,0.08)]">
+                <span className="grid h-[42px] w-[42px] place-items-center overflow-hidden rounded-full bg-white text-charcoal shadow-[0_8px_18px_rgba(34,31,32,0.08)] ring-1 ring-transparent transition duration-200 group-hover:scale-110 group-hover:bg-maroon group-hover:text-white group-hover:ring-maroon/25">
                   {category === "All" ? (
                     <Grid3X3 size={21} strokeWidth={3} />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[82%] w-[82%] rounded-full object-cover" loading="lazy" decoding="async" />
+                    <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[82%] w-[82%] rounded-full object-cover transition duration-300 group-hover:scale-110 group-hover:saturate-[1.08]" loading="lazy" decoding="async" />
                   )}
                 </span>
-                <span className="max-w-[70px] truncate text-[11px] font-black leading-tight text-[#1f2937]">{shortCategoryName(category)}</span>
+                <span className="max-w-[70px] truncate text-[11px] font-black leading-tight text-[#1f2937] transition-colors group-hover:text-maroon">{shortCategoryName(category)}</span>
               </button>
             ))}
           </div>
@@ -1305,8 +1367,9 @@ export function MenuExperience({
                   key={product.id}
                   product={product}
                   offer={getProductOffer(product, categoryOffers)}
-                  quantity={getQuantity(validCart, product.id)}
-                  saved={savedProductIds.includes(product.id)}
+                  prepMinutes={displayPrepMinutes}
+                  quantity={quantityByProduct.get(product.id) ?? 0}
+                  saved={savedProductIdSet.has(product.id)}
                   onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
                   onDecrease={() => decreaseProduct(product)}
                   onOpen={() => setSelectedProduct(product)}
@@ -1321,25 +1384,25 @@ export function MenuExperience({
 
       <div className={`${isSearchPage ? "hidden" : mobileMenuView === "home" ? "grid" : "hidden lg:grid"} mx-auto w-full max-w-[1180px] gap-6 px-5 pt-3 sm:px-6 lg:grid-cols-[200px_minmax(0,1fr)] lg:pt-5 xl:px-0`}>
         <aside className="sticky top-[98px] hidden max-h-[calc(100vh-118px)] overflow-y-auto rounded-2xl border border-[#f1e7e4] bg-white p-4 shadow-[0_14px_40px_rgba(34,31,32,0.04)] lg:block">
-          <div className="mb-4 flex items-center gap-2 border-b border-[#f1e7e4] pb-4 text-sm font-black uppercase tracking-wide text-muted">
+          <div className="mb-4 flex items-center gap-2 border-b border-[#f1e7e4] pb-4 text-xs font-black uppercase tracking-wide text-muted">
             <BookOpen size={18} />
             Categories
           </div>
           <div className="grid gap-2">
-            {categoryItems.slice(0, 9).map((category) => (
+              {categoryItems.slice(0, 9).map((category) => (
               <button
                 key={category}
-                onClick={() => setActiveCategory(category)}
-                className={`grid h-[50px] grid-cols-[34px_1fr] items-center gap-3 rounded-xl px-3 text-left text-sm font-black ${
-                  activeCategory === category ? "bg-[#fff4f5] text-red shadow-sm" : "text-charcoal hover:bg-[#fff8f9]"
+                onClick={() => selectHomeCategory(category)}
+                className={`group grid h-[46px] grid-cols-[32px_1fr] items-center gap-3 rounded-xl px-3 text-left text-xs font-black transition duration-200 ${
+                  activeCategory === category ? "bg-[#fff4f5] text-maroon shadow-sm" : "text-charcoal hover:bg-[#fff4f5] hover:text-maroon"
                 }`}
               >
-                <span className={`grid h-7 w-7 place-items-center overflow-hidden rounded-full ${activeCategory === category ? "bg-red text-white" : "bg-[#fff4f5]"}`}>
+                <span className={`grid h-7 w-7 place-items-center overflow-hidden rounded-full ring-1 ring-transparent transition duration-200 group-hover:scale-110 group-hover:ring-maroon/25 ${activeCategory === category ? "bg-maroon text-white" : "bg-[#fff4f5] group-hover:bg-maroon group-hover:text-white"}`}>
                   {category === "All" ? (
                     <Grid3X3 size={17} />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" onError={useFallbackImage} />
+                    <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-110 group-hover:saturate-[1.08]" loading="lazy" decoding="async" onError={useFallbackImage} />
                   )}
                 </span>
                 <span className="truncate">{shortCategoryName(category)}</span>
@@ -1350,75 +1413,72 @@ export function MenuExperience({
 
         <div className="min-w-0">
           {isHomePage ? (
-            <section className="relative mb-5 h-[166px] overflow-hidden rounded-[20px] bg-red shadow-[0_10px_24px_rgba(34,31,32,0.08)] lg:hidden">
+            <section
+              className="relative mb-5 aspect-[390/166] w-full cursor-pointer overflow-hidden rounded-[20px] bg-red shadow-[0_10px_24px_rgba(34,31,32,0.08)] lg:hidden"
+              role="button"
+              tabIndex={0}
+              onClick={() => openPromoSlide(promoSlides[activeSlide])}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") openPromoSlide(promoSlides[activeSlide]);
+              }}
+              aria-label={`Open ${promoSlides[activeSlide]?.targetCategory || "All"} category`}
+            >
               <Image
                 src={promoSlides[activeSlide]?.image || "/wah-thali-meal-cutout-v2.png"}
-                alt={promoSlides[activeSlide]?.title || "Wah Thali offer"}
+                alt={promoSlides[activeSlide]?.targetCategory || "Wah Thali slider image"}
                 fill
                 loading="eager"
                 unoptimized
-                sizes="366px"
+                sizes="(max-width: 1023px) calc(100vw - 40px), 366px"
                 className="object-cover"
               />
-              <div className="absolute inset-0 bg-gradient-to-r from-red via-red/80 to-red/15" />
-              <div className="grid h-full grid-cols-[52%_48%] items-center">
-                <div className="relative z-10 px-4 text-white">
-                  <p className="text-[8px] font-black uppercase tracking-[0.18em] text-white/80">Wah Thali offer</p>
-                  <h1 className="mt-1 line-clamp-3 max-w-[172px] text-[20px] font-black leading-[1.02]">
-                    {promoSlides[activeSlide]?.title || "Delicious food at your doorstep"}
-                  </h1>
-                  <p className="mt-1 text-[11px] font-black text-white/90">
-                    {promoSlides[activeSlide]?.body || `Meals from ${formatRupees(99)}`}
-                  </p>
-                </div>
-                <div className="relative h-full" />
-              </div>
               <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1.5">
                 {promoSlides.map((slide, index) => (
                   <button
                     key={slide.id}
-                    onClick={() => setActiveSlide(index)}
-                    className={`h-1.5 rounded-full ${index === activeSlide ? "w-4 bg-red" : "w-1.5 bg-white/80"}`}
-                    aria-label={`Show ${slide.title}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setActiveSlide(index);
+                    }}
+                    className={`h-1.5 rounded-full shadow-sm ${index === activeSlide ? "w-4 bg-red" : "w-1.5 bg-white/90"}`}
+                    aria-label={`Show slider image ${index + 1}`}
                   />
                 ))}
               </div>
             </section>
           ) : null}
 
-          <section className="relative isolate hidden overflow-hidden rounded-[22px] bg-red shadow-[0_16px_36px_rgba(141,0,33,0.18)] lg:block">
+          <section
+            className="relative isolate hidden aspect-[1434/248] w-full cursor-pointer overflow-hidden rounded-[22px] bg-red shadow-[0_16px_36px_rgba(141,0,33,0.18)] lg:block"
+            role="button"
+            tabIndex={0}
+            onClick={() => openPromoSlide(promoSlides[activeSlide])}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") openPromoSlide(promoSlides[activeSlide]);
+            }}
+            aria-label={`Open ${promoSlides[activeSlide]?.targetCategory || "All"} category`}
+          >
             <Image
               src={promoSlides[activeSlide]?.image || "/wah-thali-meal-cutout-v2.png"}
-              alt={promoSlides[activeSlide]?.title || "Wah Thali offer"}
+              alt={promoSlides[activeSlide]?.targetCategory || "Wah Thali slider image"}
               fill
               loading="eager"
               unoptimized
               sizes="(max-width: 1279px) 760px, 1000px"
               className="object-cover"
             />
-            <div className="absolute inset-0 bg-gradient-to-r from-red via-red/90 to-red/20" />
-            <div className="relative grid h-[248px] grid-cols-[minmax(0,45%)_minmax(0,55%)] items-center gap-6 px-10">
-              <div className="relative z-10 min-w-0 text-white">
-                <p className="text-xs font-black uppercase tracking-[0.22em] text-white/75">Wah Thali offer</p>
-                <h1 className="mt-2 line-clamp-2 max-w-[500px] text-[42px] font-black leading-[1.08]">
-                  {promoSlides[activeSlide]?.title || "Delicious food at your doorstep"}
-                </h1>
-                <p className="mt-3 line-clamp-2 max-w-[440px] text-xl font-semibold text-white/85">
-                  {promoSlides[activeSlide]?.body || `Meals from ${formatRupees(99)}`}
-                </p>
-                <div className="mt-4 inline-flex h-11 max-w-full items-center rounded-xl bg-white px-5 text-sm font-black text-red">
-                  {promoSlides[activeSlide]?.code || "Order now"}
-                </div>
-              </div>
-              <div className="relative h-full min-w-0" />
+            <div className="absolute inset-0">
               <div className="absolute bottom-4 left-10 flex gap-2">
                 {promoSlides.map((slide, index) => (
                   <button
                     key={slide.id}
                     type="button"
-                    onClick={() => setActiveSlide(index)}
-                    className={`h-2 rounded-full transition-all ${index === activeSlide ? "w-7 bg-white" : "w-2 bg-white/60"}`}
-                    aria-label={`Show ${slide.title}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setActiveSlide(index);
+                    }}
+                    className={`h-2 rounded-full shadow-sm transition-all ${index === activeSlide ? "w-7 bg-white" : "w-2 bg-white/70"}`}
+                    aria-label={`Show slider image ${index + 1}`}
                   />
                 ))}
               </div>
@@ -1457,25 +1517,21 @@ export function MenuExperience({
                 <button
                   key={category}
                   onClick={() => {
-                    setActiveCategory(category);
-                    if (category !== "All") {
-                      setMobileCategory(category);
-                      setMobileMenuView("category");
-                    }
+                    selectHomeCategory(category);
                   }}
-                  className="grid min-w-[48px] place-items-center gap-2 text-center"
+                  className="group grid min-w-[48px] place-items-center gap-2 text-center"
                 >
-                  <span className={`grid h-[52px] w-[52px] place-items-center overflow-hidden rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] sm:h-20 sm:w-20 lg:h-20 lg:w-20 ${
-                    activeCategory === category ? "border-red bg-red text-white" : "border-[#f1e7e4] bg-white text-charcoal"
+                  <span className={`grid h-[52px] w-[52px] place-items-center overflow-hidden rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] transition duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06] group-hover:shadow-[0_14px_30px_rgba(34,31,32,0.12)] sm:h-20 sm:w-20 lg:h-20 lg:w-20 ${
+                    activeCategory === category ? "border-maroon bg-maroon text-white" : "border-[#f1e7e4] bg-white text-charcoal group-hover:border-maroon/30 group-hover:bg-[#fff4f5] group-hover:text-maroon"
                   }`}>
                     {category === "All" ? (
                       <Grid3X3 size={21} />
                     ) : (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[72%] w-[72%] rounded-full object-cover" loading="lazy" decoding="async" onError={useFallbackImage} />
+                      <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[72%] w-[72%] rounded-full object-cover transition duration-300 group-hover:scale-110 group-hover:saturate-[1.08]" loading="lazy" decoding="async" onError={useFallbackImage} />
                     )}
                   </span>
-                  <span className={`max-w-[54px] truncate text-[10px] font-black sm:max-w-20 sm:text-sm ${activeCategory === category ? "text-red" : "text-charcoal"}`}>
+                  <span className={`max-w-[54px] truncate text-[10px] font-black transition-colors sm:max-w-20 sm:text-[12px] ${activeCategory === category ? "text-maroon" : "text-charcoal group-hover:text-maroon"}`}>
                     {shortCategoryName(category)}
                   </span>
                 </button>
@@ -1483,33 +1539,60 @@ export function MenuExperience({
               <button
                 type="button"
                 onClick={() => setMobileMenuView("categories")}
-                className="grid min-w-[48px] place-items-center gap-2 text-center"
+                className="group grid min-w-[48px] place-items-center gap-2 text-center"
               >
-                <span className="grid h-[52px] w-[52px] place-items-center rounded-full border border-[#f1e7e4] bg-[#f8fafc] text-charcoal shadow-[0_8px_22px_rgba(34,31,32,0.06)] sm:h-20 sm:w-20 lg:h-20 lg:w-20">
+                <span className="grid h-[52px] w-[52px] place-items-center rounded-full border border-[#f1e7e4] bg-[#f8fafc] text-charcoal shadow-[0_8px_22px_rgba(34,31,32,0.06)] transition duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06] group-hover:border-maroon/30 group-hover:bg-maroon group-hover:text-white group-hover:shadow-[0_14px_30px_rgba(141,0,33,0.18)] sm:h-20 sm:w-20 lg:h-20 lg:w-20">
                   <Grid3X3 size={21} />
                 </span>
-                <span className="max-w-[54px] truncate text-[10px] font-black text-charcoal sm:max-w-20 sm:text-sm">More</span>
+                <span className="max-w-[54px] truncate text-[10px] font-black text-charcoal transition-colors group-hover:text-maroon sm:max-w-20 sm:text-[12px]">More</span>
               </button>
             </div>
           </section>
 
           <section id="menu-items" className="mt-6 border-t-[5px] border-[#c8c8c8] pt-7 pb-16 lg:mt-5 lg:border-t-0 lg:pt-0 lg:pb-8">
-            <div className="mb-5 flex items-center justify-between">
-              <h2 className="foodie-display text-[30px] leading-none text-charcoal lg:font-sans lg:text-[26px] lg:font-black">Popular Dishes</h2>
-              <button onClick={() => setActiveCategory("All")} className="inline-flex items-center gap-1 text-[11px] font-black text-maroon lg:text-xs">
-                View all <ChevronRight size={11} />
-              </button>
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-muted lg:text-[10px]">
+                  {activeCategory === "All" ? "Home favourites" : `${homeProducts.length} ${homeProducts.length === 1 ? "dish" : "dishes"}`}
+                </p>
+                <h2 className="mt-1 font-sans text-[20px] font-semibold leading-tight text-charcoal lg:text-[20px]">
+                  {activeCategory === "All"
+                    ? usingConfiguredHomeDishes && configuredHomeCategories.length === 1
+                      ? `${shortCategoryName(configuredHomeCategories[0])} Dishes`
+                      : usingConfiguredHomeDishes
+                        ? "Today's Dishes"
+                        : "Popular Dishes"
+                    : `${shortCategoryName(activeCategory)} Dishes`}
+                </h2>
+              </div>
+              {activeCategory !== "All" || activeFilters.length || query ? (
+                <button
+                  onClick={() => {
+                    setQuery("");
+                    clearFilters();
+                    selectHomeCategory("All");
+                  }}
+                  className="inline-flex h-8 items-center gap-1 rounded-full bg-[#fff4f5] px-3 text-[10px] font-semibold text-maroon lg:text-[11px]"
+                >
+                  View all <ChevronRight size={11} />
+                </button>
+              ) : (
+                <Link href="/menu" className="inline-flex h-8 items-center gap-1 rounded-full bg-[#fff4f5] px-3 text-[10px] font-semibold text-maroon lg:text-[11px]">
+                  Full menu <ChevronRight size={11} />
+                </Link>
+              )}
             </div>
-            {popularProducts.length ? (
+            {homeProducts.length ? (
               <>
               <div className="flex snap-x gap-3.5 overflow-x-auto pb-5 lg:hidden">
-                {popularProducts.slice(0, 6).map((product) => (
+                {homeProducts.slice(0, 8).map((product) => (
                   <div key={product.id} className="w-[clamp(140px,42vw,178px)] shrink-0 snap-start">
                     <FoodieProductCard
                       product={product}
                       offer={getProductOffer(product, categoryOffers)}
-                      quantity={getQuantity(validCart, product.id)}
-                      saved={savedProductIds.includes(product.id)}
+                      prepMinutes={displayPrepMinutes}
+                      quantity={quantityByProduct.get(product.id) ?? 0}
+                      saved={savedProductIdSet.has(product.id)}
                       onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
                       onDecrease={() => decreaseProduct(product)}
                       onOpen={() => setSelectedProduct(product)}
@@ -1519,14 +1602,15 @@ export function MenuExperience({
                   </div>
                 ))}
               </div>
-              <div className="hidden gap-4 pb-3 lg:grid lg:grid-cols-[repeat(auto-fit,minmax(220px,1fr))]">
-                {popularProducts.slice(0, 9).map((product) => (
+              <div className="hidden gap-4 pb-3 lg:grid lg:grid-cols-[repeat(auto-fill,minmax(220px,260px))] lg:justify-start">
+                {homeProducts.slice(0, 12).map((product) => (
                   <ProductCard
                     key={product.id}
                     product={product}
                     offer={getProductOffer(product, categoryOffers)}
-                    quantity={getQuantity(validCart, product.id)}
-                    saved={savedProductIds.includes(product.id)}
+                    prepMinutes={displayPrepMinutes}
+                    quantity={quantityByProduct.get(product.id) ?? 0}
+                    saved={savedProductIdSet.has(product.id)}
                     onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
                     onDecrease={() => decreaseProduct(product)}
                     onOpen={() => setSelectedProduct(product)}
@@ -1539,16 +1623,16 @@ export function MenuExperience({
             ) : (
               <div className="rounded-2xl border border-[#f1e7e4] bg-white p-8 text-center">
                 <Store className="mx-auto text-muted" />
-                <h3 className="mt-3 text-lg font-black text-charcoal">No items found</h3>
-                <p className="mt-1 text-sm text-muted">Try thali, biryani, chicken, paneer, or dessert.</p>
+                <h3 className="mt-3 text-[14px] font-semibold text-charcoal">No items found</h3>
+                <p className="mt-1 text-xs text-muted">Try thali, biryani, chicken, paneer, or dessert.</p>
               </div>
             )}
           </section>
 
           <section className="mt-2 pb-8 lg:mt-4">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-[20px] font-black text-charcoal lg:text-3xl">Best Offers for You</h2>
-              <Link href="/offers" className="inline-flex items-center gap-1 text-[11px] font-black text-maroon lg:text-sm">
+              <h2 className="text-[16px] font-semibold text-charcoal lg:text-[20px]">Best Offers for You</h2>
+              <Link href="/offers" className="inline-flex items-center gap-1 text-[10px] font-semibold text-maroon lg:text-[12px]">
                 View all <ChevronRight size={13} />
               </Link>
             </div>
@@ -1581,7 +1665,7 @@ export function MenuExperience({
                 ["Safe & Secure", "100% secure payments"],
               ].map(([title, body]) => (
                 <div key={title} className="grid grid-cols-[24px_1fr] gap-2 lg:grid-cols-[36px_1fr] lg:gap-4">
-                  <span className="grid h-6 w-6 place-items-center text-[#ff6b00] lg:h-9 lg:w-9">
+                  <span className="grid h-6 w-6 place-items-center text-maroon lg:h-9 lg:w-9">
                     {title === "No Minimum Order" ? (
                       <ShoppingBag className="h-5 w-5 lg:h-8 lg:w-8" strokeWidth={2.7} />
                     ) : title === "Lightning Delivery" ? (
@@ -1603,7 +1687,7 @@ export function MenuExperience({
 
           {isHomePage ? (
             <section className="pb-20 pt-4 text-center lg:pb-14 lg:pt-8">
-              <h2 className="text-[32px] font-black leading-[0.92] text-[#9aa1ad] lg:text-[42px]">
+              <h2 className="text-[26px] font-semibold leading-[0.98] text-[#9aa1ad] lg:text-[34px]">
                 Live
                 <span className="block">it up!</span>
               </h2>
@@ -1669,6 +1753,7 @@ export function MenuExperience({
           onSelectProduct={setSelectedProduct}
           orderingDisabled={orderingDisabled}
           offer={getProductOffer(selectedProduct, categoryOffers)}
+          prepMinutes={displayPrepMinutes}
           freeDeliveryThreshold={restaurantSettings?.freeDeliveryThreshold}
           relatedProducts={products
             .filter((product) => product.id !== selectedProduct.id && product.available && product.category === selectedProduct.category)
@@ -1695,6 +1780,10 @@ function useFallbackImage(event: SyntheticEvent<HTMLImageElement>) {
 
 function getProductOffer(product: Product, categoryOffers: CategoryOfferMap) {
   return product.offer?.trim() || categoryOffers[slugifyCategory(product.category)]?.trim() || undefined;
+}
+
+function compareProductsForAvailability(a: Product, b: Product) {
+  return Number(b.available) - Number(a.available) || a.name.localeCompare(b.name);
 }
 
 function getHomeOfferCards(coupons: Coupon[]) {

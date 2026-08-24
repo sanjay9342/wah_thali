@@ -5,7 +5,7 @@ import { hashPassword, verifyPassword } from "@/lib/customer-auth";
 import { prisma } from "@/lib/prisma";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
-export type CustomerOtpPurpose = "signin" | "signup";
+export type CustomerOtpPurpose = "signin" | "signup" | "password_reset";
 
 function createCode() {
   return String(Math.floor(100000 + Math.random() * 900000));

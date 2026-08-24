@@ -5,7 +5,7 @@
 import { ViewTransition, useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
-const priorityRoutes = ["/", "/menu", "/cart", "/orders", "/offers", "/account", "/support"];
+const prefetchableRoutes = new Set(["/", "/menu", "/cart", "/orders", "/offers", "/account", "/support"]);
 
 export function NavigationPerformance({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -29,7 +29,7 @@ export function NavigationPerformance({ children }: { children: ReactNode }) {
           setIsNavigating(true);
         }}
       />
-      <RoutePrefetcher />
+      <IntentPrefetcher />
       <ViewTransition
         key={pathname}
         name="site-page"
@@ -81,31 +81,32 @@ function NavigationClickTracker({ onNavigate }: { onNavigate: () => void }) {
   return null;
 }
 
-function RoutePrefetcher() {
+function IntentPrefetcher() {
   const pathname = usePathname();
   const router = useRouter();
+  const prefetched = useRef(new Set<string>());
 
   useEffect(() => {
-    const browserWindow = window as Window &
-      typeof globalThis & {
-        requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
-        cancelIdleCallback?: (handle: number) => void;
-      };
-    const prefetch = () => {
-      for (const route of priorityRoutes) {
-        if (route !== pathname) {
-          router.prefetch(route);
-        }
-      }
-    };
+    function prefetchFromEvent(event: Event) {
+      const target = event.target instanceof Element ? event.target.closest("a") : null;
+      if (!(target instanceof HTMLAnchorElement)) return;
+      if (target.target || target.hasAttribute("download")) return;
 
-    if (typeof browserWindow.requestIdleCallback === "function") {
-      const idleId = browserWindow.requestIdleCallback(prefetch, { timeout: 1800 });
-      return () => browserWindow.cancelIdleCallback?.(idleId);
+      const nextUrl = new URL(target.href);
+      if (nextUrl.origin !== window.location.origin) return;
+      if (!prefetchableRoutes.has(nextUrl.pathname)) return;
+      if (nextUrl.pathname === pathname || prefetched.current.has(nextUrl.pathname)) return;
+
+      prefetched.current.add(nextUrl.pathname);
+      router.prefetch(nextUrl.pathname);
     }
 
-    const timeoutId = browserWindow.setTimeout(prefetch, 900);
-    return () => browserWindow.clearTimeout(timeoutId);
+    document.addEventListener("pointerover", prefetchFromEvent, { passive: true });
+    document.addEventListener("touchstart", prefetchFromEvent, { passive: true });
+    return () => {
+      document.removeEventListener("pointerover", prefetchFromEvent);
+      document.removeEventListener("touchstart", prefetchFromEvent);
+    };
   }, [pathname, router]);
 
   return null;

@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Wah Thali Project Handover, Payment and Domain Statement</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 16mm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #ffffff;
+      color: #221f20;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11.5px;
+      line-height: 1.5;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 31px;
+      line-height: 1.08;
+    }
+
+    h2 {
+      color: #8d0021;
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    h3 {
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+
+    ul,
+    ol {
+      margin: 6px 0 0 18px;
+      padding: 0;
+    }
+
+    li {
+      margin: 3px 0;
+    }
+
+    .page {
+      page-break-after: always;
+    }
+
+    .page:last-child {
+      page-break-after: auto;
+    }
+
+    .cover {
+      min-height: 265mm;
+      border: 1px solid #eadfe3;
+      border-radius: 18px;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .topbar {
+      background: #8d0021;
+      color: #ffffff;
+      padding: 26px 30px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 24px;
+      font-weight: 900;
+    }
+
+    .mark {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: #ffffff;
+      color: #8d0021;
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .doc-type {
+      color: #ffd7df;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    .cover-body {
+      padding: 38px 34px;
+      display: grid;
+      align-content: center;
+      background: linear-gradient(180deg, #fff8f9, #ffffff);
+    }
+
+    .cover-body h1 {
+      color: #8d0021;
+      max-width: 610px;
+    }
+
+    .cover-body .intro {
+      margin-top: 14px;
+      max-width: 600px;
+      color: #6f6a6c;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .summary-grid {
+      margin-top: 28px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .summary {
+      border: 1px solid #eadfe3;
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 12px;
+    }
+
+    .summary .label {
+      color: #6f6a6c;
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: 1.3px;
+      text-transform: uppercase;
+    }
+
+    .summary .value {
+      margin-top: 5px;
+      color: #8d0021;
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .cover-foot {
+      padding: 18px 30px;
+      border-top: 1px solid #eadfe3;
+      background: #ffffff;
+      color: #6f6a6c;
+      font-weight: 800;
+    }
+
+    .section {
+      border: 1px solid #eadfe3;
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 12px;
+      background: #ffffff;
+    }
+
+    .section.soft {
+      background: #fff8f9;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .tile {
+      border: 1px solid #eadfe3;
+      border-radius: 12px;
+      background: #fff8f9;
+      padding: 12px;
+      min-height: 84px;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+    }
+
+    .table th,
+    .table td {
+      border: 1px solid #eadfe3;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .table th {
+      background: #8d0021;
+      color: #ffffff;
+      font-size: 10px;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+
+    .highlight {
+      color: #8d0021;
+      font-weight: 900;
+    }
+
+    .amount-card {
+      border-radius: 14px;
+      background: #8d0021;
+      color: #ffffff;
+      padding: 16px;
+    }
+
+    .amount-card .small {
+      color: #ffd7df;
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+    }
+
+    .amount-card .big {
+      margin-top: 4px;
+      font-size: 26px;
+      font-weight: 900;
+    }
+
+    .callout {
+      border-left: 5px solid #8d0021;
+      background: #fff4f5;
+      padding: 12px 14px;
+      border-radius: 10px;
+      margin-top: 8px;
+      font-weight: 700;
+    }
+
+    .warning {
+      border-left-color: #c62828;
+      background: #fff1f2;
+    }
+
+    .signature-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 28px;
+    }
+
+    .signature {
+      border-top: 1px solid #8d0021;
+      padding-top: 8px;
+      color: #6f6a6c;
+      font-size: 10px;
+      font-weight: 800;
+      min-height: 44px;
+    }
+
+    .footer-note {
+      margin-top: 8px;
+      color: #6f6a6c;
+      font-size: 10px;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <section class="page cover">
+    <div class="topbar">
+      <div class="brand"><span class="mark">WT</span> Wah Thali</div>
+      <div class="doc-type">Project Handover Statement</div>
+    </div>
+    <div class="cover-body">
+      <h1>Website Handover, Payment Status, Domain and Hosting Note</h1>
+      <p class="intro">Formal client handover note for the completed Wah Thali website, including deliverables, commercial payment status, current temporary Netlify hosting, GoDaddy domain issue, and pending final hosting steps.</p>
+      <div class="summary-grid">
+        <div class="summary"><p class="label">Client</p><p class="value">Wah Thali</p></div>
+        <div class="summary"><p class="label">Domain</p><p class="value">wahthali.in</p></div>
+        <div class="summary"><p class="label">Date</p><p class="value">Aug 23, 2026</p></div>
+        <div class="summary"><p class="label">Status</p><p class="value">Handover Ready</p></div>
+      </div>
+    </div>
+    <div class="cover-foot">Prepared for the website owner for review, acceptance, and final payment settlement.</div>
+  </section>
+
+  <section class="page">
+    <div class="section soft">
+      <h2>1. Project Completion Summary</h2>
+      <p>The Wah Thali website has been developed as a complete online food ordering and restaurant operations platform. It includes customer website pages, menu browsing, cart, checkout, customer account flow, order tracking, admin operations, product management, coupons, settings, staff access, and supporting APIs.</p>
+      <div class="callout">
+        Current handover status: <span class="highlight">Website completed and ready for owner operation, subject to final domain/hosting switch and pending balance payment.</span>
+      </div>
+    </div>
+
+    <div class="grid-3">
+      <div class="tile"><h3>Customer Website</h3><p>Home, menu, cart, checkout, login, order history, tracking, wishlist, offers, account, support, and policies.</p></div>
+      <div class="tile"><h3>Admin Panel</h3><p>Dashboard, orders, inventory, categories, coupons, customers, settings, staff access, and reset order function.</p></div>
+      <div class="tile"><h3>Technical Setup</h3><p>Next.js, Prisma/PostgreSQL, Supabase-ready storage/database, Netlify config, WhatsApp, Razorpay, and health check endpoint.</p></div>
+    </div>
+
+    <div class="section">
+      <h2>2. Delivered Website Modules</h2>
+      <table class="table">
+        <tr><th>Area</th><th>Included Deliverables</th></tr>
+        <tr><td>Customer Ordering</td><td>Menu browsing, category filtering, search, product cards, dish detail sheet, add to cart, coupons, GST, delivery fee, packaging fee, checkout, customer notes, address flow, and order confirmation.</td></tr>
+        <tr><td>Customer Account</td><td>Login/signup flow, OTP/password support, profile, saved address handling, order history, order tracking, reorder, wishlist, notifications, and loyalty-related pages.</td></tr>
+        <tr><td>Admin Dashboard</td><td>Sales metrics, order metrics, customer metrics, product status, low-stock action queue, and quick links.</td></tr>
+        <tr><td>Admin Orders</td><td>Incoming order watch, accept/decline, status progress, ETA, rider note, print bill, WhatsApp message, refund support, customer cancellation alert, and order reset function.</td></tr>
+        <tr><td>Admin Inventory</td><td>Product creation/editing, availability, stock, price, image, variants, add-ons, categories, prep time, and product visibility control.</td></tr>
+        <tr><td>Admin Settings and Access</td><td>Store mode, business values, delivery settings, WhatsApp alert settings, homepage slider, staff roles, and permission control.</td></tr>
+        <tr><td>Legal and SEO</td><td>Privacy policy, terms, refund/cancellation, delivery policy, data deletion, sitemap, robots, manifest, icons, and metadata.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section soft">
+      <h2>3. Commercial Payment Statement</h2>
+      <div class="grid-3">
+        <div class="amount-card"><p class="small">Total Website Price</p><p class="big">Rs 10,000</p></div>
+        <div class="amount-card"><p class="small">Advance Received</p><p class="big">Rs 5,000</p></div>
+        <div class="amount-card"><p class="small">Pending Balance</p><p class="big">Rs 5,000</p></div>
+      </div>
+      <table class="table">
+        <tr><th>Description</th><th>Amount</th><th>Status</th></tr>
+        <tr><td>Complete Wah Thali website development price</td><td>Rs 10,000</td><td>Project amount finalized</td></tr>
+        <tr><td>Advance payment received</td><td>Rs 5,000</td><td>Paid</td></tr>
+        <tr><td>Final balance payment</td><td>Rs 5,000</td><td>Pending from client</td></tr>
+      </table>
+      <div class="callout warning">
+        Pending payment to be cleared: <span class="highlight">Rs 5,000</span>. Final commercial closure and full ownership handover should be completed after balance payment is received.
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>4. Domain and Hosting Status</h2>
+      <table class="table">
+        <tr><th>Item</th><th>Current Status</th><th>Next Action</th></tr>
+        <tr><td>Domain</td><td>wahthali.in is client-owned and managed through GoDaddy.</td><td>Resolve GoDaddy domain/hosting issue and update DNS records as required.</td></tr>
+        <tr><td>Temporary hosting</td><td>Website is hosted temporarily on Netlify for testing/availability.</td><td>Keep Netlify live until GoDaddy issue is solved or final hosting is confirmed.</td></tr>
+        <tr><td>Final hosting</td><td>To be shifted or connected after GoDaddy issue is resolved.</td><td>After GoDaddy issue is solved, connect wahthali.in and www.wahthali.in to final hosting.</td></tr>
+        <tr><td>Environment variables</td><td>Required values must be set in hosting dashboard.</td><td>Do not put secret keys in code, GitHub, WhatsApp, or public files.</td></tr>
+      </table>
+      <div class="callout">
+        Recommended domain records must match the final hosting provider instructions. For GoDaddy, update DNS only after confirming the correct A/CNAME records from the chosen final host.
+      </div>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section">
+      <h2>5. Final GoDaddy/Hosting Action Plan</h2>
+      <ol>
+        <li>Open GoDaddy account and confirm domain ownership for <span class="highlight">wahthali.in</span>.</li>
+        <li>Check if GoDaddy hosting or DNS issue is resolved.</li>
+        <li>Choose final hosting: GoDaddy Node.js hosting or another approved production host.</li>
+        <li>Add all production environment variables in the hosting dashboard.</li>
+        <li>Connect both <span class="highlight">wahthali.in</span> and <span class="highlight">www.wahthali.in</span>.</li>
+        <li>Open <span class="highlight">https://wahthali.in/api/health</span> after deployment and confirm it returns ok true.</li>
+        <li>Test login, OTP, menu, cart, checkout, order creation, admin orders, product edit, and settings.</li>
+        <li>Keep temporary Netlify deployment until final production domain is stable.</li>
+      </ol>
+    </div>
+
+    <div class="grid-2">
+      <div class="section soft">
+        <h2>Client Responsibilities</h2>
+        <ul>
+          <li>Provide domain/DNS access where required.</li>
+          <li>Provide hosting dashboard access or allow screen-sharing setup.</li>
+          <li>Provide live Razorpay, Meta WhatsApp, SMTP, and Supabase values where applicable.</li>
+          <li>Review menu, prices, coupons, business settings, policies, and GST details.</li>
+          <li>Clear pending balance payment of Rs 5,000.</li>
+        </ul>
+      </div>
+      <div class="section soft">
+        <h2>Developer Responsibilities</h2>
+        <ul>
+          <li>Provide completed website source and guidance.</li>
+          <li>Assist with final domain/hosting connection after access is provided.</li>
+          <li>Guide owner through admin panel usage.</li>
+          <li>Verify deployment health after final hosting setup.</li>
+          <li>Hand over documentation and operational guide.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="section warning">
+      <h2>Important Security Notes</h2>
+      <ul>
+        <li>No database URL, API token, WhatsApp token, Razorpay secret, or SMTP password should be shared publicly.</li>
+        <li>All production keys should be entered only in the hosting provider environment variable section.</li>
+        <li>Admin roles should be given only to trusted people.</li>
+        <li>Before public launch, delete test orders using the admin reset order function if required.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section soft">
+      <h2>6. Handover Checklist</h2>
+      <table class="table">
+        <tr><th>Checklist Item</th><th>Status / Note</th></tr>
+        <tr><td>Website source and build completed</td><td>Completed</td></tr>
+        <tr><td>Customer pages completed</td><td>Completed</td></tr>
+        <tr><td>Admin dashboard and admin pages completed</td><td>Completed</td></tr>
+        <tr><td>Order flow and admin order handling completed</td><td>Completed</td></tr>
+        <tr><td>Policies and basic SEO setup completed</td><td>Completed</td></tr>
+        <tr><td>Temporary hosting on Netlify</td><td>Active/available until final hosting switch</td></tr>
+        <tr><td>GoDaddy domain issue</td><td>Pending resolution</td></tr>
+        <tr><td>Final production domain connection</td><td>Pending after GoDaddy issue is solved</td></tr>
+        <tr><td>Advance payment</td><td>Rs 5,000 received</td></tr>
+        <tr><td>Pending payment</td><td>Rs 5,000 pending</td></tr>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>7. Acceptance Statement</h2>
+      <p>This document confirms that the Wah Thali website has been prepared for client handover with customer ordering features, admin operation pages, deployment guidance, and commercial payment status. The website can be operated by the client through the admin guide, with final GoDaddy/domain connection to be completed after the domain issue is resolved and required access is provided.</p>
+      <div class="callout">
+        Final payment pending: <span class="highlight">Rs 5,000</span>. Temporary hosting: <span class="highlight">Netlify</span>. Domain provider: <span class="highlight">GoDaddy</span>. Final hosting/domain switch: pending after GoDaddy issue is resolved.
+      </div>
+    </div>
+
+    <div class="signature-grid">
+      <div>
+        <div class="signature">Developer Signature / Date</div>
+      </div>
+      <div>
+        <div class="signature">Client / Wah Thali Owner Signature / Date</div>
+      </div>
+    </div>
+    <p class="footer-note">Prepared on August 23, 2026 for Wah Thali website handover.</p>
+  </section>
+</body>
+</html>

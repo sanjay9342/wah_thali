@@ -1,10 +1,12 @@
 import { AdminCategoriesClient } from "@/components/admin-categories-client";
+import { requireAdminPagePermission } from "@/lib/admin-page-auth";
 import { getCategoryImagesFromDb, getCategoryOffersFromDb } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminCategoriesPage() {
+  await requireAdminPagePermission("categories", "/admin/categories");
   if (!isDatabaseConfigured()) {
     return <AdminCategoriesClient initialCategories={[]} />;
   }

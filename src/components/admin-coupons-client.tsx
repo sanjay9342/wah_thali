@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CheckCircle2, Copy, Edit3, ExternalLink, EyeOff, Plus, Send, Sparkles, TicketPercent, Trash2 } from "lucide-react";
+import { CheckCircle2, Copy, Edit3, ExternalLink, EyeOff, Plus, Send, Sparkles, Tag, TicketPercent, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
+import { adminFetch } from "@/lib/admin-client-auth";
 import { formatRupees } from "@/lib/pricing";
 import { formatIstDate, getIstDateInputValue, parseIstDateInput } from "@/lib/time";
 
@@ -14,8 +16,9 @@ type AdminCoupon = {
   value: number;
   minOrder: number;
   maxDiscount?: number | null;
-  audience?: "ALL" | "VIP" | "POINTS";
+  audience?: "ALL" | "VIP" | "POINTS" | "TAGS";
   minPoints?: number;
+  tagNames?: string[];
   startsAt: string;
   endsAt: string;
   active: boolean;
@@ -30,6 +33,7 @@ const emptyCoupon: AdminCoupon = {
   maxDiscount: null,
   audience: "ALL",
   minPoints: 0,
+  tagNames: [],
   startsAt: getIstDateInputValue(),
   endsAt: getIstDateInputValue(new Date(), 30),
   active: true,
@@ -46,11 +50,22 @@ const couponPalettes = [
   { accent: "#0f766e", ink: "#115e59", soft: "#ecfeff", glow: "#bff7f1", pill: "#ccfbf1", border: "#99f6e4", dash: "#5eead4" },
 ];
 
-export function AdminCouponsClient({ initialCoupons, discountedProducts }: { initialCoupons: AdminCoupon[]; discountedProducts: number }) {
+export function AdminCouponsClient({
+  initialCoupons,
+  discountedProducts,
+  initialCustomerTags,
+}: {
+  initialCoupons: AdminCoupon[];
+  discountedProducts: number;
+  initialCustomerTags: string[];
+}) {
   const [coupons, setCoupons] = useState(initialCoupons);
+  const [customerTags, setCustomerTags] = useState(() => Array.from(new Set(["VIP", ...initialCustomerTags])).sort((a, b) => a.localeCompare(b)));
   const [editing, setEditing] = useState<AdminCoupon | null>(null);
+  const [tagDraft, setTagDraft] = useState("");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const adminAccess = useAdminAccess();
 
   async function refreshCoupons() {
     const response = await fetch("/api/coupons", { cache: "no-store" });
@@ -77,13 +92,15 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
   function saveCoupon() {
     if (!editing) return;
     run(async () => {
-      const response = await fetch(editing.code && coupons.some((coupon) => coupon.code === editing.code) ? `/api/coupons/${editing.code}` : "/api/coupons", {
+      const response = await adminFetch(adminAccess?.session, editing.code && coupons.some((coupon) => coupon.code === editing.code) ? `/api/coupons/${editing.code}` : "/api/coupons", {
         method: editing.code && coupons.some((coupon) => coupon.code === editing.code) ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...editing,
           code: editing.code.toUpperCase(),
           maxDiscount: editing.maxDiscount ? Number(editing.maxDiscount) : null,
+          minPoints: editing.audience === "POINTS" ? Math.max(1, Number(editing.minPoints ?? 1)) : 0,
+          tagNames: editing.audience === "TAGS" ? normalizeTagNames(editing.tagNames ?? []) : [],
         }),
       });
       const data = await response.json();
@@ -96,7 +113,7 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
 
   function deleteCoupon(code: string) {
     run(async () => {
-      const response = await fetch(`/api/coupons/${code}`, { method: "DELETE" });
+      const response = await adminFetch(adminAccess?.session, `/api/coupons/${code}`, { method: "DELETE" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Coupon delete failed.");
       await refreshCoupons();
@@ -106,7 +123,7 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
 
   function toggleCoupon(coupon: AdminCoupon) {
     run(async () => {
-      const response = await fetch(`/api/coupons/${coupon.code}`, {
+      const response = await adminFetch(adminAccess?.session, `/api/coupons/${coupon.code}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ active: !coupon.active }),
@@ -120,7 +137,7 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
 
   function notifyCoupon(coupon: AdminCoupon) {
     run(async () => {
-      const response = await fetch(`/api/coupons/${coupon.code}/notify`, { method: "POST" });
+      const response = await adminFetch(adminAccess?.session, `/api/coupons/${coupon.code}/notify`, { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Coupon notification failed.");
       setMessage(`${coupon.code} notification queued for ${data.eligible} eligible customers. WhatsApp sent: ${data.sent}, failed/skipped: ${data.failed}.`);
@@ -130,6 +147,34 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
   const activeCoupons = coupons.filter((coupon) => coupon.active).length;
   const liveCoupons = coupons.filter((coupon) => isCouponLive(coupon));
   const scheduledCoupons = coupons.filter((coupon) => coupon.active && isCouponScheduled(coupon)).length;
+
+  function setCouponAudience(audience: AdminCoupon["audience"]) {
+    if (!editing) return;
+    setEditing({
+      ...editing,
+      audience,
+      minPoints: audience === "POINTS" ? Math.max(1, Number(editing.minPoints ?? 0)) : 0,
+      tagNames: audience === "TAGS" ? editing.tagNames ?? [] : [],
+    });
+  }
+
+  function createCustomerTag() {
+    const name = tagDraft.trim();
+    if (!name) return;
+    run(async () => {
+      const response = await adminFetch(adminAccess?.session, "/api/customer-tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not save customer tag.");
+      setCustomerTags((current) => Array.from(new Set([...current, data.tag.name])).sort((a, b) => a.localeCompare(b)));
+      setEditing((current) => current ? { ...current, tagNames: Array.from(new Set([...(current.tagNames ?? []), data.tag.name])) } : current);
+      setTagDraft("");
+      setMessage("Customer tag saved.");
+    });
+  }
 
   return (
     <main className="min-h-screen bg-white">
@@ -205,7 +250,7 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
           <div className="border-b border-border bg-[#fff8f9] p-5">
             <h3 className="text-lg font-black text-maroon">WhatsApp coupon broadcast</h3>
             <p className="mt-1 text-sm font-semibold leading-6 text-muted">
-              Use Notify eligible for coupons targeted to all customers, VIP customers, or order milestones like 10+ orders. The message includes the coupon code and each customer&apos;s order quantity history.
+              Use Notify eligible for coupons targeted to all customers, VIP customers, customer tags, or order milestones like 10+ orders. The message includes the coupon code and each customer&apos;s order quantity history.
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -285,13 +330,44 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
                 <Field label="Max discount" value={editing.maxDiscount ? String(editing.maxDiscount) : ""} onChange={(value) => setEditing({ ...editing, maxDiscount: value ? Number(value) : null })} />
                 <label className="grid gap-2 text-sm font-black text-charcoal">
                   Eligible customers
-                  <select value={editing.audience ?? "ALL"} onChange={(event) => setEditing({ ...editing, audience: event.target.value as AdminCoupon["audience"] })} className="h-11 rounded-lg border border-border bg-cream px-3">
+                  <select value={editing.audience ?? "ALL"} onChange={(event) => setCouponAudience(event.target.value as AdminCoupon["audience"])} className="h-11 rounded-lg border border-border bg-cream px-3">
                     <option value="ALL">All customers</option>
                     <option value="VIP">VIP customers only</option>
                     <option value="POINTS">Order count based</option>
+                    <option value="TAGS">Tag based</option>
                   </select>
                 </label>
-                <Field label="Minimum orders" value={String(editing.minPoints ?? 0)} onChange={(value) => setEditing({ ...editing, minPoints: Number(value) })} />
+                {editing.audience === "POINTS" ? (
+                  <Field
+                    label="Customer order count"
+                    type="number"
+                    value={String(Math.max(1, Number(editing.minPoints ?? 1)))}
+                    onChange={(value) => setEditing({ ...editing, minPoints: Math.max(1, Number(value) || 1) })}
+                  />
+                ) : null}
+                {editing.audience === "TAGS" ? (
+                  <div className="grid gap-2 rounded-xl border border-border bg-cream p-3 sm:col-span-2">
+                    <p className="flex items-center gap-2 text-sm font-black text-maroon"><Tag size={16} /> Eligible customer tags</p>
+                    <div className="flex flex-wrap gap-2">
+                      {customerTags.map((tagName) => (
+                        <button
+                          key={tagName}
+                          type="button"
+                          onClick={() => setEditing({ ...editing, tagNames: toggleName(editing.tagNames ?? [], tagName) })}
+                          className={`inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-black ${editing.tagNames?.includes(tagName) ? "bg-maroon text-white" : "border border-border bg-white text-maroon"}`}
+                        >
+                          <Tag size={14} /> {tagName}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                      <input value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-bold text-charcoal" placeholder="Create customer tag" />
+                      <button type="button" disabled={isPending || !tagDraft.trim()} onClick={createCustomerTag} className="h-10 rounded-lg border border-border bg-white px-4 text-sm font-black text-maroon disabled:opacity-60">
+                        Add tag
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
                 <Field label="Start date" type="date" value={editing.startsAt} onChange={(value) => setEditing({ ...editing, startsAt: value })} />
                 <Field label="End date" type="date" value={editing.endsAt} onChange={(value) => setEditing({ ...editing, endsAt: value })} />
               </div>
@@ -308,7 +384,7 @@ export function AdminCouponsClient({ initialCoupons, discountedProducts }: { ini
 
             <div className="mt-5 flex justify-end gap-2">
               <button onClick={() => setEditing(null)} className="h-10 rounded-lg border border-border px-4 font-black">Cancel</button>
-              <button disabled={isPending || !editing.code || !editing.label} onClick={saveCoupon} className="h-10 rounded-lg bg-red px-4 font-black text-white disabled:opacity-60">Save coupon</button>
+              <button disabled={isPending || !canSaveCoupon(editing)} onClick={saveCoupon} className="h-10 rounded-lg bg-red px-4 font-black text-white disabled:opacity-60">Save coupon</button>
             </div>
           </div>
         </div>
@@ -324,6 +400,12 @@ function Field({ label, value, onChange, type = "text" }: { label: string; value
       <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-lg border border-border bg-cream px-3" />
     </label>
   );
+}
+
+function canSaveCoupon(coupon: AdminCoupon) {
+  if (!coupon.code.trim() || !coupon.label.trim()) return false;
+  if (coupon.audience === "TAGS" && !normalizeTagNames(coupon.tagNames ?? []).length) return false;
+  return true;
 }
 
 function AdminCouponPreview({
@@ -380,15 +462,33 @@ function AdminCouponPreview({
   );
 }
 
-function EligibilityPill({ coupon }: { coupon: Pick<AdminCoupon, "audience" | "minPoints"> }) {
+function EligibilityPill({ coupon }: { coupon: Pick<AdminCoupon, "audience" | "minPoints" | "tagNames"> }) {
   const audience = coupon.audience ?? "ALL";
   const label = audience === "VIP"
     ? "VIP only"
     : audience === "POINTS"
-      ? `${coupon.minPoints ?? 0}+ orders`
+      ? `${getMinimumOrderCount(coupon)}+ orders`
+      : audience === "TAGS"
+        ? `${formatTagList(coupon.tagNames)} only`
       : "All customers";
 
   return <span className="inline-flex rounded-lg bg-[#fff4f5] px-3 py-2 text-xs font-black text-maroon">{label}</span>;
+}
+
+function getMinimumOrderCount(coupon: Pick<AdminCoupon, "minPoints">) {
+  return Math.max(1, Number(coupon.minPoints ?? 1));
+}
+
+function formatTagList(tagNames: string[] | undefined) {
+  return tagNames?.length ? tagNames.join(", ") : "Selected tags";
+}
+
+function toggleName(values: string[], name: string) {
+  return values.includes(name) ? values.filter((value) => value !== name) : [...values, name];
+}
+
+function normalizeTagNames(tags: string[]) {
+  return Array.from(new Set(tags.map((tag) => tag.trim()).filter(Boolean))).slice(0, 12);
 }
 
 function getCouponPalette(code: string) {

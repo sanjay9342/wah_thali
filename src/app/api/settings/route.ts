@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
+import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
 import { newOrderSoundIds } from "@/lib/order-sounds";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
+import { normalizeDeliveryDistanceSlabs, normalizeGstRate } from "@/lib/pricing";
 import { formatMinutesAsClock, parseOpeningHours } from "@/lib/store-hours";
 
 const settingsSchema = z.object({
@@ -12,9 +14,15 @@ const settingsSchema = z.object({
   whatsappNumber: z.string().trim().min(1),
   minimumOrder: z.number().finite().nonnegative(),
   deliveryFee: z.number().finite().nonnegative(),
+  deliveryFeeMode: z.enum(["FLAT", "PERCENT", "DISTANCE"]),
+  deliveryFeePercent: z.number().finite().min(0).max(100),
+  deliveryDistanceSlabs: z.array(z.object({
+    upToKm: z.number().finite().positive(),
+    fee: z.number().finite().nonnegative(),
+  })).max(20),
   freeDeliveryThreshold: z.number().finite().nonnegative(),
   packagingFee: z.number().finite().nonnegative(),
-  gstRate: z.number().finite().min(0).max(1),
+  gstRate: z.number().finite().min(0).max(100),
   serviceablePins: z.array(z.string().trim().min(1)),
   locationRestrictionEnabled: z.boolean(),
   kitchenAddress: z.string(),
@@ -38,7 +46,9 @@ const settingsSchema = z.object({
   newOrderSoundEnabled: z.boolean(),
   newOrderSound: z.enum(newOrderSoundIds),
   whatsappOrderAlerts: z.boolean(),
+  ownerWhatsAppOrderAlerts: z.boolean(),
   adminDailyDigestTime: z.string().trim().regex(/^\d{2}:\d{2}$/),
+  homeDishCategories: z.array(z.string().trim().min(1)).max(24),
 }).partial().strict();
 
 export async function GET() {
@@ -50,6 +60,8 @@ export async function PATCH(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
+  const access = await requireAdminPermission(request, "settings");
+  if (!access.ok) return access.response;
 
   const parsed = settingsSchema.safeParse(await request.json());
   if (!parsed.success) {
@@ -59,6 +71,10 @@ export async function PATCH(request: Request) {
   const openingRange = parsed.data.openingHours ? parseOpeningHours(parsed.data.openingHours) : null;
   const normalized = {
     ...parsed.data,
+    gstRate: parsed.data.gstRate === undefined ? undefined : normalizeGstRate(parsed.data.gstRate),
+    deliveryDistanceSlabs: parsed.data.deliveryDistanceSlabs === undefined
+      ? undefined
+      : normalizeDeliveryDistanceSlabs(parsed.data.deliveryDistanceSlabs),
     openingHours: openingRange
       ? `${formatMinutesAsClock(openingRange.openingMinutes)} - ${formatMinutesAsClock(openingRange.closingMinutes)}`
       : parsed.data.openingHours,

@@ -57,6 +57,8 @@ export function getWhatsAppNotificationConfigStatus() {
   const orderDeliveredTemplateConfigured = Boolean(readFirstEnv(["META_WHATSAPP_ORDER_DELIVERED_TEMPLATE_NAME", "META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"]));
   const orderDeclinedTemplateConfigured = Boolean(readFirstEnv([
     "META_WHATSAPP_ORDER_DECLINED_TEMPLATE_NAME",
+    "META_WHATSAPP_ORDER_CANCELLED_TEMPLATE_NAME",
+    "META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME",
   ]));
   const orderCancelledTemplateConfigured = Boolean(readEnv("META_WHATSAPP_ORDER_CANCELLED_TEMPLATE_NAME"));
   const orderTemplateConfigured = orderStatusTemplateConfigured || orderPlacedTemplateConfigured || orderDeliveredTemplateConfigured || orderDeclinedTemplateConfigured || orderCancelledTemplateConfigured;

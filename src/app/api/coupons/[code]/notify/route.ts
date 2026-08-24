@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
+import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { getAdminCouponsFromDb } from "@/lib/db";
 import { notifyCouponAudience } from "@/lib/customer-messaging";
 import { isDatabaseConfigured } from "@/lib/prisma";
 
-export async function POST(_request: Request, { params }: { params: Promise<{ code: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ code: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
+  const access = await requireAdminPermission(request, "coupons");
+  if (!access.ok) return access.response;
 
   const { code } = await params;
   const coupons = await getAdminCouponsFromDb();

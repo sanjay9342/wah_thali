@@ -4,11 +4,15 @@ import { Prisma } from "@prisma/client";
 import { business } from "@/lib/business";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import {
+  getPermissionsForAssignment,
   getPermissionsForRole,
+  hasAdminPermission,
+  normalizeAdminPermissions,
   isAdminRole,
   type AdminAccessAssignment,
   type AdminAccessIdentity,
   type AdminAccessResult,
+  type AdminPermission,
   type AdminRole,
 } from "@/lib/admin-access-shared";
 
@@ -53,7 +57,8 @@ function isAdminAssignment(value: unknown): value is AdminAccessAssignment {
     typeof item.mobile === "string" &&
     typeof item.active === "boolean" &&
     typeof item.grantedAt === "string" &&
-    isAdminRole(item.role);
+    isAdminRole(item.role) &&
+    (item.permissions === undefined || normalizeAdminPermissions(item.permissions, item.role).length > 0);
 }
 
 function readAssignments(value: unknown): AdminAccessAssignment[] {
@@ -86,6 +91,7 @@ function bootstrapAssignment(identity: AdminAccessIdentity): AdminAccessAssignme
     mobile: mobile || business.phone,
     email: email || undefined,
     role: "ADMIN",
+    permissions: getPermissionsForRole("ADMIN"),
     active: true,
     grantedAt: new Date().toISOString(),
     grantedBy: "environment",
@@ -124,7 +130,7 @@ export async function getAdminAccessForIdentity(identity: AdminAccessIdentity): 
     return {
       allowed: true,
       role: "ADMIN",
-      permissions: getPermissionsForRole("ADMIN"),
+      permissions: getPermissionsForAssignment(bootstrap),
       assignment: bootstrap,
       source: "bootstrap",
     };
@@ -138,7 +144,7 @@ export async function getAdminAccessForIdentity(identity: AdminAccessIdentity): 
   return {
     allowed: true,
     role: assignment.role,
-    permissions: getPermissionsForRole(assignment.role),
+    permissions: getPermissionsForAssignment(assignment),
     assignment,
     source: "assigned",
   };
@@ -148,16 +154,18 @@ export async function upsertAdminAccessAssignment({
   actor,
   target,
   role,
+  permissions,
   active,
 }: {
   actor: AdminAccessIdentity;
   target: AdminAccessIdentity;
   role: AdminRole;
+  permissions?: AdminPermission[];
   active: boolean;
 }) {
   const actorAccess = await getAdminAccessForIdentity(actor);
-  if (actorAccess.role !== "ADMIN") {
-    throw new Error("Only admins can manage staff access.");
+  if (!hasAdminPermission(actorAccess.permissions, "access")) {
+    throw new Error("Only staff users with Staff Access permission can manage roles and privileges.");
   }
 
   const mobile = normalizeMobile(target.mobile);
@@ -172,6 +180,7 @@ export async function upsertAdminAccessAssignment({
     mobile,
     email: normalizeEmail(target.email) || undefined,
     role,
+    permissions: normalizeAdminPermissions(permissions, role),
     active,
     grantedAt: new Date().toISOString(),
     grantedBy: actor.mobile || actor.email || actor.id,

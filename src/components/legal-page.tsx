@@ -13,30 +13,30 @@ export function LegalPage({ policy }: { policy: Policy }) {
   return (
     <>
       <Header />
-      <main className="bg-[#fbfbfc] pb-28 lg:pb-12">
-        <section className="bg-red px-4 py-8 text-white sm:px-6 sm:py-10 lg:px-8 lg:py-12">
+      <main className="bg-[#fbf8f4] pb-28 lg:pb-12">
+        <section className="border-b border-[#eadfd5] bg-[#f8f1ea] px-4 py-8 text-charcoal sm:px-6 sm:py-10 lg:px-8 lg:py-12">
           <div className="mx-auto max-w-[1120px]">
             <Link
               href="/"
-              className="inline-flex h-11 items-center gap-2 rounded-full bg-white/12 px-4 text-sm font-black text-white ring-1 ring-white/22 transition-colors hover:bg-white/18"
+              className="inline-flex h-11 items-center gap-2 rounded-full bg-white px-4 text-sm font-black text-maroon shadow-sm ring-1 ring-[#eadfd5] transition-colors hover:bg-[#fbf8f4]"
             >
               <ArrowLeft size={18} strokeWidth={2.7} />
               <span>Back to Wah Thali</span>
             </Link>
 
             <div className="mt-8 max-w-4xl">
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-white/75">{business.legalName}</p>
-              <h1 className="mt-3 text-[36px] font-black leading-[1.05] text-white sm:text-5xl lg:text-[58px]">{policy.title}</h1>
-              <p className="mt-5 max-w-3xl text-base font-semibold leading-7 text-white/85 sm:text-lg">{policy.summary}</p>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-maroon/70">{business.legalName}</p>
+              <h1 className="mt-3 text-[36px] font-black leading-[1.05] text-charcoal sm:text-5xl lg:text-[58px]">{policy.title}</h1>
+              <p className="mt-5 max-w-3xl text-base font-semibold leading-7 text-muted sm:text-lg">{policy.summary}</p>
             </div>
 
             <div className="mt-7 grid gap-3 text-sm font-black sm:grid-cols-2 lg:max-w-3xl">
-              <div className="flex items-center gap-3 rounded-lg bg-white/12 px-4 py-3 ring-1 ring-white/18">
-                <CalendarDays size={18} className="shrink-0" />
+              <div className="flex items-center gap-3 rounded-lg bg-white px-4 py-3 text-charcoal ring-1 ring-[#eadfd5]">
+                <CalendarDays size={18} className="shrink-0 text-maroon" />
                 <span>Effective Date: {policy.effectiveDate}</span>
               </div>
-              <div className="flex items-center gap-3 rounded-lg bg-white/12 px-4 py-3 ring-1 ring-white/18">
-                <FileText size={18} className="shrink-0" />
+              <div className="flex items-center gap-3 rounded-lg bg-white px-4 py-3 text-charcoal ring-1 ring-[#eadfd5]">
+                <FileText size={18} className="shrink-0 text-maroon" />
                 <span>{policy.sections.length} policy sections</span>
               </div>
             </div>
@@ -46,9 +46,9 @@ export function LegalPage({ policy }: { policy: Policy }) {
         <div className="mx-auto grid max-w-[1120px] gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:px-8">
           <article className="space-y-4">
             {policy.sections.map((section, index) => (
-              <section key={section.heading} id={sectionId(section.heading)} className="rounded-lg border border-[#eee1e4] bg-white p-5 shadow-[0_10px_24px_rgba(34,31,32,0.04)] sm:p-6">
+              <section key={section.heading} id={sectionId(section.heading)} className="rounded-lg border border-[#eadfd5] bg-white p-5 shadow-[0_10px_24px_rgba(34,31,32,0.04)] sm:p-6">
                 <div className="flex items-start gap-4">
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#fff4f5] text-sm font-black text-red">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-cream text-sm font-black text-maroon">
                     {index + 1}
                   </span>
                   <div className="min-w-0">
@@ -65,32 +65,32 @@ export function LegalPage({ policy }: { policy: Policy }) {
           </article>
 
           <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-            <section className="rounded-lg border border-[#eee1e4] bg-white p-5 shadow-[0_10px_24px_rgba(34,31,32,0.04)]">
+            <section className="rounded-lg border border-[#eadfd5] bg-white p-5 shadow-[0_10px_24px_rgba(34,31,32,0.04)]">
               <h2 className="text-base font-black text-charcoal">On this page</h2>
               <nav className="mt-4 grid gap-2" aria-label={`${policy.title} sections`}>
                 {policy.sections.map((section, index) => (
-                  <a key={section.heading} href={`#${sectionId(section.heading)}`} className="flex items-center gap-3 rounded-lg bg-[#fbfbfc] px-3 py-2 text-sm font-black text-muted hover:text-red">
-                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-white text-[11px] text-red ring-1 ring-[#eee1e4]">{index + 1}</span>
+                  <a key={section.heading} href={`#${sectionId(section.heading)}`} className="flex items-center gap-3 rounded-lg bg-[#fbf8f4] px-3 py-2 text-sm font-black text-muted hover:text-maroon">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-white text-[11px] text-maroon ring-1 ring-[#eadfd5]">{index + 1}</span>
                     <span className="min-w-0 truncate">{section.heading}</span>
                   </a>
                 ))}
               </nav>
             </section>
 
-            <section className="rounded-lg border border-[#eee1e4] bg-[#fff4f5] p-5">
-              <h2 className="text-base font-black text-red">Contact Us</h2>
+            <section className="rounded-lg border border-[#eadfd5] bg-[#f8f1ea] p-5">
+              <h2 className="text-base font-black text-maroon">Contact Us</h2>
               <p className="mt-2 text-sm font-semibold leading-6 text-muted">{business.legalName}</p>
               <div className="mt-4 grid gap-3 text-sm font-bold text-charcoal">
                 <a href={`mailto:${business.legalEmail}`} className="flex min-w-0 items-center gap-3">
-                  <Mail size={17} className="shrink-0 text-red" />
+                  <Mail size={17} className="shrink-0 text-maroon" />
                   <span className="truncate">{business.legalEmail}</span>
                 </a>
                 <a href={`tel:${business.phone}`} className="flex items-center gap-3">
-                  <Phone size={17} className="shrink-0 text-red" />
+                  <Phone size={17} className="shrink-0 text-maroon" />
                   <span>{business.phone}</span>
                 </a>
                 <p className="flex items-start gap-3 leading-6">
-                  <MapPin size={17} className="mt-1 shrink-0 text-red" />
+                  <MapPin size={17} className="mt-1 shrink-0 text-maroon" />
                   <span>{business.address}</span>
                 </p>
               </div>

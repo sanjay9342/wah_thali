@@ -12,8 +12,9 @@ export function OrderTrackAutoRefresh({ status }: { status: string }) {
     if (terminalStatuses.has(status)) return;
 
     const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       router.refresh();
-    }, 3500);
+    }, 7000);
 
     return () => window.clearInterval(timer);
   }, [router, status]);

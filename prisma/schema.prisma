@@ -209,6 +209,9 @@ model Product {
   id          String       @id @default(cuid())
   categoryId  String
   name        String
+  displayName String?
+  kitchenName String?
+  reportCode  String?
   slug        String       @unique
   description String
   price       Int
@@ -232,6 +235,9 @@ model Product {
 
   @@index([categoryId])
   @@index([available])
+  @@index([displayName])
+  @@index([kitchenName])
+  @@index([reportCode])
 }
 
 model ProductImage {

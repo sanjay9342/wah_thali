@@ -80,6 +80,9 @@ export default async function ConfirmedPage({
 function getPaymentSummary(payment?: { provider: string; status: string }) {
   if (!payment) return "Cash on Delivery";
   if (payment.provider === "COD") return "Cash on Delivery";
+  if (payment.status === "REFUND_PENDING") return "Refund pending";
+  if (payment.status === "PARTIALLY_REFUNDED") return "Partially refunded";
+  if (payment.status === "REFUNDED") return "Refunded";
   if (payment.status === "PAID" || payment.status === "AUTHORIZED") return "Online payment received";
   return "Online payment pending";
 }

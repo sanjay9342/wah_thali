@@ -1,5 +1,6 @@
 import { AdminSettingsClient } from "@/components/admin-settings-client";
-import { defaultHomeSlides, getBusinessSettingsFromDb, getCategoriesFromDb } from "@/lib/db";
+import { requireAdminPagePermission } from "@/lib/admin-page-auth";
+import { defaultHomeSlides, getBusinessSettingsFromDb, getCategoriesFromDb, getHomeDishCategoriesFromDb } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import type { HomeSlide } from "@/lib/types";
 
@@ -15,10 +16,15 @@ function isHomeSlides(value: unknown): value is HomeSlide[] {
 }
 
 export default async function AdminSettingsPage() {
-  const [settings, categories] = await Promise.all([getBusinessSettingsFromDb(), getCategoriesFromDb()]);
+  await requireAdminPagePermission("settings", "/admin/settings");
+  const [settings, categories, homeDishCategories] = await Promise.all([
+    getBusinessSettingsFromDb(),
+    getCategoriesFromDb(),
+    getHomeDishCategoriesFromDb(),
+  ]);
 
   if (!isDatabaseConfigured()) {
-    return <AdminSettingsClient initialSettings={settings} initialSlides={defaultHomeSlides} initialCategories={categories} />;
+    return <AdminSettingsClient initialSettings={settings} initialSlides={defaultHomeSlides} initialCategories={categories} initialHomeDishCategories={homeDishCategories} />;
   }
 
   const [slidesSetting, advancedRows] = await Promise.all([
@@ -44,6 +50,7 @@ export default async function AdminSettingsPage() {
             "newOrderSoundEnabled",
             "newOrderSound",
             "whatsappOrderAlerts",
+            "ownerWhatsAppOrderAlerts",
             "adminDailyDigestTime",
           ],
         },
@@ -59,6 +66,7 @@ export default async function AdminSettingsPage() {
       initialAdvanced={advanced}
       initialSlides={slides}
       initialCategories={categories}
+      initialHomeDishCategories={homeDishCategories}
     />
   );
 }

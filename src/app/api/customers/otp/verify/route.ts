@@ -6,7 +6,7 @@ import { isDatabaseConfigured } from "@/lib/prisma";
 
 const verifySchema = z.object({
   mobile: z.string().min(8),
-  purpose: z.enum(["signin", "signup"]),
+  purpose: z.enum(["signin", "signup", "password_reset"]),
   otp: z.string().min(4),
 });
 
@@ -32,4 +32,3 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ message: result.message });
 }
-

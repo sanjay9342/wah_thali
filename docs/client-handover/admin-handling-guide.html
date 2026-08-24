@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Wah Thali Website Admin Handling Guide</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 16mm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #ffffff;
+      color: #221f20;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11.5px;
+      line-height: 1.48;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 33px;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      color: #8d0021;
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    h3 {
+      color: #221f20;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+
+    ul,
+    ol {
+      margin: 6px 0 0 18px;
+      padding: 0;
+    }
+
+    li {
+      margin: 3px 0;
+    }
+
+    .page {
+      page-break-after: always;
+    }
+
+    .page:last-child {
+      page-break-after: auto;
+    }
+
+    .cover {
+      min-height: 265mm;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      border: 1px solid #eadfe3;
+      border-radius: 18px;
+      overflow: hidden;
+    }
+
+    .cover-hero {
+      background: #8d0021;
+      color: #ffffff;
+      padding: 34px;
+      display: grid;
+      align-content: center;
+      gap: 22px;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-weight: 900;
+      font-size: 24px;
+    }
+
+    .brand-mark {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: #ffffff;
+      color: #8d0021;
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+    }
+
+    .eyebrow {
+      color: #ffd7df;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 2.4px;
+      text-transform: uppercase;
+    }
+
+    .cover-title {
+      max-width: 520px;
+    }
+
+    .cover-subtitle {
+      max-width: 520px;
+      color: #fff0f3;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .cover-footer {
+      padding: 22px 34px;
+      background: #fff8f9;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      border-top: 1px solid #eadfe3;
+    }
+
+    .meta-card {
+      border: 1px solid #eadfe3;
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 12px;
+    }
+
+    .meta-label {
+      color: #6f6a6c;
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+    }
+
+    .meta-value {
+      margin-top: 4px;
+      color: #8d0021;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .section {
+      border: 1px solid #eadfe3;
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 12px;
+      background: #ffffff;
+    }
+
+    .section.soft {
+      background: #fff8f9;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .tile {
+      border: 1px solid #eadfe3;
+      border-radius: 12px;
+      background: #fff8f9;
+      padding: 12px;
+      min-height: 92px;
+    }
+
+    .tile strong,
+    .callout strong {
+      color: #8d0021;
+    }
+
+    .callout {
+      border-left: 5px solid #8d0021;
+      background: #fff4f5;
+      padding: 12px 14px;
+      border-radius: 10px;
+      margin: 8px 0;
+      font-weight: 700;
+    }
+
+    .warning {
+      border-left-color: #c62828;
+      background: #fff1f2;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      overflow: hidden;
+      border-radius: 10px;
+    }
+
+    .table th,
+    .table td {
+      border: 1px solid #eadfe3;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .table th {
+      background: #8d0021;
+      color: #ffffff;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.9px;
+    }
+
+    .footer-note {
+      margin-top: 8px;
+      color: #6f6a6c;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .signature-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-top: 20px;
+    }
+
+    .signature {
+      border-top: 1px solid #8d0021;
+      padding-top: 7px;
+      color: #6f6a6c;
+      font-size: 10px;
+      font-weight: 800;
+    }
+  </style>
+</head>
+<body>
+  <section class="page cover">
+    <div class="cover-hero">
+      <div class="brand-row">
+        <div class="brand-mark">WT</div>
+        <div>Wah Thali</div>
+      </div>
+      <div>
+        <p class="eyebrow">Client Admin Guide</p>
+        <h1 class="cover-title">Website Handling and Admin Operations Guide</h1>
+        <p class="cover-subtitle">A complete guide for the website owner and team to manage orders, products, coupons, customers, settings, staff access, and launch operations.</p>
+      </div>
+    </div>
+    <div class="cover-footer">
+      <div class="meta-card">
+        <p class="meta-label">Prepared for</p>
+        <p class="meta-value">Wah Thali Website Owner</p>
+      </div>
+      <div class="meta-card">
+        <p class="meta-label">Website</p>
+        <p class="meta-value">wahthali.in</p>
+      </div>
+      <div class="meta-card">
+        <p class="meta-label">Date</p>
+        <p class="meta-value">August 23, 2026</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section soft">
+      <h2>1. Quick Start</h2>
+      <p>This guide explains how to operate the Wah Thali website after launch. The admin panel is used for live restaurant operations, order handling, product control, coupons, customers, settings, and staff permissions.</p>
+      <div class="callout">
+        Admin URL: <strong>https://wahthali.in/admin</strong><br>
+        Temporary hosting note: the website is currently arranged for temporary Netlify hosting while the GoDaddy domain or hosting issue is resolved.
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="section">
+        <h2>Daily Opening Routine</h2>
+        <ol>
+          <li>Open the admin dashboard.</li>
+          <li>Check store mode in Settings: Open, Busy, Paused, or Closed.</li>
+          <li>Review low-stock products in Dashboard and Inventory.</li>
+          <li>Open Orders page and keep it visible during business hours.</li>
+          <li>Confirm payment, WhatsApp alerts, and desktop order sound are working.</li>
+        </ol>
+      </div>
+      <div class="section">
+        <h2>Daily Closing Routine</h2>
+        <ol>
+          <li>Complete pending live orders.</li>
+          <li>Mark delivered or cancelled orders correctly.</li>
+          <li>Pause or close ordering if the kitchen is closed.</li>
+          <li>Review sales, customer issues, refunds, and low-stock products.</li>
+          <li>Do not share admin login details outside authorized staff.</li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>2. Admin Roles and Access</h2>
+      <table class="table">
+        <tr>
+          <th>Role</th>
+          <th>Use Case</th>
+          <th>Access Level</th>
+        </tr>
+        <tr>
+          <td><strong>Admin</strong></td>
+          <td>Owner or senior person controlling the full website.</td>
+          <td>Dashboard, orders, inventory, categories, coupons, customers, settings, staff access.</td>
+        </tr>
+        <tr>
+          <td><strong>Manager</strong></td>
+          <td>Restaurant operations manager.</td>
+          <td>Full operational access, including settings and staff role management.</td>
+        </tr>
+        <tr>
+          <td><strong>Staff</strong></td>
+          <td>Kitchen or order handling staff.</td>
+          <td>Orders only. Used for accepting, declining, preparing, dispatching, and delivery updates.</td>
+        </tr>
+      </table>
+      <p class="footer-note">Only trusted users should receive Admin or Manager access.</p>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section soft">
+      <h2>3. Admin Page Map</h2>
+      <div class="grid-3">
+        <div class="tile"><h3>Dashboard</h3><p>View sales, total orders, live orders, repeat customers, active products, unavailable items, low stock, and quick action buttons.</p></div>
+        <div class="tile"><h3>Orders</h3><p>Kitchen board for accepting, declining, preparing, packing, dispatching, printing bills, refund notes, and customer communication.</p></div>
+        <div class="tile"><h3>Inventory</h3><p>Add and edit products, pricing, stock, images, categories, spice level, variants, add-ons, and item availability.</p></div>
+        <div class="tile"><h3>Categories</h3><p>Create or update menu category names, visibility, sorting, category offers, and category images.</p></div>
+        <div class="tile"><h3>Coupons</h3><p>Create coupon codes, date limits, minimum order rules, fixed or percentage discounts, and customer eligibility.</p></div>
+        <div class="tile"><h3>Customers</h3><p>Review customer information, order count, loyalty points, VIP marking, notes, and customer contact details.</p></div>
+        <div class="tile"><h3>Settings</h3><p>Control store mode, delivery charges, GST, minimum order, WhatsApp alerts, prep time, order capacity, and homepage slider.</p></div>
+        <div class="tile"><h3>Staff Access</h3><p>Add or remove admin users, assign roles, activate or deactivate access, and protect owner-only operations.</p></div>
+        <div class="tile"><h3>Reset Orders</h3><p>Admin-only danger action on Orders page for post-launch cleanup. Use only when old/testing orders must be deleted.</p></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>4. Dashboard Guide</h2>
+      <p>The dashboard gives a quick overview of restaurant operations. It is best used at the beginning of the day and during peak order hours.</p>
+      <ul>
+        <li><strong>Today's sales:</strong> shows sales and net revenue for the current day.</li>
+        <li><strong>Orders:</strong> shows total orders and how many are currently live.</li>
+        <li><strong>Customers:</strong> shows customer activity and repeat customer count.</li>
+        <li><strong>Active products:</strong> shows how many menu products are available.</li>
+        <li><strong>Action queue:</strong> shows low-stock or urgent operational alerts.</li>
+        <li><strong>Product availability:</strong> quickly hide or show a product on the customer menu.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section soft">
+      <h2>5. Orders Page - Kitchen Board</h2>
+      <p>The Orders page is the most important live operations page. Keep this page open during business hours.</p>
+      <table class="table">
+        <tr>
+          <th>Status</th>
+          <th>Meaning</th>
+          <th>Team Action</th>
+        </tr>
+        <tr><td>New</td><td>Order placed and waiting for restaurant action.</td><td>Accept or decline quickly.</td></tr>
+        <tr><td>Payment pending</td><td>Online payment not completed or waiting confirmation.</td><td>Do not prepare until payment is confirmed unless instructed.</td></tr>
+        <tr><td>Accepted</td><td>Restaurant accepted the order.</td><td>Start preparing food.</td></tr>
+        <tr><td>Preparing</td><td>Kitchen is preparing the order.</td><td>Update when food is packed.</td></tr>
+        <tr><td>Prepared / Packed</td><td>Food is packed or ready.</td><td>Move to ready or dispatch.</td></tr>
+        <tr><td>Out for delivery</td><td>Order is with rider.</td><td>Add rider/location note if needed.</td></tr>
+        <tr><td>Delivered</td><td>Order is completed.</td><td>Mark delivered only after completion.</td></tr>
+        <tr><td>Cancelled</td><td>Order declined or cancelled.</td><td>Give a clear reason. Refund online payments if applicable.</td></tr>
+      </table>
+    </div>
+
+    <div class="grid-2">
+      <div class="section">
+        <h2>Incoming Orders</h2>
+        <ul>
+          <li>Use desktop alerts and order sound during working hours.</li>
+          <li>New orders are highlighted on the page.</li>
+          <li>Check payment summary before preparing food.</li>
+          <li>Use the status dropdown or quick action buttons to update progress.</li>
+        </ul>
+      </div>
+      <div class="section">
+        <h2>Order Tools</h2>
+        <ul>
+          <li><strong>Print bill:</strong> prints a thermal-style restaurant bill.</li>
+          <li><strong>Message:</strong> opens WhatsApp message to customer.</li>
+          <li><strong>ETA:</strong> adds custom expected time for customer tracking.</li>
+          <li><strong>Rider note:</strong> saves rider, area, or location note.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="section warning">
+      <h2>Reset Customer Orders</h2>
+      <p>The Orders page includes an admin-only reset button at the bottom. This deletes all order history, payments, order items, timelines, and reviews from the website while keeping customer accounts saved.</p>
+      <div class="callout warning">
+        Use this only before final launch or when test data must be removed. It requires a confirmation checkbox and typing <strong>RESET ORDERS</strong>. This cannot be undone from the website.
+      </div>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section">
+      <h2>6. Inventory and Products</h2>
+      <p>Use Inventory to manage all customer-facing dishes and add-ons.</p>
+      <ul>
+        <li>Add or edit product name, category, description, price, original price, GST rate, prep time, rating, bestseller flag, spice level, and availability.</li>
+        <li>Upload or set product image.</li>
+        <li>Control stock and reorder level.</li>
+        <li>Add variants such as regular, large, half, full, etc.</li>
+        <li>Add extra add-ons such as egg, chicken, paneer, extra rice, etc.</li>
+        <li>If a product is unavailable, mark it unavailable instead of deleting it.</li>
+      </ul>
+      <div class="callout">Recommended practice: update product availability before peak hours so customers do not order unavailable items.</div>
+    </div>
+
+    <div class="grid-2">
+      <div class="section soft">
+        <h2>7. Categories</h2>
+        <ul>
+          <li>Create and rename categories.</li>
+          <li>Set category visibility.</li>
+          <li>Control sort order.</li>
+          <li>Upload category image.</li>
+          <li>Add category offer text for menu display.</li>
+        </ul>
+      </div>
+      <div class="section soft">
+        <h2>8. Coupons</h2>
+        <ul>
+          <li>Create coupon code and label.</li>
+          <li>Choose fixed amount or percentage discount.</li>
+          <li>Set minimum order value and maximum discount.</li>
+          <li>Set start and end dates.</li>
+          <li>Use VIP or loyalty points eligibility where required.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Coupon Handling Rules</h2>
+      <table class="table">
+        <tr><th>Do</th><th>Avoid</th></tr>
+        <tr>
+          <td>Use clear coupon names, expiry dates, and minimum order rules.</td>
+          <td>Do not keep expired campaigns active.</td>
+        </tr>
+        <tr>
+          <td>Test each coupon from customer cart before advertising.</td>
+          <td>Do not create unlimited high-discount coupons without owner approval.</td>
+        </tr>
+      </table>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section">
+      <h2>9. Customers Page</h2>
+      <p>The Customers page helps the owner understand customer history and loyalty.</p>
+      <ul>
+        <li>View customer name, mobile, email, order count, lifetime value, and loyalty tier.</li>
+        <li>Mark important customers as VIP where required.</li>
+        <li>Use customer details for support, order follow-up, and WhatsApp communication.</li>
+        <li>Do not expose customer mobile numbers or emails outside business use.</li>
+      </ul>
+    </div>
+
+    <div class="section soft">
+      <h2>10. Settings Page</h2>
+      <div class="grid-2">
+        <div>
+          <h3>Business Settings</h3>
+          <ul>
+            <li>GST rate</li>
+            <li>Packaging fee</li>
+            <li>Delivery fee and free-delivery threshold</li>
+            <li>Minimum order amount</li>
+            <li>Serviceable PIN codes and delivery radius</li>
+            <li>Kitchen address and coordinates</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Operations Settings</h3>
+          <ul>
+            <li>Store mode: Open, Busy, Paused, Closed</li>
+            <li>Auto-accept order option</li>
+            <li>Decline reason requirement</li>
+            <li>Max orders per slot</li>
+            <li>Default preparation time</li>
+            <li>New order sound and WhatsApp order alerts</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">During rush hours, use Busy mode instead of closing the website. Use Paused only when the kitchen must temporarily stop receiving orders.</div>
+    </div>
+
+    <div class="section">
+      <h2>11. Staff Access Page</h2>
+      <ul>
+        <li>Add staff by name, mobile number, and role.</li>
+        <li>Assign Admin, Manager, or Staff carefully.</li>
+        <li>Deactivate access immediately when a staff member leaves.</li>
+        <li>Review access regularly to keep the admin panel secure.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section soft">
+      <h2>12. Customer Website Features</h2>
+      <div class="grid-3">
+        <div class="tile"><h3>Home and Menu</h3><p>Customers browse categories, search dishes, use filters, see offers, and add items to cart.</p></div>
+        <div class="tile"><h3>Cart</h3><p>Cart calculates price, GST, delivery, packaging, coupon discount, and free delivery progress.</p></div>
+        <div class="tile"><h3>Checkout</h3><p>Customers enter receiver details, address, note, and choose COD or online payment when enabled.</p></div>
+        <div class="tile"><h3>Order Tracking</h3><p>Customers see live order status from placed to delivered or cancelled.</p></div>
+        <div class="tile"><h3>Account and Orders</h3><p>Customers can log in, view profile, saved addresses, orders, loyalty, and reorder.</p></div>
+        <div class="tile"><h3>Policies</h3><p>Privacy, terms, refund, delivery, and data deletion pages are included.</p></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>13. Launch and Maintenance Checklist</h2>
+      <table class="table">
+        <tr><th>Item</th><th>Owner Action</th></tr>
+        <tr><td>Environment variables</td><td>Keep all keys in hosting dashboard only. Do not share publicly.</td></tr>
+        <tr><td>Database</td><td>Keep Supabase/PostgreSQL access safe and back up important data.</td></tr>
+        <tr><td>Payment</td><td>Verify Razorpay live mode before public online payment launch.</td></tr>
+        <tr><td>WhatsApp OTP</td><td>Keep Meta WhatsApp template approved and access token valid.</td></tr>
+        <tr><td>Domain</td><td>Connect wahthali.in and www.wahthali.in after GoDaddy issue is resolved.</td></tr>
+        <tr><td>Health check</td><td>Open /api/health after deployment. It should show ok true.</td></tr>
+      </table>
+    </div>
+
+    <div class="section warning">
+      <h2>Security Notes</h2>
+      <ul>
+        <li>Never send passwords, tokens, or database URLs in WhatsApp groups.</li>
+        <li>Use separate access for each admin person.</li>
+        <li>Remove staff access when not needed.</li>
+        <li>Do not edit source code or environment files unless handled by the developer.</li>
+      </ul>
+    </div>
+
+    <div class="signature-grid">
+      <div class="signature">Prepared by / Developer</div>
+      <div class="signature">Accepted by / Wah Thali Owner</div>
+    </div>
+  </section>
+</body>
+</html>

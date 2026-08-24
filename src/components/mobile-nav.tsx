@@ -47,7 +47,7 @@ export function MobileNav() {
             <Link
               key={href}
               href={resolvedHref}
-              className={`grid min-w-0 place-items-center gap-1.5 text-[10px] font-black ${active ? "text-red" : "text-muted"}`}
+              className={`grid min-w-0 place-items-center gap-1.5 text-[10px] font-semibold ${active ? "text-red" : "text-muted"}`}
               aria-current={active ? "page" : undefined}
             >
               <span

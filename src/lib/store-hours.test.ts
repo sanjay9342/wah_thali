@@ -6,6 +6,12 @@ const baseSettings: RestaurantSettings = {
   gstRate: 0.05,
   packagingFee: 0,
   deliveryFee: 40,
+  deliveryFeeMode: "FLAT",
+  deliveryFeePercent: 5,
+  deliveryDistanceSlabs: [
+    { upToKm: 1, fee: 20 },
+    { upToKm: 2, fee: 30 },
+  ],
   freeDeliveryThreshold: 499,
   minimumOrder: 149,
   serviceablePins: ["700001"],
@@ -34,6 +40,7 @@ const baseSettings: RestaurantSettings = {
   newOrderSoundEnabled: true,
   newOrderSound: "classic-bell",
   whatsappOrderAlerts: true,
+  ownerWhatsAppOrderAlerts: true,
   adminDailyDigestTime: "21:00",
 };
 

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
-import { notifyOrderStatus } from "@/lib/customer-messaging";
+import { requireAdminPermission } from "@/lib/admin-api-auth";
+import { notifyOrderStatus, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { canTransitionOrder } from "@/lib/state-machines";
 
@@ -42,6 +43,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ or
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
+  const access = await requireAdminPermission(request, "orders");
+  if (!access.ok) return access.response;
 
   const { orderNumber } = await params;
   const parsed = updateOrderSchema.safeParse(await request.json());
@@ -89,6 +92,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ or
       include: {
         customer: { select: { id: true, name: true, mobile: true, email: true } },
         items: true,
+        payments: true,
         timeline: { orderBy: { createdAt: "asc" } },
       },
     });
@@ -100,6 +104,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ or
     entityId: order.id,
     summary: `${order.orderNumber} moved to ${order.status}`,
   });
+
+  if (settings.ownerWhatsAppOrderAlerts && parsed.data.status === "CANCELLED") {
+    await notifyOwnerOrderAlert(order, settings.whatsappNumber, "CANCELLED", parsed.data.note).catch((error) => {
+      console.error("Owner cancelled order WhatsApp alert failed.", error);
+    });
+  }
 
   if (settings.whatsappOrderAlerts) {
     await notifyOrderStatus(order, parsed.data.status, parsed.data.note).catch((error) => {

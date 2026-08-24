@@ -2,13 +2,15 @@ import { BadgeIndianRupee, Gift, Plus, Star, UserRoundCheck } from "lucide-react
 import Link from "next/link";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { AdminCustomersClient } from "@/components/admin-customers-client";
-import { getAdminCustomersFromDb, getBusinessSettingsFromDb } from "@/lib/db";
+import { requireAdminPagePermission } from "@/lib/admin-page-auth";
+import { getAdminCustomersFromDb, getBusinessSettingsFromDb, getCustomerTagsFromDb } from "@/lib/db";
 import { formatRupees } from "@/lib/pricing";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminCustomersPage() {
-  const [customers, settings] = await Promise.all([getAdminCustomersFromDb(), getBusinessSettingsFromDb()]);
+  await requireAdminPagePermission("customers", "/admin/customers");
+  const [customers, settings, tags] = await Promise.all([getAdminCustomersFromDb(), getBusinessSettingsFromDb(), getCustomerTagsFromDb()]);
   const activeCustomers = customers.filter((customer) => customer.orders > 0);
   const vipCustomers = customers.filter((customer) => customer.isVip);
   const totalPoints = customers.reduce((total, customer) => total + customer.points, 0);
@@ -25,9 +27,9 @@ export default async function AdminCustomersPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href="/admin" className="inline-flex h-11 items-center rounded-lg border border-border px-4 font-black">Dashboard</Link>
-            <Link href="/login" className="inline-flex h-11 items-center gap-2 rounded-lg bg-maroon px-4 font-black text-white">
+            <a href="#add-customer" className="inline-flex h-11 items-center gap-2 rounded-lg bg-maroon px-4 font-black text-white">
               <Plus size={18} /> Add customer
-            </Link>
+            </a>
           </div>
         </div>
         <AdminSectionNav />
@@ -49,12 +51,9 @@ export default async function AdminCustomersPage() {
         </section>
 
         {customers.length ? (
-          <AdminCustomersClient customers={customers} supportPhone={settings.supportPhone} />
+          <AdminCustomersClient customers={customers} supportPhone={settings.supportPhone} initialTags={tags} />
         ) : (
-          <div className="surface mt-6 rounded-2xl p-8 text-center">
-            <h2 className="text-xl font-black text-maroon">No live customers yet</h2>
-            <p className="mt-2 text-sm font-semibold text-muted">Customers will appear after signup, saved addresses, or checkout orders.</p>
-          </div>
+          <AdminCustomersClient customers={customers} supportPhone={settings.supportPhone} initialTags={tags} />
         )}
       </div>
     </main>

@@ -67,11 +67,19 @@ export function OrdersClient() {
 
     void loadProfile();
     const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       void loadProfile(false);
-    }, 5000);
+    }, 15000);
+    function refreshWhenVisible() {
+      if (document.visibilityState === "visible") void loadProfile(false);
+    }
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenVisible);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshWhenVisible);
     };
   }, [session]);
 
@@ -86,9 +94,9 @@ export function OrdersClient() {
 
   if (!session) {
     return (
-      <main className="mx-auto min-h-screen w-full max-w-[430px] bg-[#f6f7fb] px-5 pb-32 pt-8 text-charcoal sm:max-w-5xl">
+      <main className="mx-auto min-h-screen w-full max-w-[430px] bg-[#fbf8f4] px-5 pb-32 pt-8 text-charcoal sm:max-w-5xl">
         <section className="mt-20 rounded-[28px] bg-white p-6 text-center shadow-sm ring-1 ring-border">
-          <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-[#fff4f5] text-maroon">
+          <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-cream text-maroon">
             <PackageCheck size={35} />
           </div>
           <h1 className="mt-5 text-[26px] font-black text-charcoal">Login to view orders</h1>
@@ -104,11 +112,11 @@ export function OrdersClient() {
   }
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-[430px] bg-white px-5 pb-40 pt-5 text-charcoal sm:max-w-5xl sm:px-6 lg:px-8">
-      <div className="mb-5 rounded-[24px] bg-maroon p-6 text-white shadow-[0_16px_36px_rgba(141,0,33,0.16)]">
-        <p className="text-xs font-black uppercase tracking-[0.22em] text-white/75">Wah Thali</p>
-        <h1 className="mt-2 text-4xl font-black leading-tight">My Orders</h1>
-        <p className="mt-2 text-sm font-semibold text-white/80">{profile?.name || session.name}, track your live orders here.</p>
+    <main className="mx-auto min-h-screen w-full max-w-[430px] bg-[#fbf8f4] px-5 pb-40 pt-5 text-charcoal sm:max-w-5xl sm:px-6 lg:px-8">
+      <div className="mb-5 rounded-[24px] border border-[#eadfd5] bg-[#f8f1ea] p-6 text-charcoal shadow-[0_16px_36px_rgba(34,31,32,0.055)]">
+        <p className="text-xs font-black uppercase tracking-[0.22em] text-maroon/70">Wah Thali</p>
+        <h1 className="mt-2 text-4xl font-black leading-tight text-charcoal">My Orders</h1>
+        <p className="mt-2 text-sm font-semibold text-muted">{profile?.name || session.name}, track your live orders here.</p>
       </div>
 
       <label className="flex h-14 items-center gap-4 rounded-2xl bg-white px-4 shadow-[0_12px_34px_rgba(34,31,32,0.06)] ring-1 ring-border">
@@ -121,7 +129,7 @@ export function OrdersClient() {
         />
       </label>
 
-      {message ? <p className="mt-4 rounded-2xl bg-[#fff4f5] p-3 text-center text-xs font-black text-muted">{message}</p> : null}
+      {message ? <p className="mt-4 rounded-2xl bg-cream p-3 text-center text-xs font-black text-muted">{message}</p> : null}
 
       <section className="mt-6 grid gap-5 lg:grid-cols-2">
         {loading ? (
@@ -129,7 +137,7 @@ export function OrdersClient() {
         ) : orders.length ? orders.map((order) => (
           <article key={order.orderNumber} className="overflow-hidden rounded-[22px] bg-white shadow-[0_12px_34px_rgba(34,31,32,0.06)] ring-1 ring-border">
             <div className="grid grid-cols-[54px_1fr_auto] gap-3 p-4">
-              <div className="grid h-[54px] w-[54px] place-items-center rounded-xl bg-[#fff4f5] text-maroon">
+              <div className="grid h-[54px] w-[54px] place-items-center rounded-xl bg-cream text-maroon">
                 <PackageCheck size={25} />
               </div>
               <div className="min-w-0">
@@ -148,7 +156,7 @@ export function OrdersClient() {
             <div className="border-t border-border px-4 py-4">
               <div className="grid gap-2">
                 {order.items.slice(0, 3).map((item) => (
-                  <div key={item.id} className="flex items-center justify-between rounded-xl bg-[#fff8f9] px-3 py-2 text-sm">
+                  <div key={item.id} className="flex items-center justify-between rounded-xl bg-[#fbf7f1] px-3 py-2 text-sm">
                     <span className="font-bold text-charcoal">{item.quantity} x {item.name}</span>
                     <span className="font-black text-maroon">{formatRupees(item.price * item.quantity)}</span>
                   </div>
@@ -180,7 +188,7 @@ function formatOrderDate(value: string) {
 }
 
 function getOrderStatusTone(status: string) {
-  if (status === "NEW") return "bg-[#fff4f5] text-maroon";
+  if (status === "NEW") return "bg-cream text-maroon";
   if (status === "CONFIRMED") return "bg-[#e9efff] text-[#1e3a8a]";
   if (status === "PREPARING") return "bg-[#fff4df] text-[#8a4b00]";
   if (status === "PACKED" || status === "READY_FOR_PICKUP") return "bg-[#dffaf4] text-[#115e59]";

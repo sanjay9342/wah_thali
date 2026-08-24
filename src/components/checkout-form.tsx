@@ -142,12 +142,12 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
   }
 
   async function cancelUnpaidOrder(orderNumber: string) {
-    await fetch(`/api/orders/${orderNumber}`, {
-      method: "PATCH",
+    await fetch(`/api/orders/${orderNumber}/customer-cancel`, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        status: "CANCELLED",
         note: "Online payment was not completed. Checkout attempt cancelled before sending to kitchen.",
+        notifyCustomer: false,
       }),
     }).catch(() => undefined);
   }

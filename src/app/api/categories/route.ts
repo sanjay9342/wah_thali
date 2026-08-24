@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
+import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
@@ -12,6 +13,13 @@ const categorySchema = z.object({
   sortOrder: z.coerce.number().int().default(0),
 });
 
+const reorderSchema = z.object({
+  order: z.array(z.object({
+    id: z.string().min(1),
+    sortOrder: z.coerce.number().int().min(1),
+  })).min(1),
+});
+
 export async function GET() {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ categories: [], configured: false });
@@ -19,7 +27,7 @@ export async function GET() {
 
   const [categories, imageSetting, offerSetting] = await Promise.all([
     prisma.category.findMany({
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: {
         _count: { select: { products: true } },
         products: {
@@ -48,6 +56,8 @@ export async function POST(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
+  const access = await requireAdminPermission(request, "categories");
+  if (!access.ok) return access.response;
 
   const parsed = categorySchema.safeParse(await request.json());
   if (!parsed.success) {
@@ -100,6 +110,35 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ category }, { status: 201 });
+}
+
+export async function PATCH(request: Request) {
+  if (!isDatabaseConfigured()) {
+    return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
+  }
+  const access = await requireAdminPermission(request, "categories");
+  if (!access.ok) return access.response;
+
+  const parsed = reorderSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid category order", issues: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const updates = parsed.data.order.map((item, index) =>
+    prisma.category.update({
+      where: { id: item.id },
+      data: { sortOrder: index + 1 },
+    }),
+  );
+  await prisma.$transaction(updates);
+
+  await logActivity({
+    type: "CATEGORY_REORDERED",
+    entity: "Category",
+    summary: `Reordered ${updates.length} categories`,
+  });
+
+  return NextResponse.json({ ok: true });
 }
 
 function getImageMap(value: unknown): Record<string, string> {

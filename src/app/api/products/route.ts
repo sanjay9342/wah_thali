@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { getAdminProductsFromDb, logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
@@ -10,6 +12,9 @@ const imagePathSchema = z.string().trim().refine((value) => value.startsWith("/"
 const productSchema = z.object({
   category: z.string().min(1),
   name: z.string().min(1),
+  displayName: nullableTrimmedText(120),
+  kitchenName: nullableTrimmedText(120),
+  reportCode: nullableReportCode(),
   slug: z.string().min(1).optional(),
   description: z.string().min(1),
   price: z.coerce.number().int().nonnegative(),
@@ -45,6 +50,8 @@ export async function POST(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
+  const access = await requireAdminPermission(request, "inventory");
+  if (!access.ok) return access.response;
 
   const parsed = productSchema.safeParse(await request.json());
   if (!parsed.success) {
@@ -54,6 +61,15 @@ export async function POST(request: Request) {
   const { category, image, prepTimeMinutes, stock, reorderAt, margin, addons, variants, ...product } = parsed.data;
   const slug = product.slug ?? slugify(product.name);
   const variantRows = variants.length ? variants : [{ name: "Regular", price: 0, available: true }];
+  if (product.reportCode) {
+    const duplicate = await prisma.product.findFirst({
+      where: { reportCode: product.reportCode },
+      select: { id: true },
+    });
+    if (duplicate) {
+      return NextResponse.json({ error: "This report shortcut code is already used by another product." }, { status: 409 });
+    }
+  }
   const saved = await prisma.product.create({
     data: {
       ...product,
@@ -77,7 +93,16 @@ export async function POST(request: Request) {
       addons: true,
       inventory: true,
     },
+  }).catch((error) => {
+    if (isUniqueReportCodeError(error)) {
+      return null;
+    }
+    throw error;
   });
+
+  if (!saved) {
+    return NextResponse.json({ error: "This report shortcut code is already used by another product." }, { status: 409 });
+  }
 
   await logActivity({
     type: "PRODUCT_CREATED",
@@ -96,4 +121,25 @@ function slugify(value: string) {
     .replace(/['"]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function nullableTrimmedText(max: number) {
+  return z.preprocess(
+    (value) => typeof value === "string" ? value.trim() : value,
+    z.string().max(max).nullable().optional(),
+  ).transform((value) => value || null);
+}
+
+function nullableReportCode() {
+  return z.preprocess(
+    (value) => typeof value === "string" ? value.trim().toUpperCase() : value,
+    z.string().max(24).regex(/^[A-Z0-9_-]*$/, "Shortcut code can use letters, numbers, hyphen, or underscore.").nullable().optional(),
+  ).transform((value) => value || null);
+}
+
+function isUniqueReportCodeError(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002" &&
+    Array.isArray(error.meta?.target) &&
+    error.meta.target.includes("reportCode");
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { logActivity } from "@/lib/db";
 import { getSupabaseAdminClient, isSupabaseConfigured } from "@/lib/supabase";
 
@@ -9,6 +10,9 @@ const uploadSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const access = await requireAdminPermission(request, "settings");
+  if (!access.ok) return access.response;
+
   if (!isSupabaseConfigured()) {
     return NextResponse.json({ error: "Supabase storage credentials are not configured." }, { status: 503 });
   }

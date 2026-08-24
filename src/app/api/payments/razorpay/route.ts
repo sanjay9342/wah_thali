@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
-import { notifyOrderStatus } from "@/lib/customer-messaging";
+import { notifyOrderStatus, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import type { OrderStatus } from "@/lib/types";
 
@@ -143,9 +143,16 @@ export async function POST(request: NextRequest) {
       include: {
         customer: { select: { id: true, name: true, mobile: true, email: true } },
         items: true,
+        payments: true,
         timeline: { orderBy: { createdAt: "asc" } },
       },
     });
+    if (settings.ownerWhatsAppOrderAlerts && notifiedOrder && notifiedStatus !== "CANCELLED") {
+      await notifyOwnerOrderAlert(notifiedOrder, settings.whatsappNumber, "NEW_ORDER", notificationNote).catch((error) => {
+        console.error("Owner paid order WhatsApp alert failed.", error);
+      });
+    }
+
     if (settings.whatsappOrderAlerts && notifiedOrder) {
       await notifyOrderStatus(notifiedOrder, notifiedStatus, notificationNote).catch((error) => {
         console.error("Payment status WhatsApp/customer notification failed.", error);

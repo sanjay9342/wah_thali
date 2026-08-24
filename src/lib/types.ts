@@ -8,6 +8,9 @@ export type Product = {
   id: string;
   slug: string;
   name: string;
+  displayName?: string;
+  kitchenName?: string;
+  reportCode?: string;
   category: string;
   description: string;
   image: string;
@@ -64,6 +67,7 @@ export type AdminOrder = {
   amount: number;
   itemSummary: string;
   items: { productId?: string; name: string; quantity: number; price: number }[];
+  payments: { provider: string; status: string; amount: number; providerPaymentId?: string | null }[];
   paymentSummary: string;
   createdAt: string;
   timeline: { toStatus: string; note?: string | null; createdAt: string }[];
@@ -81,12 +85,23 @@ export type AdminCustomer = {
   name: string;
   mobile: string;
   email?: string;
+  birthday?: string;
+  anniversary?: string;
+  tags: string[];
   isVip: boolean;
   orders: number;
   ltv: number;
   points: number;
   tier: string;
   lastOrder?: string;
+  orderHistory?: {
+    orderNumber: string;
+    status: OrderStatus;
+    amount: number;
+    createdAt: string;
+    itemSummary: string;
+    paymentSummary: string;
+  }[];
 };
 
 export type CategoryImageMap = Record<string, string>;
@@ -107,8 +122,9 @@ export type Coupon = {
   value: number;
   minOrder: number;
   maxDiscount?: number;
-  audience?: "ALL" | "VIP" | "POINTS";
+  audience?: "ALL" | "VIP" | "POINTS" | "TAGS";
   minPoints?: number;
+  tagNames?: string[];
   startsAt?: string;
   endsAt?: string;
 };
@@ -117,6 +133,9 @@ export type BusinessSettings = {
   gstRate: number;
   packagingFee: number;
   deliveryFee: number;
+  deliveryFeeMode: "FLAT" | "PERCENT" | "DISTANCE";
+  deliveryFeePercent: number;
+  deliveryDistanceSlabs: { upToKm: number; fee: number }[];
   freeDeliveryThreshold: number;
   minimumOrder: number;
   serviceablePins: string[];
@@ -150,6 +169,7 @@ export type AdvancedSettings = {
   newOrderSoundEnabled: boolean;
   newOrderSound: NewOrderSound;
   whatsappOrderAlerts: boolean;
+  ownerWhatsAppOrderAlerts: boolean;
   adminDailyDigestTime: string;
 };
 

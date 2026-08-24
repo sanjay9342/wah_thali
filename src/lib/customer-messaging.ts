@@ -24,6 +24,10 @@ type NotifyCustomerInput = {
   kind: MessageKind;
   templateName?: string;
   templateParameters?: string[];
+  templateMessages?: Array<{
+    name: string;
+    parameters?: string[];
+  }>;
   metadata?: Record<string, unknown>;
 };
 
@@ -38,13 +42,16 @@ type OrderForMessage = {
   createdAt?: Date | string;
   customer: { name: string; mobile: string; email?: string | null };
   items: Array<{ name: string; quantity: number; price: number }>;
+  payments?: Array<{ provider: string; status: string; amount?: number }>;
   timeline?: Array<{ note?: string | null; toStatus?: string; createdAt?: Date | string }>;
 };
 
 type OrderTemplateConfig = {
   name: string;
-  parameterSet: "default" | "placed" | "delivered" | "declined";
+  parameterSet: "default" | "placed" | "delivered" | "declined" | "cancelled";
 };
+
+type OwnerOrderAlertType = "NEW_ORDER" | "CANCELLED";
 
 const orderStatusCopy: Record<OrderStatus, { label: string; body: string }> = {
   PENDING_PAYMENT: { label: "Payment pending", body: "Your payment is pending. We will start once payment is confirmed." },
@@ -58,7 +65,16 @@ const orderStatusCopy: Record<OrderStatus, { label: string; body: string }> = {
   CANCELLED: { label: "Declined", body: "Your order was declined by the restaurant." },
 };
 
-const whatsAppOrderNotificationStatuses = new Set<OrderStatus>(["NEW", "DELIVERED", "CANCELLED"]);
+const whatsAppOrderNotificationStatuses = new Set<OrderStatus>([
+  "NEW",
+  "CONFIRMED",
+  "PREPARING",
+  "PACKED",
+  "READY_FOR_PICKUP",
+  "OUT_FOR_DELIVERY",
+  "DELIVERED",
+  "CANCELLED",
+]);
 
 function truthyEnv(key: string) {
   return ["1", "true", "yes", "on"].includes(readServerEnv(key).toLowerCase());
@@ -68,46 +84,68 @@ function getTemplateName(specificKey: string, fallbackKey: string, aliases: stri
   return readServerEnv(specificKey, aliases) || readServerEnv(fallbackKey);
 }
 
-function getOrderTemplateConfig(status: OrderStatus): OrderTemplateConfig {
+function uniqueTemplateConfigs(configs: OrderTemplateConfig[]) {
+  const seen = new Set<string>();
+  return configs.filter((config) => {
+    if (!config.name || seen.has(config.name)) return false;
+    seen.add(config.name);
+    return true;
+  });
+}
+
+function getOrderTemplateConfigs(status: OrderStatus): OrderTemplateConfig[] {
   if (status === "NEW") {
-    return {
-      name: getTemplateName("META_WHATSAPP_ORDER_NEW_TEMPLATE_NAME", "META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"),
-      parameterSet: "placed",
-    };
+    return uniqueTemplateConfigs([
+      {
+        name: readServerEnv("META_WHATSAPP_ORDER_NEW_TEMPLATE_NAME"),
+        parameterSet: "placed",
+      },
+      {
+        name: readServerEnv("META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"),
+        parameterSet: "placed",
+      },
+    ]);
   }
 
   if (status === "DELIVERED") {
-    return {
-      name: getTemplateName("META_WHATSAPP_ORDER_DELIVERED_TEMPLATE_NAME", "META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"),
-      parameterSet: "delivered",
-    };
+    return uniqueTemplateConfigs([
+      {
+        name: readServerEnv("META_WHATSAPP_ORDER_DELIVERED_TEMPLATE_NAME"),
+        parameterSet: "delivered",
+      },
+      {
+        name: readServerEnv("META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"),
+        parameterSet: "default",
+      },
+    ]);
   }
 
   if (status === "CANCELLED") {
-    const declinedTemplateName = readServerEnv("META_WHATSAPP_ORDER_DECLINED_TEMPLATE_NAME");
-    if (declinedTemplateName) {
-      return {
-        name: declinedTemplateName,
+    return uniqueTemplateConfigs([
+      {
+        name: readServerEnv("META_WHATSAPP_ORDER_DECLINED_TEMPLATE_NAME"),
         parameterSet: "declined",
-      };
-    }
+      },
+      {
+        name: readServerEnv("META_WHATSAPP_ORDER_CANCELLED_TEMPLATE_NAME"),
+        parameterSet: "cancelled",
+      },
+      {
+        name: readServerEnv("META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"),
+        parameterSet: "default",
+      },
+    ]);
+  }
 
-    return {
+  return uniqueTemplateConfigs([
+    {
       name: getTemplateName(
-        "META_WHATSAPP_ORDER_CANCELLED_TEMPLATE_NAME",
+        `META_WHATSAPP_ORDER_${status}_TEMPLATE_NAME`,
         "META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME",
       ),
       parameterSet: "default",
-    };
-  }
-
-  return {
-    name: getTemplateName(
-      `META_WHATSAPP_ORDER_${status}_TEMPLATE_NAME`,
-      "META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME",
-    ),
-    parameterSet: "default",
-  };
+    },
+  ]);
 }
 
 function getSiteUrl() {
@@ -136,6 +174,13 @@ function getOrderBillText(order: OrderForMessage) {
     `Total bill: ${formatRupees(order.grandTotal)}`,
   ].filter(Boolean);
   return lines.join("\n");
+}
+
+function hasPaidOnlinePayment(order: OrderForMessage) {
+  return order.payments?.some((payment) =>
+    payment.provider === "RAZORPAY" &&
+    (payment.status === "PAID" || payment.status === "AUTHORIZED" || payment.status === "REFUND_PENDING")
+  ) ?? false;
 }
 
 function getSimpleOrderIntro(status: OrderStatus, customerName: string, orderNumber: string, fallbackBody: string) {
@@ -182,6 +227,16 @@ function getOrderTemplateParameters(
     ];
   }
 
+  if (config.parameterSet === "cancelled") {
+    return [
+      order.customer.name,
+      order.orderNumber,
+      getOrderItemsText(order),
+      formatRupees(order.grandTotal),
+      trackingUrl,
+    ];
+  }
+
   return [
     order.customer.name,
     order.orderNumber,
@@ -193,19 +248,68 @@ function getOrderTemplateParameters(
   ];
 }
 
+function getOwnerOrderTemplateMessages(alertType: OwnerOrderAlertType, order: OrderForMessage, note: string, trackingUrl: string) {
+  const alertLabel = alertType === "NEW_ORDER" ? "New order" : "Order cancelled";
+  const customerText = `${order.customer.name} - ${order.customer.mobile}`;
+  const detailText = [
+    `Customer: ${customerText}`,
+    note ? `Note: ${note}` : "",
+  ].filter(Boolean).join(" | ");
+  const parameters = [
+    "Wah Thali",
+    order.orderNumber,
+    alertLabel,
+    `${customerText}. Items: ${getOrderItemsText(order)}`,
+    formatRupees(order.grandTotal),
+    note || detailText || "-",
+    trackingUrl,
+  ];
+  const ownerTemplateKey = alertType === "NEW_ORDER"
+    ? "META_WHATSAPP_OWNER_ORDER_NEW_TEMPLATE_NAME"
+    : "META_WHATSAPP_OWNER_ORDER_CANCELLED_TEMPLATE_NAME";
+
+  return uniqueTemplateConfigs([
+    { name: readServerEnv(ownerTemplateKey), parameterSet: "default" },
+    { name: readServerEnv("META_WHATSAPP_OWNER_ORDER_TEMPLATE_NAME"), parameterSet: "default" },
+    { name: readServerEnv("META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"), parameterSet: "default" },
+  ]).map((template) => ({
+    name: template.name,
+    parameters,
+  }));
+}
+
 function getCouponBenefit(coupon: Coupon) {
   if (coupon.type === "FIXED") return formatRupees(coupon.value);
   return coupon.maxDiscount ? `${coupon.value}% up to ${formatRupees(coupon.maxDiscount)}` : `${coupon.value}%`;
 }
 
 async function sendWhatsAppNotification(input: NotifyCustomerInput): Promise<MessageResult> {
-  if (input.templateName) {
-    const result = await sendWhatsAppTemplate({
-      mobile: input.mobile,
-      templateName: input.templateName,
-      parameters: input.templateParameters,
-    });
-    return { ...result, channel: "template" };
+  const templateMessages = input.templateMessages?.length
+    ? input.templateMessages
+    : input.templateName
+      ? [{ name: input.templateName, parameters: input.templateParameters }]
+      : [];
+
+  if (templateMessages.length) {
+    let lastFailure: MessageResult | undefined;
+    for (const template of templateMessages) {
+      const result = await sendWhatsAppTemplate({
+        mobile: input.mobile,
+        templateName: template.name,
+        parameters: template.parameters,
+      });
+      const messageResult = { ...result, channel: "template" as const };
+      if (messageResult.ok) return messageResult;
+      lastFailure = messageResult;
+    }
+
+    if (!truthyEnv("META_WHATSAPP_FREEFORM_NOTIFICATIONS")) {
+      return lastFailure ?? {
+        ok: false,
+        channel: "template",
+        message: "No usable WhatsApp template was configured.",
+      };
+    }
   }
 
   if (!truthyEnv("META_WHATSAPP_FREEFORM_NOTIFICATIONS")) {
@@ -266,22 +370,28 @@ export async function notifyOrderStatus(order: OrderForMessage, status: OrderSta
   const bill = getOrderBillText(order);
   const trackingUrl = getOrderTrackingUrl(order.orderNumber);
   const title = `Wah Thali ${copy.label}: ${order.orderNumber}`;
+  const refundText = status === "CANCELLED" && hasPaidOnlinePayment(order)
+    ? "Refund: Your paid amount is eligible for refund to the original payment method after admin approval. Bank/provider settlement usually takes 5 to 10 business days."
+    : "";
   const body = [
     getSimpleOrderIntro(status, order.customer.name, order.orderNumber, copy.body),
     reason,
     status === "NEW" || status === "DELIVERED" || status === "CANCELLED" ? `Items: ${getOrderItemsText(order)}` : bill,
     status === "NEW" || status === "DELIVERED" || status === "CANCELLED" ? `Total: ${formatRupees(order.grandTotal)}` : "",
+    refundText,
     `Track: ${trackingUrl}`,
   ].filter(Boolean).join("\n\n");
-  const templateConfig = getOrderTemplateConfig(status);
+  const templateConfigs = getOrderTemplateConfigs(status);
 
   return notifyCustomer({
     mobile: order.customer.mobile,
     title,
     body,
     kind: "order",
-    templateName: templateConfig.name,
-    templateParameters: getOrderTemplateParameters(templateConfig, order, copy, latestNote, trackingUrl),
+    templateMessages: templateConfigs.map((templateConfig) => ({
+      name: templateConfig.name,
+      parameters: getOrderTemplateParameters(templateConfig, order, copy, latestNote, trackingUrl),
+    })),
     metadata: {
       entityId: order.id,
       orderNumber: order.orderNumber,
@@ -322,15 +432,65 @@ export async function notifyOrderCustomerCancelled(order: OrderForMessage) {
   });
 }
 
+export async function notifyOwnerOrderAlert(order: OrderForMessage, ownerMobile: string, alertType: OwnerOrderAlertType, note?: string) {
+  const mobile = ownerMobile.trim();
+  if (!mobile) {
+    return {
+      ok: true,
+      channel: "skipped" as const,
+      message: "Owner WhatsApp alert skipped because no owner WhatsApp number is configured.",
+    };
+  }
+
+  const latestNote = getLatestNote(order, note);
+  const trackingUrl = getOrderTrackingUrl(order.orderNumber);
+  const alertLabel = alertType === "NEW_ORDER" ? "New order" : "Order cancelled";
+  const body = [
+    `${alertLabel}: ${order.orderNumber}`,
+    `Customer: ${order.customer.name} - ${order.customer.mobile}`,
+    `Items: ${getOrderItemsText(order)}`,
+    `Total: ${formatRupees(order.grandTotal)}`,
+    latestNote ? `Note: ${latestNote}` : "",
+    `Track: ${trackingUrl}`,
+  ].filter(Boolean).join("\n");
+
+  return notifyCustomer({
+    mobile,
+    title: `Wah Thali owner alert: ${alertLabel}`,
+    body,
+    kind: "order",
+    templateMessages: getOwnerOrderTemplateMessages(alertType, order, latestNote, trackingUrl),
+    metadata: {
+      entityId: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      alertAudience: "owner",
+      alertType,
+    },
+  });
+}
+
 function customerMatchesCoupon(customer: {
   tags: Array<{ tag?: { name?: string } }>;
   orders: Array<{ items: Array<{ quantity: number }> }>;
 }, coupon: Coupon) {
   const audience = coupon.audience ?? "ALL";
   const orderCount = customer.orders.length;
+  const tagNames = customer.tags.map((assignment) => assignment.tag?.name).filter((name): name is string => Boolean(name));
   if (audience === "VIP") return customer.tags.some((assignment) => assignment.tag?.name === "VIP");
-  if (audience === "POINTS") return orderCount >= (coupon.minPoints ?? 0);
+  if (audience === "POINTS") return orderCount >= getCouponOrderCountRequirement(coupon);
+  if (audience === "TAGS") return hasMatchingCouponTag(coupon.tagNames, tagNames);
   return true;
+}
+
+function getCouponOrderCountRequirement(coupon: Pick<Coupon, "minPoints">) {
+  return Math.max(1, Number(coupon.minPoints ?? 1));
+}
+
+function hasMatchingCouponTag(couponTags: string[] | undefined, customerTags: string[]) {
+  const required = new Set((couponTags ?? []).map((tag) => tag.trim()).filter(Boolean));
+  if (!required.size) return false;
+  return customerTags.some((tag) => required.has(tag));
 }
 
 export async function notifyCouponAudience(coupon: Coupon) {

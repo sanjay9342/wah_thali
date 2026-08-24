@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
+import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
@@ -16,6 +17,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
+  const access = await requireAdminPermission(request, "categories");
+  if (!access.ok) return access.response;
 
   const { id } = await params;
   const parsed = categorySchema.safeParse(await request.json());
@@ -85,10 +88,12 @@ function getTextMap(value: unknown): Record<string, string> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, string>) : {};
 }
 
-export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
+  const access = await requireAdminPermission(request, "categories");
+  if (!access.ok) return access.response;
 
   const { id } = await params;
   const products = await prisma.product.count({ where: { categoryId: id } });

@@ -8,7 +8,7 @@ import { getWhatsAppOtpConfigStatus, sendWhatsAppOtp } from "@/lib/whatsapp";
 
 const otpSchema = z.object({
   mobile: z.string().min(8),
-  purpose: z.enum(["signin", "signup"]),
+  purpose: z.enum(["signin", "signup", "password_reset"]),
 });
 
 function otpServiceUnavailable(message: string, code: string, missing?: string[]) {
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Please enter a valid 10 digit WhatsApp number." }, { status: 400 });
   }
 
-  if (parsed.data.purpose === "signin") {
+  if (parsed.data.purpose === "signin" || parsed.data.purpose === "password_reset") {
     const customer = await prisma.customer.findUnique({ where: { mobile }, select: { id: true } });
     if (!customer) {
       return NextResponse.json({ error: "No account found for this WhatsApp number. Please create an account." }, { status: 404 });

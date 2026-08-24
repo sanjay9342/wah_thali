@@ -3,7 +3,9 @@
 import { useRef, useState, useTransition } from "react";
 import type { ReactNode } from "react";
 import { BellRing, CheckCircle2, Clock3, CreditCard, ImagePlus, LocateFixed, MapPin, Play, Save, Settings2, Store, Trash2, Truck, Volume2 } from "lucide-react";
+import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
+import { adminFetch } from "@/lib/admin-client-auth";
 import { defaultNewOrderSound, getNewOrderSound, getNewOrderSoundSteps, newOrderSoundOptions } from "@/lib/order-sounds";
 import { buildOpeningHours, minutesToTimeInput, parseOpeningHours } from "@/lib/store-hours";
 import type { BusinessSettings, HomeSlide, NewOrderSound, StoreMode } from "@/lib/types";
@@ -26,6 +28,7 @@ type AdvancedSettings = {
   newOrderSoundEnabled: boolean;
   newOrderSound: NewOrderSound;
   whatsappOrderAlerts: boolean;
+  ownerWhatsAppOrderAlerts: boolean;
   adminDailyDigestTime: string;
 };
 
@@ -46,7 +49,8 @@ const defaultAdvanced: AdvancedSettings = {
   lowStockAlertThreshold: "5",
   newOrderSoundEnabled: true,
   newOrderSound: defaultNewOrderSound,
-  whatsappOrderAlerts: true,
+  whatsappOrderAlerts: false,
+  ownerWhatsAppOrderAlerts: true,
   adminDailyDigestTime: "21:00",
 };
 
@@ -68,11 +72,13 @@ export function AdminSettingsClient({
   initialAdvanced,
   initialSlides,
   initialCategories,
+  initialHomeDishCategories = [],
 }: {
   initialSettings: BusinessSettings;
   initialAdvanced?: Partial<AdvancedSettings>;
   initialSlides: HomeSlide[];
   initialCategories: string[];
+  initialHomeDishCategories?: string[];
 }) {
   const initialHours = parseOpeningHours(initialSettings.openingHours);
   const [settings, setSettings] = useState({
@@ -83,7 +89,10 @@ export function AdminSettingsClient({
     deliveryFee: String(initialSettings.deliveryFee),
     freeDeliveryThreshold: String(initialSettings.freeDeliveryThreshold),
     packagingFee: String(initialSettings.packagingFee),
-    gstRate: String(initialSettings.gstRate),
+    gstRate: formatPercentInput(initialSettings.gstRate),
+    deliveryFeeMode: initialSettings.deliveryFeeMode,
+    deliveryFeePercent: String(initialSettings.deliveryFeePercent),
+    deliveryDistanceSlabs: formatDeliveryDistanceSlabs(initialSettings.deliveryDistanceSlabs),
     serviceablePins: initialSettings.serviceablePins.join(", "),
     locationRestrictionEnabled: initialSettings.locationRestrictionEnabled,
     kitchenAddress: initialSettings.kitchenAddress,
@@ -107,6 +116,10 @@ export function AdminSettingsClient({
   });
   const [slides, setSlides] = useState(initialSlides);
   const [slidesDirty, setSlidesDirty] = useState(false);
+  const [homeDishCategories, setHomeDishCategories] = useState(() =>
+    initialHomeDishCategories.filter((category) => initialCategories.includes(category)),
+  );
+  const [homeDishesDirty, setHomeDishesDirty] = useState(false);
   const [message, setMessage] = useState("");
   const [uploading, setUploading] = useState(false);
   const [locatingKitchen, setLocatingKitchen] = useState(false);
@@ -116,6 +129,7 @@ export function AdminSettingsClient({
   const [previewingSound, setPreviewingSound] = useState<NewOrderSound | null>(null);
   const [isPending, startTransition] = useTransition();
   const soundPreviewContext = useRef<AudioContext | null>(null);
+  const adminAccess = useAdminAccess();
   const kitchenCoordinatesReady = hasValidCoordinate(settings.kitchenLatitude, 90) && hasValidCoordinate(settings.kitchenLongitude, 180);
 
   function run(task: () => Promise<void>) {
@@ -139,7 +153,7 @@ export function AdminSettingsClient({
         throw new Error("Kitchen latitude and longitude are required before enabling delivery radius restriction.");
       }
 
-      const response = await fetch("/api/settings", {
+      const response = await adminFetch(adminAccess?.session, "/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -148,6 +162,9 @@ export function AdminSettingsClient({
           whatsappNumber: settings.whatsappNumber,
           minimumOrder: Number(settings.minimumOrder),
           deliveryFee: Number(settings.deliveryFee),
+          deliveryFeeMode: settings.deliveryFeeMode,
+          deliveryFeePercent: Number(settings.deliveryFeePercent),
+          deliveryDistanceSlabs: parseDeliveryDistanceSlabs(settings.deliveryDistanceSlabs),
           freeDeliveryThreshold: Number(settings.freeDeliveryThreshold),
           packagingFee: Number(settings.packagingFee),
           gstRate: Number(settings.gstRate),
@@ -221,7 +238,7 @@ export function AdminSettingsClient({
     setMessage("");
 
     try {
-      const response = await fetch("/api/settings", {
+      const response = await adminFetch(adminAccess?.session, "/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -256,10 +273,10 @@ export function AdminSettingsClient({
       ...current,
       {
         id: `slide-${Date.now()}`,
-        eyebrow: "New offer",
-        title: "Fresh deal",
-        body: "Update this offer text.",
-        code: "WAH50",
+        eyebrow: "Slider image",
+        title: "Slider image",
+        body: "Image-only slider",
+        code: "SLIDER",
         image: "/wah-thali-meal-cutout-v2.png",
         targetCategory: current[0]?.targetCategory ?? initialCategories[0] ?? "All",
         active: true,
@@ -271,7 +288,7 @@ export function AdminSettingsClient({
 
   function deleteSlide(index: number) {
     const slide = slides[index];
-    const confirmed = window.confirm(`Delete slider "${slide?.title ?? "this slide"}"?`);
+    const confirmed = window.confirm(`Delete slider image for "${slide?.targetCategory ?? "All"}"?`);
     if (!confirmed) return;
 
     setSlides((current) =>
@@ -285,7 +302,7 @@ export function AdminSettingsClient({
 
   function saveSlides() {
     run(async () => {
-      const response = await fetch("/api/home-slides", {
+      const response = await adminFetch(adminAccess?.session, "/api/home-slides", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ slides }),
@@ -297,13 +314,34 @@ export function AdminSettingsClient({
     });
   }
 
+  function toggleHomeDishCategory(category: string) {
+    setHomeDishCategories((current) =>
+      current.includes(category) ? current.filter((item) => item !== category) : [...current, category],
+    );
+    setHomeDishesDirty(true);
+  }
+
+  function saveHomeDishCategories() {
+    run(async () => {
+      const response = await adminFetch(adminAccess?.session, "/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ homeDishCategories }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Home dishes save failed.");
+      setHomeDishesDirty(false);
+      setMessage(homeDishCategories.length ? "Home dishes saved. The home screen now uses your selected categories." : "Home dishes reset. The home screen will show popular dishes.");
+    });
+  }
+
   async function uploadImage(file: File, folder = "home-slides") {
     setUploading(true);
     try {
       const body = new FormData();
       body.append("file", file);
       body.append("folder", folder);
-      const response = await fetch("/api/storage/upload", { method: "POST", body });
+      const response = await adminFetch(adminAccess?.session, "/api/storage/upload", { method: "POST", body });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Image upload failed.");
       setMessage("Image uploaded. Click Save slider to publish it on the website.");
@@ -519,15 +557,59 @@ export function AdminSettingsClient({
                 })}
               </div>
             </div>
-            <Toggle label="WhatsApp order alerts" checked={advanced.whatsappOrderAlerts} onChange={(value) => setAdvanced({ ...advanced, whatsappOrderAlerts: value })} />
-            <Input label="Low stock alert threshold" value={advanced.lowStockAlertThreshold} onChange={(value) => setAdvanced({ ...advanced, lowStockAlertThreshold: value })} />
+            <Toggle label="Customer WhatsApp updates" checked={advanced.whatsappOrderAlerts} onChange={(value) => setAdvanced({ ...advanced, whatsappOrderAlerts: value })} />
+            <Toggle label="Owner WhatsApp alerts" checked={advanced.ownerWhatsAppOrderAlerts} onChange={(value) => setAdvanced({ ...advanced, ownerWhatsAppOrderAlerts: value })} />
             <Input label="Daily digest time" value={advanced.adminDailyDigestTime} onChange={(value) => setAdvanced({ ...advanced, adminDailyDigestTime: value })} />
           </Panel>
 
           <Panel title="Delivery rules" icon={<Truck className="text-red" size={22} />}>
             <Input label="Minimum order" value={settings.minimumOrder} onChange={(value) => setSettings({ ...settings, minimumOrder: value })} />
-            <Input label="Delivery fee" value={settings.deliveryFee} onChange={(value) => setSettings({ ...settings, deliveryFee: value })} />
-            <Input label="Free delivery threshold" value={settings.freeDeliveryThreshold} onChange={(value) => setSettings({ ...settings, freeDeliveryThreshold: value })} />
+            <Input
+              label="Flat / fallback delivery fee"
+              value={settings.deliveryFee}
+              onChange={(value) => setSettings({ ...settings, deliveryFee: value })}
+              helper="Used for flat delivery, and as fallback if distance cannot be calculated."
+            />
+            <label className="grid gap-2 text-sm font-bold text-charcoal">
+              Delivery charge type
+              <select
+                value={settings.deliveryFeeMode}
+                onChange={(event) => setSettings({ ...settings, deliveryFeeMode: event.target.value as "FLAT" | "PERCENT" | "DISTANCE" })}
+                className="h-11 rounded-lg border border-border bg-cream px-3"
+              >
+                <option value="FLAT">Flat fee</option>
+                <option value="PERCENT">Percentage of order price</option>
+                <option value="DISTANCE">Distance wise slabs</option>
+              </select>
+            </label>
+            {settings.deliveryFeeMode === "PERCENT" ? (
+              <Input
+                label="Delivery percentage"
+                value={settings.deliveryFeePercent}
+                onChange={(value) => setSettings({ ...settings, deliveryFeePercent: value })}
+                helper="Example: 5 means delivery fee is 5% of item total after discount."
+              />
+            ) : null}
+            {settings.deliveryFeeMode === "DISTANCE" ? (
+              <label className="grid gap-2 text-sm font-bold text-charcoal">
+                Distance wise delivery charges
+                <textarea
+                  value={settings.deliveryDistanceSlabs}
+                  onChange={(event) => setSettings({ ...settings, deliveryDistanceSlabs: event.target.value })}
+                  className="min-h-32 rounded-lg border border-border bg-cream p-3 font-mono text-xs leading-5"
+                  placeholder={"1=20\n2=30\n3=40\n4=50\n5=60"}
+                />
+                <span className="text-xs font-bold leading-5 text-muted">
+                  One slab per line: up to km = fee. Example 3=40 means orders up to 3 km charge Rs 40.
+                </span>
+              </label>
+            ) : null}
+            <Input
+              label="Free delivery above order price"
+              value={settings.freeDeliveryThreshold}
+              onChange={(value) => setSettings({ ...settings, freeDeliveryThreshold: value })}
+              helper="Example: 499 means orders of Rs 499 and above get free delivery. Use 0 to keep delivery fee on every order."
+            />
             <Input label="Packaging fee" value={settings.packagingFee} onChange={(value) => setSettings({ ...settings, packagingFee: value })} />
             <Toggle label="Allow orders only inside delivery radius" checked={settings.locationRestrictionEnabled} onChange={(value) => setSettings({ ...settings, locationRestrictionEnabled: value })} />
             <Input label="Allowed delivery radius in km" value={settings.deliveryRadiusKm} onChange={(value) => setSettings({ ...settings, deliveryRadiusKm: value })} />
@@ -564,19 +646,83 @@ export function AdminSettingsClient({
           </Panel>
 
           <Panel title="Payments and tax" icon={<CreditCard className="text-red" size={22} />}>
-            <Input label="GST rate" value={settings.gstRate} onChange={(value) => setSettings({ ...settings, gstRate: value })} />
+            <Input
+              label="GST percentage"
+              value={settings.gstRate}
+              onChange={(value) => setSettings({ ...settings, gstRate: value })}
+              helper="Example: enter 5 for 5% GST. It is calculated as a percentage of order price plus fees."
+            />
             <Toggle label="COD enabled" checked={advanced.codEnabled} onChange={(value) => setAdvanced({ ...advanced, codEnabled: value })} />
             <Toggle label="Online payments enabled" checked={advanced.onlinePaymentsEnabled} onChange={(value) => setAdvanced({ ...advanced, onlinePaymentsEnabled: value })} />
           </Panel>
 
-          <Panel title="Contact and service area" icon={<Settings2 className="text-red" size={22} />}>
-            <Input label="Support phone" value={settings.supportPhone} onChange={(value) => setSettings({ ...settings, supportPhone: value })} />
-            <Input label="WhatsApp number" value={settings.whatsappNumber} onChange={(value) => setSettings({ ...settings, whatsappNumber: value })} />
-            <label className="grid gap-2 text-sm font-bold text-charcoal">
-              Serviceable PINs
-              <textarea value={settings.serviceablePins} onChange={(event) => setSettings({ ...settings, serviceablePins: event.target.value })} className="min-h-24 rounded-lg border border-border bg-cream p-3 text-sm font-bold" />
-            </label>
+          <Panel title="Contact numbers" icon={<Settings2 className="text-red" size={22} />}>
+            <Input
+              label="Support phone"
+              value={settings.supportPhone}
+              onChange={(value) => setSettings({ ...settings, supportPhone: value })}
+              helper="Shown on customer Call buttons. Example: 7001323730."
+            />
+            <Input
+              label="WhatsApp number"
+              value={settings.whatsappNumber}
+              onChange={(value) => setSettings({ ...settings, whatsappNumber: value })}
+              helper="Used for customer WhatsApp buttons and owner new/cancelled order alerts. Include country code without +. Example: 917001323730."
+            />
+            <p className="rounded-lg border border-[#c7ecd2] bg-[#effaf4] px-3 py-2 text-xs font-black leading-5 text-[#0f7a45]">
+              Delivery availability is controlled by the kilometer radius settings above. These contact numbers update the website call and WhatsApp links after saving.
+            </p>
           </Panel>
+        </section>
+
+        <section className="mt-6 surface rounded-2xl p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="flex items-center gap-2 text-xl font-black text-maroon">
+                <CheckCircle2 className="text-red" /> Home dishes
+              </h2>
+              <p className="text-sm font-semibold text-muted">
+                Choose the daily categories shown in the home screen dishes section.
+                {homeDishesDirty ? " Unsaved home dishes changes." : " Home dishes are saved."}
+              </p>
+            </div>
+            <button disabled={isPending || !homeDishesDirty} onClick={saveHomeDishCategories} className="h-10 min-w-40 rounded-lg bg-red px-4 text-sm font-black text-white disabled:opacity-60">
+              {isPending ? "Saving..." : homeDishesDirty ? "Save home dishes" : "Saved"}
+            </button>
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-2">
+            {initialCategories.map((category) => {
+              const selected = homeDishCategories.includes(category);
+              return (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => toggleHomeDishCategory(category)}
+                  className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-black transition ${
+                    selected
+                      ? "border-maroon bg-maroon text-white"
+                      : "border-border bg-white text-charcoal hover:border-maroon/40 hover:text-maroon"
+                  }`}
+                  aria-pressed={selected}
+                >
+                  <span className={`grid h-4 w-4 place-items-center rounded border ${selected ? "border-white bg-white text-maroon" : "border-border bg-cream text-transparent"}`}>
+                    <CheckCircle2 size={12} strokeWidth={3} />
+                  </span>
+                  {category}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => { setHomeDishCategories([]); setHomeDishesDirty(true); }} className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-black text-maroon">
+              Use popular dishes
+            </button>
+            <p className="text-xs font-bold leading-5 text-muted">
+              {homeDishCategories.length ? `${homeDishCategories.length} selected: ${homeDishCategories.join(", ")}` : "No category selected. Home will show popular dishes."}
+            </p>
+          </div>
         </section>
 
         <section className="mt-6 surface rounded-2xl p-5">
@@ -586,7 +732,7 @@ export function AdminSettingsClient({
                 <ImagePlus className="text-red" /> Homepage slider
               </h2>
               <p className="text-sm font-semibold text-muted">
-                These images and offers appear on the customer homepage/menu slider.
+                Upload image-only slider banners and connect each banner to a customer category.
                 {slidesDirty ? " Unsaved slider changes." : " Slider is saved."}
               </p>
             </div>
@@ -601,12 +747,8 @@ export function AdminSettingsClient({
             {slides.map((slide, index) => (
               <div key={slide.id} className="flex min-w-0 flex-col rounded-xl border border-border bg-cream p-4">
                 <div className="grid gap-3">
-                  <Input label="Eyebrow" value={slide.eyebrow} onChange={(value) => updateSlide(index, { eyebrow: value })} />
-                  <Input label="Title" value={slide.title} onChange={(value) => updateSlide(index, { title: value })} />
-                  <Input label="Body" value={slide.body} onChange={(value) => updateSlide(index, { body: value })} />
-                  <Input label="Coupon code" value={slide.code} onChange={(value) => updateSlide(index, { code: value })} />
                   <label className="grid gap-2 text-sm font-bold text-charcoal">
-                    Target category
+                    Click opens category
                     <select value={slide.targetCategory ?? "All"} onChange={(event) => updateSlide(index, { targetCategory: event.target.value })} className="h-11 rounded-lg border border-border bg-white px-3">
                       <option value="All">All food</option>
                       {initialCategories.map((category) => (
@@ -616,9 +758,9 @@ export function AdminSettingsClient({
                   </label>
                 </div>
                 <div className="mt-3 grid gap-2 text-sm font-bold text-charcoal">
-                  <span>Image</span>
+                  <span>Slider image</span>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={safeImage(slide.image)} alt="" className="h-36 w-full rounded-lg object-cover xl:h-40" />
+                  <img src={safeImage(slide.image)} alt="" className="aspect-[390/166] w-full rounded-lg object-cover" />
                   <input value={slide.image} onChange={(event) => updateSlide(index, { image: event.target.value })} className="h-11 min-w-0 rounded-lg border border-border bg-white px-3 text-sm" placeholder="Paste image URL or /public path" />
                 </div>
                 <div className="mt-auto grid gap-2 pt-4">
@@ -641,7 +783,7 @@ export function AdminSettingsClient({
                   </label>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                     <Toggle label="Active" checked={slide.active} onChange={(value) => updateSlide(index, { active: value })} />
-                    <button type="button" onClick={() => deleteSlide(index)} className="grid h-11 w-12 place-items-center rounded-lg border border-border bg-white text-red" aria-label={`Delete ${slide.title}`}>
+                    <button type="button" onClick={() => deleteSlide(index)} className="grid h-11 w-12 place-items-center rounded-lg border border-border bg-white text-red" aria-label={`Delete slider image ${index + 1}`}>
                       <Trash2 size={18} />
                     </button>
                   </div>
@@ -669,11 +811,12 @@ function Panel({ title, icon, children }: { title: string; icon: ReactNode; chil
   );
 }
 
-function Input({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
+function Input({ label, value, onChange, type = "text", helper }: { label: string; value: string; onChange: (value: string) => void; type?: string; helper?: string }) {
   return (
     <label className="grid gap-2 text-sm font-bold text-charcoal">
       {label}
       <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-lg border border-border bg-cream px-3" />
+      {helper ? <span className="text-xs font-bold leading-5 text-muted">{helper}</span> : null}
     </label>
   );
 }
@@ -702,6 +845,28 @@ function safeImage(src?: string) {
 
 function getSoundLabel(sound: NewOrderSound) {
   return newOrderSoundOptions.find((option) => option.id === sound)?.label ?? "Classic bell";
+}
+
+function formatPercentInput(rate: number) {
+  if (!Number.isFinite(rate)) return "0";
+  const percent = rate <= 1 ? rate * 100 : rate;
+  return Number.isInteger(percent) ? String(percent) : percent.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function formatDeliveryDistanceSlabs(slabs: BusinessSettings["deliveryDistanceSlabs"]) {
+  return slabs.map((slab) => `${slab.upToKm}=${slab.fee}`).join("\n");
+}
+
+function parseDeliveryDistanceSlabs(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((line) => {
+      const [upToKm, fee] = line.split(/[=,:\-]/).map((part) => part.trim());
+      return { upToKm: Number(upToKm), fee: Number(fee) };
+    })
+    .filter((item) => Number.isFinite(item.upToKm) && item.upToKm > 0 && Number.isFinite(item.fee) && item.fee >= 0)
+    .sort((a, b) => a.upToKm - b.upToKm)
+    .slice(0, 20);
 }
 
 function playNewOrderSoundSteps(audio: AudioContext, sound: NewOrderSound) {

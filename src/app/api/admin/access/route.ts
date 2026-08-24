@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAdminAccessAssignments, getAdminAccessForIdentity, upsertAdminAccessAssignment } from "@/lib/admin-access";
-import { isAdminRole } from "@/lib/admin-access-shared";
+import { hasAdminPermission, isAdminPermission, isAdminRole } from "@/lib/admin-access-shared";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
 const identitySchema = z.object({
@@ -18,6 +18,7 @@ const updateSchema = z.object({
     mobile: z.string().min(8),
   }),
   role: z.string().refine(isAdminRole, "Invalid admin role."),
+  permissions: z.array(z.string().refine(isAdminPermission, "Invalid admin permission.")).optional(),
   active: z.boolean(),
 });
 
@@ -40,8 +41,8 @@ export async function GET(request: Request) {
   const query = searchParams.get("q")?.trim() ?? "";
   const mobileQuery = query.replace(/\D/g, "").slice(-10);
   const actorAccess = await getAdminAccessForIdentity(actor);
-  if (actorAccess.role !== "ADMIN") {
-    return NextResponse.json({ error: "Only admins can view staff access.", access: actorAccess }, { status: 403 });
+  if (!hasAdminPermission(actorAccess.permissions, "access")) {
+    return NextResponse.json({ error: "Only staff users with Staff Access permission can view this page.", access: actorAccess }, { status: 403 });
   }
 
   const assignments = await getAdminAccessAssignments();

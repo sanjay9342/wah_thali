@@ -28,6 +28,8 @@ type ApiError = {
 
 type ApiResponse = ApiError & {
   customer?: ApiCustomer;
+  resetMode?: "email" | "whatsapp_otp" | "link";
+  resetUrl?: string;
 };
 
 function cleanMobile(value: string) {
@@ -183,7 +185,23 @@ export function LoginClient() {
         body: JSON.stringify({ email }),
       });
       const data = await readApiJson(response);
-      setMessage(cleanApiMessage(data.message || data.error, response.ok ? "Password reset request recorded." : "Could not request password reset."));
+      if (!response.ok) {
+        setMessage(cleanApiMessage(data.error, "Could not request password reset."));
+        return;
+      }
+
+      if (data.resetMode === "whatsapp_otp") {
+        setForm((current) => ({ ...current, email, password: "", confirmPassword: "", otp: "", resetToken: "" }));
+        setScreen("reset");
+        setStep("form");
+      } else if (data.resetMode === "link" && data.resetUrl) {
+        const resetLink = new URL(data.resetUrl);
+        setForm((current) => ({ ...current, email, password: "", confirmPassword: "", otp: "", resetToken: resetLink.searchParams.get("token") || "" }));
+        setScreen("reset");
+        setStep("form");
+      }
+
+      setMessage(cleanApiMessage(data.message, "Password reset request recorded."));
     } catch {
       setMessage("Could not connect. Please try again.");
     } finally {
@@ -192,8 +210,14 @@ export function LoginClient() {
   }
 
   async function resetPassword() {
-    if (!form.resetToken) {
-      setMessage("This reset link is missing its token. Please request a new password reset email.");
+    const resetEmail = form.email.trim();
+    const resetOtp = form.otp.trim();
+    if (!form.resetToken && !isValidEmail(resetEmail)) {
+      setMessage("Please request a fresh password reset from your account email.");
+      return;
+    }
+    if (!form.resetToken && resetOtp.length < 4) {
+      setMessage("Please enter the WhatsApp OTP sent for password reset.");
       return;
     }
     if (form.password.trim().length < 6) {
@@ -212,7 +236,9 @@ export function LoginClient() {
       const response = await fetch("/api/customers/password-reset", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: form.resetToken, password: form.password }),
+        body: JSON.stringify(form.resetToken
+          ? { token: form.resetToken, password: form.password }
+          : { email: resetEmail, otp: resetOtp, password: form.password }),
       });
       const data = await readApiJson(response);
       if (!response.ok) {
@@ -220,7 +246,7 @@ export function LoginClient() {
         return;
       }
 
-      setForm((current) => ({ ...current, password: "", confirmPassword: "", resetToken: "" }));
+      setForm((current) => ({ ...current, password: "", confirmPassword: "", otp: "", resetToken: "" }));
       setSignInMethod("password");
       setScreen("signin");
       setMessage(cleanApiMessage(data.message, "Your password has been reset. Please log in."));
@@ -398,6 +424,18 @@ export function LoginClient() {
         <section className="mt-7 grid gap-4">
           {isReset ? (
             <>
+              {!form.resetToken ? (
+                <>
+                  <AuthInput label="Account Email" value={form.email} onChange={(email) => setForm({ ...form, email })} inputMode="email" type="email" autoComplete="email" icon={<Mail size={19} />} />
+                  <AuthInput
+                    label="WhatsApp OTP"
+                    value={form.otp}
+                    onChange={(otp) => setForm({ ...form, otp: otp.replace(/\D/g, "").slice(0, 6) })}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                  />
+                </>
+              ) : null}
               <PasswordInput label="New Password" value={form.password} onChange={(password) => setForm({ ...form, password })} showPassword={showPassword} setShowPassword={setShowPassword} autoComplete="new-password" />
               <PasswordInput label="Confirm Password" value={form.confirmPassword} onChange={(confirmPassword) => setForm({ ...form, confirmPassword })} showPassword={showPassword} setShowPassword={setShowPassword} autoComplete="new-password" />
             </>

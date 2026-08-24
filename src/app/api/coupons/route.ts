@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { getAdminCouponsFromDb, getCouponsFromDb, logActivity, saveCouponRule } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { getIstDateInputValue, parseIstDateInput } from "@/lib/time";
@@ -22,8 +23,9 @@ const couponSchema = z.object({
   startsAt: istDateSchema("start").default(() => parseIstDateInput(getIstDateInputValue(), "start") ?? new Date()),
   endsAt: istDateSchema("end").default(() => parseIstDateInput(getIstDateInputValue(new Date(), 30), "end") ?? new Date(Date.now() + 1000 * 60 * 60 * 24 * 30)),
   active: z.boolean().default(true),
-  audience: z.enum(["ALL", "VIP", "POINTS"]).default("ALL"),
+  audience: z.enum(["ALL", "VIP", "POINTS", "TAGS"]).default("ALL"),
   minPoints: z.coerce.number().int().nonnegative().default(0),
+  tagNames: z.array(z.string().min(1)).default([]),
 });
 
 export async function GET() {
@@ -40,19 +42,21 @@ export async function POST(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
+  const access = await requireAdminPermission(request, "coupons");
+  if (!access.ok) return access.response;
 
   const parsed = couponSchema.safeParse(await request.json());
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid coupon payload", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { audience, minPoints, ...couponData } = parsed.data;
+  const { audience, minPoints, tagNames, ...couponData } = parsed.data;
   const coupon = await prisma.coupon.upsert({
     where: { code: couponData.code },
     create: couponData,
     update: couponData,
   });
-  await saveCouponRule(coupon.code, { audience, minPoints });
+  await saveCouponRule(coupon.code, { audience, minPoints, tagNames });
 
   await logActivity({
     type: "COUPON_SAVED",

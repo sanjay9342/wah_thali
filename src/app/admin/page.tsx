@@ -9,18 +9,21 @@ import {
 import Link from "next/link";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { AdminDashboardProductsClient } from "@/components/admin-dashboard-products-client";
+import { requireAdminPagePermission } from "@/lib/admin-page-auth";
 import { getAdminDashboardMetrics, getAdminProductsFromDb } from "@/lib/db";
 import { formatRupees } from "@/lib/pricing";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
-  const [products, metrics] = await Promise.all([getAdminProductsFromDb(), getAdminDashboardMetrics()]);
+  await requireAdminPagePermission("dashboard", "/admin");
+  const products = await getAdminProductsFromDb();
+  const metrics = await getAdminDashboardMetrics(products);
   const operations = [
     ["Open orders", String(metrics.openOrders), "Need restaurant action"],
-    ["Unavailable items", String(metrics.unavailableItems), "Hidden from menu"],
+    ["Offline items", String(metrics.unavailableItems), "Shown unavailable at the end"],
     ["Active coupons", String(metrics.activeCoupons), "Live coupon codes"],
-    ["Low stock", String(metrics.lowStock.length), "Needs prep or purchase"],
+    ["Active products", String(metrics.activeProducts), `${metrics.totalProducts} total SKUs`],
   ];
 
   return (
@@ -72,6 +75,7 @@ export default async function AdminPage() {
                 ["/admin/inventory", "Manage products"],
                 ["/admin/categories", "Menu categories"],
                 ["/admin/orders", "Kitchen board"],
+                ["/admin/reports", "Reports"],
                 ["/admin/coupons", "Create coupon"],
               ].map(([href, label]) => (
                 <Link key={label} href={href} className="inline-flex h-11 items-center rounded-lg bg-maroon px-4 text-sm font-black text-white">
@@ -87,15 +91,6 @@ export default async function AdminPage() {
               {metrics.actionQueue.length ? metrics.actionQueue.map((alert) => (
                 <div key={alert} className="rounded-xl bg-cream p-3 text-sm font-bold">{alert}</div>
               )) : <div className="rounded-xl bg-cream p-3 text-sm font-bold">No urgent actions right now.</div>}
-              {metrics.lowStock.slice(0, 5).map((product) => (
-                <div key={product.id} className="rounded-xl border border-border p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-black text-charcoal">{product.name}</p>
-                    <span className="text-sm font-black text-red">{product.stock}</span>
-                  </div>
-                  <p className="mt-1 text-xs font-bold text-muted">Reorder at {product.reorderAt}</p>
-                </div>
-              ))}
             </div>
           </aside>
         </section>

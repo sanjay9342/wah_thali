@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { mkdir, writeFile } from "node:fs/promises";
 import pathModule from "node:path";
+import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { logActivity } from "@/lib/db";
 import { getSupabaseAdminClient, isSupabaseConfigured } from "@/lib/supabase";
 
 const defaultBucket = process.env.SUPABASE_STORAGE_BUCKET ?? "wah-thali-assets";
 
 export async function POST(request: Request) {
+  const access = await requireAdminPermission(request, "settings");
+  if (!access.ok) return access.response;
+
   const formData = await request.formData();
   const file = formData.get("file");
   const folder = String(formData.get("folder") ?? "admin-images");

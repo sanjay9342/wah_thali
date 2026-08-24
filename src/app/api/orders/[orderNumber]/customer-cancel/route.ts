@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { normalizeMobile } from "@/lib/customer-auth";
-import { notifyOrderCustomerCancelled } from "@/lib/customer-messaging";
+import { notifyOrderCustomerCancelled, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
 const sessionCookie = "wah_thali_customer_mobile";
 const customerCancelableStatuses = new Set(["PENDING_PAYMENT", "NEW"]);
 const customerCancelNote = "Customer cancelled before the restaurant accepted the order.";
+const cancelSchema = z.object({
+  note: z.string().trim().optional(),
+  notifyCustomer: z.boolean().default(true),
+});
 
 function getSessionMobile(request: Request) {
   const cookie = request.headers.get("cookie") ?? "";
@@ -30,6 +35,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
   }
 
   const { orderNumber } = await params;
+  const parsed = cancelSchema.safeParse(await request.json().catch(() => ({})));
+  const cancelNote = parsed.success && parsed.data.note ? parsed.data.note : customerCancelNote;
+  const notifyCustomer = parsed.success ? parsed.data.notifyCustomer : true;
   const settings = await getRestaurantSettingsFromDb();
   const existing = await prisma.order.findUnique({
     where: { orderNumber },
@@ -67,7 +75,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
           create: {
             fromStatus: existing.status,
             toStatus: "CANCELLED",
-            note: customerCancelNote,
+            note: cancelNote,
           },
         },
       },
@@ -86,10 +94,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
     entity: "Order",
     entityId: order.id,
     summary: `${order.orderNumber} cancelled by customer before acceptance`,
-    metadata: { orderNumber: order.orderNumber, previousStatus: existing.status, whatsappOrderAlerts: settings.whatsappOrderAlerts },
+    metadata: {
+      orderNumber: order.orderNumber,
+      previousStatus: existing.status,
+      whatsappOrderAlerts: settings.whatsappOrderAlerts,
+      ownerWhatsAppOrderAlerts: settings.ownerWhatsAppOrderAlerts,
+    },
   });
 
-  if (settings.whatsappOrderAlerts) {
+  if (settings.ownerWhatsAppOrderAlerts) {
+    await notifyOwnerOrderAlert(order, settings.whatsappNumber, "CANCELLED", cancelNote).catch((error) => {
+      console.error("Owner customer-cancelled order WhatsApp alert failed.", error);
+    });
+  }
+
+  if (settings.whatsappOrderAlerts && notifyCustomer) {
     await notifyOrderCustomerCancelled(order).catch((error) => {
       console.error("Customer cancelled order WhatsApp notification failed.", error);
     });

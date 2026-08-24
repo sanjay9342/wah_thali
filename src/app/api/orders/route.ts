@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import type { PaymentStatus, Prisma } from "@prisma/client";
 import { z } from "zod";
-import { getCouponsFromDb, getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
+import { getCategoryOffersFromDb, getCouponsFromDb, getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
+import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { getDeliveryCoverage } from "@/lib/delivery-radius";
 import { normalizeEmail } from "@/lib/customer-auth";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { createRazorpayOrder } from "@/lib/razorpay";
-import { notifyOrderStatus } from "@/lib/customer-messaging";
+import { notifyOrderStatus, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
 import { getStoreOrderingStatus } from "@/lib/store-hours";
 import type { CartLine, OrderStatus, RestaurantSettings } from "@/lib/types";
-import { isCouponEligibleForCustomer, type CouponCustomerContext } from "@/lib/pricing";
+import { getDeliveryFee, getOfferDiscount, isCouponEligibleForCustomer, normalizeGstRate, type CouponCustomerContext } from "@/lib/pricing";
 import { getRewardTier } from "@/lib/rewards";
 
 const paidOnlineStatuses: PaymentStatus[] = ["PAID", "AUTHORIZED"];
@@ -50,11 +51,12 @@ function calculateDiscount(subtotal: number, couponCode: string | undefined, cou
   return { coupon, discount };
 }
 
-async function calculateServerOrder(lines: CartLine[], couponCode: string | undefined, settings: RestaurantSettings, customer?: CouponCustomerContext) {
+async function calculateServerOrder(lines: CartLine[], couponCode: string | undefined, settings: RestaurantSettings, customer?: CouponCustomerContext, deliveryDistanceKm?: number | null) {
   const products = await prisma.product.findMany({
     where: { id: { in: lines.map((line) => line.productId) } },
-    include: { variants: true, addons: true, inventory: true },
+    include: { category: true, variants: true, addons: true, inventory: true },
   });
+  const categoryOffers = await getCategoryOffersFromDb();
 
   const items = lines.map((line) => {
     const product = products.find((item) => item.id === line.productId);
@@ -75,7 +77,9 @@ async function calculateServerOrder(lines: CartLine[], couponCode: string | unde
       return total + addon.price;
     }, 0);
 
-    const unitPrice = product.price + variant.price + addonTotal;
+    const dishPrice = product.price + variant.price;
+    const offerText = product.offer?.trim() || categoryOffers[product.category.slug]?.trim();
+    const unitPrice = Math.max(dishPrice - getOfferDiscount(dishPrice, offerText), 0) + addonTotal;
     return {
       productId: product.id,
       name: product.name,
@@ -89,9 +93,10 @@ async function calculateServerOrder(lines: CartLine[], couponCode: string | unde
   const coupons = await getCouponsFromDb();
   const { coupon, discount } = calculateDiscount(subtotal, couponCode, coupons, customer);
   const packaging = items.length ? settings.packagingFee : 0;
-  const delivery = items.length && subtotal - discount < settings.freeDeliveryThreshold ? settings.deliveryFee : 0;
+  const eligibleOrderValue = subtotal - discount;
+  const delivery = getDeliveryFee(settings, eligibleOrderValue, items.length > 0, deliveryDistanceKm);
   const taxable = Math.max(subtotal - discount + packaging + delivery, 0);
-  const gst = Math.round(taxable * settings.gstRate);
+  const gst = Math.round(taxable * normalizeGstRate(settings.gstRate));
 
   return {
     items,
@@ -103,10 +108,12 @@ async function calculateServerOrder(lines: CartLine[], couponCode: string | unde
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ orders: [], configured: false });
   }
+  const access = await requireAdminPermission(request, "orders");
+  if (!access.ok) return access.response;
 
   const baseInclude = {
     customer: { select: { id: true, name: true, mobile: true, email: true } },
@@ -173,7 +180,9 @@ export async function POST(request: Request) {
   });
   const couponCustomer = {
     isVip: existingCustomer?.tags.some((assignment) => assignment.tag.name === "VIP") ?? false,
+    orderCount: rewardOrderCount,
     points: rewardOrderCount,
+    tags: existingCustomer?.tags.map((assignment) => assignment.tag.name) ?? [],
   };
 
   if (orderingStatus.unavailable) {
@@ -211,7 +220,7 @@ export async function POST(request: Request) {
     }
   }
 
-  const calculated = await calculateServerOrder(data.items, data.couponCode, settings, couponCustomer).catch((error) => {
+  const calculated = await calculateServerOrder(data.items, data.couponCode, settings, couponCustomer, deliveryCoverage.distanceKm).catch((error) => {
     console.error("Server order validation failed.", error);
     return null;
   });
@@ -364,6 +373,12 @@ export async function POST(request: Request) {
     summary: `Created order ${order.orderNumber}`,
     metadata: { grandTotal: order.grandTotal, couponCode: calculated.couponCode },
   });
+
+  if (settings.ownerWhatsAppOrderAlerts && order.status !== "PENDING_PAYMENT") {
+    await notifyOwnerOrderAlert(order, settings.whatsappNumber, "NEW_ORDER").catch((error) => {
+      console.error("Owner new order WhatsApp alert failed.", error);
+    });
+  }
 
   if (settings.whatsappOrderAlerts) {
     await notifyOrderStatus(order, order.status as OrderStatus).catch((error) => {

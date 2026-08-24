@@ -133,19 +133,19 @@ export function AccountClient() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-[430px] px-5 pb-28 pt-5 sm:max-w-5xl sm:px-6 lg:px-8">
+    <main className="mx-auto w-full max-w-[430px] bg-[#fbf8f4] px-5 pb-28 pt-5 sm:max-w-5xl sm:px-6 lg:px-8">
       <section className="rounded-[28px] bg-white p-5 shadow-[0_14px_34px_rgba(34,31,32,0.08)] ring-1 ring-border">
         <div className="flex items-start justify-between gap-4">
           <div className="flex min-w-0 items-center gap-4">
-            <div className="relative grid h-20 w-20 shrink-0 place-items-center rounded-full bg-red text-white shadow-[0_12px_24px_rgba(214,0,50,0.18)]">
+            <div className="relative grid h-20 w-20 shrink-0 place-items-center rounded-full bg-cream text-maroon shadow-[0_12px_24px_rgba(34,31,32,0.08)] ring-1 ring-[#eadfd5]">
               <UserRound size={34} />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-black uppercase tracking-widest text-red">Profile</p>
+              <p className="text-xs font-black uppercase tracking-widest text-maroon/70">Profile</p>
               <h1 className="truncate text-2xl font-black text-charcoal">{displayName}</h1>
               <p className="mt-1 text-sm font-bold text-muted">+91 {displayMobile}</p>
               {profile?.email ? <p className="mt-1 truncate text-xs font-bold text-muted">{profile.email}</p> : null}
-              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#fff4f5] px-3 py-1 text-xs font-black text-red">
+              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-cream px-3 py-1 text-xs font-black text-maroon">
                 <Star size={13} className="fill-maroon" /> {tier} member
               </div>
             </div>
@@ -155,14 +155,14 @@ export function AccountClient() {
           </Link>
         </div>
 
-        <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-2xl border border-border bg-[#fff4f5] text-center">
+        <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-2xl border border-border bg-cream text-center">
           {[
             [loading ? "..." : String(rewardOrderCount), "Orders"],
             [`${Math.round(rewardState.progress)}%`, "Reward"],
             [formatRupees(ltv), "Spent"],
           ].map(([value, label]) => (
             <div key={label} className="min-w-0 border-r border-border px-1.5 py-3 last:border-r-0 sm:px-2">
-              <p className="truncate text-base font-black text-red sm:text-lg">{value}</p>
+              <p className="truncate text-base font-black text-maroon sm:text-lg">{value}</p>
               <p className="text-[11px] font-bold text-muted">{label}</p>
             </div>
           ))}
@@ -176,7 +176,7 @@ export function AccountClient() {
           ["/support", HelpCircle, "Support", "Help center"],
         ].map(([href, Icon, title, subtitle]) => (
           <Link key={String(title)} href={String(href)} className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-border sm:p-4">
-            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-red text-white sm:h-12 sm:w-12">
+            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-cream text-maroon ring-1 ring-[#eadfd5] sm:h-12 sm:w-12">
               <Icon size={20} />
             </span>
             <span>
@@ -192,7 +192,7 @@ export function AccountClient() {
         <div className="mt-3 overflow-hidden rounded-[24px] bg-white shadow-sm ring-1 ring-border">
           {accountRows.map((row) => (
             <Link key={row.title} href={row.href} className="flex items-center gap-3 border-b border-border p-4 last:border-b-0">
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-cream text-red">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-cream text-maroon">
                 <row.icon size={20} />
               </span>
               <span className="min-w-0 flex-1">
@@ -208,19 +208,19 @@ export function AccountClient() {
       <section className="mt-6">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-black text-charcoal">Saved Addresses</h2>
-          <Link href="/address" className="text-xs font-black text-red">Add new</Link>
+          <Link href="/address" className="text-xs font-black text-maroon">Add new</Link>
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {addresses.length ? addresses.map((address) => (
             <article key={address.id} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-border">
               <div className="flex items-start gap-3">
-              <span className="grid h-11 w-11 place-items-center rounded-2xl bg-[#fff4f5] text-red">
+              <span className="grid h-11 w-11 place-items-center rounded-2xl bg-cream text-maroon">
                   <Home size={20} />
                 </span>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h3 className="font-black text-charcoal">{address.label}</h3>
-                    {address.isDefault ? <span className="rounded-full bg-red/10 px-2 py-0.5 text-[10px] font-black text-red">Default</span> : null}
+                    {address.isDefault ? <span className="rounded-full bg-cream px-2 py-0.5 text-[10px] font-black text-maroon ring-1 ring-[#eadfd5]">Default</span> : null}
                   </div>
                   <p className="mt-1 text-sm font-semibold leading-6 text-muted">
                     {[address.line1, address.area, address.city, address.state, address.pinCode].filter(Boolean).join(", ")}
@@ -236,23 +236,23 @@ export function AccountClient() {
         </div>
       </section>
 
-      <section className="mt-6 overflow-hidden rounded-[24px] bg-red p-5 text-white shadow-[0_14px_34px_rgba(214,0,50,0.18)]">
+      <section className="mt-6 overflow-hidden rounded-[24px] border border-[#eadfd5] bg-[#f8f1ea] p-5 text-charcoal shadow-[0_14px_34px_rgba(34,31,32,0.06)]">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-black">Next reward</h2>
-            <p className="mt-1 text-sm font-bold text-white/75">
+            <h2 className="text-xl font-black text-charcoal">Next reward</h2>
+            <p className="mt-1 text-sm font-bold text-muted">
               {rewardState.next
                 ? `${rewardState.ordersToNext} more orders unlock ${formatRupees(rewardState.next.value)} coupon.`
                 : "All reward coupons are unlocked."}
             </p>
           </div>
-          <span className="rounded-2xl bg-white/16 px-3 py-2 text-right text-xs font-black">
+          <span className="rounded-2xl bg-white px-3 py-2 text-right text-xs font-black text-maroon ring-1 ring-[#eadfd5]">
             <span className="block text-lg leading-none">{rewardOrderCount}</span>
             orders
           </span>
         </div>
-        <div className="mt-5 h-3 overflow-hidden rounded-full bg-white/20">
-          <div className="wt-reward-progress h-full rounded-full bg-white" style={{ width: `${rewardState.progress}%` }} />
+        <div className="mt-5 h-3 overflow-hidden rounded-full bg-white ring-1 ring-[#eadfd5]">
+          <div className="h-full rounded-full bg-maroon transition-[width] duration-700" style={{ width: `${rewardState.progress}%` }} />
         </div>
         <div className="mt-4 grid grid-cols-3 gap-2">
           {rewardMilestones.map((milestone) => {
@@ -261,7 +261,7 @@ export function AccountClient() {
               <Link
                 key={milestone.code}
                 href="/offers"
-                className={`rounded-2xl px-3 py-3 text-center ring-1 ring-white/20 ${unlocked ? "bg-white text-red" : "bg-white/10 text-white"}`}
+                className={`rounded-2xl px-3 py-3 text-center ring-1 ring-[#eadfd5] ${unlocked ? "bg-white text-maroon" : "bg-white/60 text-muted"}`}
               >
                 <span className="block text-sm font-black">{formatRupees(milestone.value)}</span>
                 <span className="mt-1 block text-[10px] font-black">{milestone.orders} orders</span>
@@ -269,7 +269,7 @@ export function AccountClient() {
             );
           })}
         </div>
-        <p className="mt-4 text-xs font-black text-white/75">
+        <p className="mt-4 text-xs font-black text-muted">
           {unlockedRewardTotal ? `${formatRupees(unlockedRewardTotal)} reward value unlocked in Coupons.` : "Place orders to start unlocking reward coupons."}
         </p>
       </section>
@@ -279,7 +279,7 @@ export function AccountClient() {
       <button
         type="button"
         onClick={() => setConfirmLogout(true)}
-        className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-white font-black text-red"
+        className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-white font-black text-maroon"
       >
         <LogOut size={18} /> Logout
       </button>
@@ -287,7 +287,7 @@ export function AccountClient() {
       {confirmLogout ? (
         <div className="fixed inset-0 z-[80] grid place-items-center bg-charcoal/45 p-5">
           <section className="w-full max-w-[360px] rounded-[24px] bg-white p-5 text-center shadow-2xl">
-            <span className="mx-auto grid h-13 w-13 place-items-center rounded-full bg-[#fff4f5] text-red">
+            <span className="mx-auto grid h-13 w-13 place-items-center rounded-full bg-cream text-maroon">
               <LogOut size={24} />
             </span>
             <h2 className="mt-4 text-xl font-black text-charcoal">Logout from Wah Thali?</h2>
@@ -310,7 +310,7 @@ export function AccountClient() {
                   setConfirmLogout(false);
                   router.replace("/login?next=/account");
                 }}
-                className="h-11 rounded-xl bg-red text-sm font-black text-white"
+                className="h-11 rounded-xl bg-maroon text-sm font-black text-white"
               >
                 Logout
               </button>

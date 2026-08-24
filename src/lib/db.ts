@@ -4,6 +4,7 @@ import { Prisma, type PaymentStatus } from "@prisma/client";
 import { coupons as fallbackCoupons, products as fallbackProducts, settings as fallbackSettings } from "@/lib/data";
 import { prisma, isDatabaseConfigured } from "@/lib/prisma";
 import { defaultNewOrderSound, getNewOrderSound } from "@/lib/order-sounds";
+import { normalizeDeliveryDistanceSlabs, normalizeGstRate } from "@/lib/pricing";
 import { getRewardTier, rewardCoupons } from "@/lib/rewards";
 import { getIstDayRangeUtc } from "@/lib/time";
 import type { AdvancedSettings, AdminCustomer, AdminOrder, AdminProduct, BusinessSettings, CategoryImageMap, CategoryOfferMap, Coupon, HomeSlide, Product, RestaurantSettings, StoreMode } from "@/lib/types";
@@ -25,6 +26,9 @@ function toProduct(product: ProductWithRelations): Product {
     id: product.id,
     slug: product.slug,
     name: product.name,
+    displayName: product.displayName ?? undefined,
+    kitchenName: product.kitchenName ?? undefined,
+    reportCode: product.reportCode ?? undefined,
     category: product.category.name,
     description: product.description,
     image: product.images[0]?.url ?? "/wah-thali-meal-cutout-v2.png",
@@ -165,7 +169,7 @@ export async function getCategoryOffersFromDb(): Promise<CategoryOfferMap> {
   }
 }
 
-type CouponRule = Pick<Coupon, "audience" | "minPoints">;
+type CouponRule = Pick<Coupon, "audience" | "minPoints" | "tagNames">;
 type CouponRuleMap = Record<string, CouponRule>;
 
 function isCouponRuleMap(value: unknown): value is CouponRuleMap {
@@ -189,10 +193,11 @@ export async function saveCouponRule(code: string, rule: CouponRule) {
   const normalizedCode = code.toUpperCase();
   const normalizedRule: CouponRule = {
     audience: rule.audience ?? "ALL",
-    minPoints: rule.audience === "POINTS" ? Math.max(0, Number(rule.minPoints ?? 0)) : 0,
+    minPoints: rule.audience === "POINTS" ? Math.max(1, Number(rule.minPoints ?? 1)) : 0,
+    tagNames: rule.audience === "TAGS" ? normalizeTagNames(rule.tagNames ?? []) : [],
   };
 
-  if (normalizedRule.audience === "ALL") {
+  if (normalizedRule.audience === "ALL" || (normalizedRule.audience === "TAGS" && !normalizedRule.tagNames?.length)) {
     delete rules[normalizedCode];
   } else {
     rules[normalizedCode] = normalizedRule;
@@ -237,10 +242,15 @@ function applyCouponRules(coupons: Array<{
       maxDiscount: coupon.maxDiscount ?? undefined,
       audience: rule.audience ?? "ALL",
       minPoints: rule.minPoints ?? 0,
+      tagNames: rule.tagNames ?? [],
       startsAt: coupon.startsAt.toISOString(),
       endsAt: coupon.endsAt.toISOString(),
     };
   });
+}
+
+function normalizeTagNames(tags: string[]) {
+  return Array.from(new Set(tags.map((tag) => tag.trim()).filter(Boolean))).slice(0, 12);
 }
 
 export async function getCouponsFromDb(): Promise<Coupon[]> {
@@ -307,11 +317,27 @@ export async function getBusinessSettingsFromDb(): Promise<BusinessSettings> {
       };
     }, fallbackSettings);
 
-    return withDefaultKitchenCoordinates(settings);
+    return withDefaultKitchenCoordinates(normalizeBusinessSettings(settings));
   } catch (error) {
     console.error("Database settings read failed. Falling back to local settings.", error);
     return fallbackSettings;
   }
+}
+
+function normalizeBusinessSettings(settings: BusinessSettings): BusinessSettings {
+  const deliveryFeeMode = settings.deliveryFeeMode === "PERCENT" || settings.deliveryFeeMode === "DISTANCE"
+    ? settings.deliveryFeeMode
+    : "FLAT";
+
+  return {
+    ...settings,
+    gstRate: normalizeGstRate(Number(settings.gstRate)),
+    deliveryFeeMode,
+    deliveryFeePercent: Number.isFinite(Number(settings.deliveryFeePercent)) ? Number(settings.deliveryFeePercent) : fallbackSettings.deliveryFeePercent,
+    deliveryDistanceSlabs: normalizeDeliveryDistanceSlabs(settings.deliveryDistanceSlabs).length
+      ? normalizeDeliveryDistanceSlabs(settings.deliveryDistanceSlabs)
+      : fallbackSettings.deliveryDistanceSlabs,
+  };
 }
 
 function withDefaultKitchenCoordinates(settings: BusinessSettings): BusinessSettings {
@@ -343,7 +369,8 @@ export const defaultAdvancedSettings: AdvancedSettings = {
   lowStockAlertThreshold: 5,
   newOrderSoundEnabled: true,
   newOrderSound: defaultNewOrderSound,
-  whatsappOrderAlerts: true,
+  whatsappOrderAlerts: false,
+  ownerWhatsAppOrderAlerts: true,
   adminDailyDigestTime: "21:00",
 };
 
@@ -392,6 +419,7 @@ export async function getAdvancedSettingsFromDb(): Promise<AdvancedSettings> {
       newOrderSoundEnabled: readBoolean(values.newOrderSoundEnabled, defaultAdvancedSettings.newOrderSoundEnabled),
       newOrderSound: getNewOrderSound(values.newOrderSound),
       whatsappOrderAlerts: readBoolean(values.whatsappOrderAlerts, defaultAdvancedSettings.whatsappOrderAlerts),
+      ownerWhatsAppOrderAlerts: readBoolean(values.ownerWhatsAppOrderAlerts, defaultAdvancedSettings.ownerWhatsAppOrderAlerts),
       adminDailyDigestTime: readString(values.adminDailyDigestTime, defaultAdvancedSettings.adminDailyDigestTime),
     };
   } catch (error) {
@@ -452,6 +480,22 @@ function isHomeSlides(value: unknown): value is HomeSlide[] {
     return ["id", "eyebrow", "title", "body", "code", "image"].every((key) => typeof item[key] === "string") &&
       (item.targetCategory === undefined || typeof item.targetCategory === "string");
   });
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+export async function getHomeDishCategoriesFromDb(): Promise<string[]> {
+  if (!isDatabaseConfigured()) return [];
+
+  try {
+    const row = await prisma.businessSetting.findUnique({ where: { key: "homeDishCategories" } });
+    return isStringArray(row?.value) ? row.value : [];
+  } catch (error) {
+    console.error("Home dish category read failed.", error);
+    return [];
+  }
 }
 
 export async function getHomeSlidesFromDb(): Promise<HomeSlide[]> {
@@ -549,6 +593,12 @@ function toAdminOrder(order: Prisma.OrderGetPayload<{
     amount: order.grandTotal,
     items: order.items.map((item) => ({ productId: item.productId, name: item.name, quantity: item.quantity, price: item.price })),
     itemSummary: order.items.map((item) => `${item.quantity} x ${item.name}`).join(", "),
+    payments: order.payments.map((payment) => ({
+      provider: payment.provider,
+      status: payment.status,
+      amount: payment.amount,
+      providerPaymentId: payment.providerPaymentId,
+    })),
     paymentSummary: getAdminPaymentSummary(order.payments[0]),
     createdAt: order.createdAt.toISOString(),
     timeline: order.timeline.map((event) => ({
@@ -574,6 +624,9 @@ function isMissingReviewOrderColumn(error: unknown) {
 function getAdminPaymentSummary(payment?: { provider: string; status: string }) {
   if (!payment) return "Cash on Delivery";
   if (payment.provider === "COD") return "Cash on Delivery";
+  if (payment.status === "REFUND_PENDING") return "Refund pending";
+  if (payment.status === "PARTIALLY_REFUNDED") return "Partially refunded";
+  if (payment.status === "REFUNDED") return "Refunded";
   if (payment.status === "PAID" || payment.status === "AUTHORIZED") return "Online payment received";
   if (payment.status === "CREATED") return "Online payment pending";
   return "Online payment";
@@ -588,9 +641,21 @@ export async function getAdminCustomersFromDb(): Promise<AdminCustomer[]> {
       name: true,
       mobile: true,
       email: true,
+      birthday: true,
+      anniversary: true,
       updatedAt: true,
       tags: { include: { tag: { select: { name: true } } } },
-      orders: { orderBy: { createdAt: "desc" } },
+      orders: {
+        orderBy: { createdAt: "desc" },
+        select: {
+          orderNumber: true,
+          status: true,
+          grandTotal: true,
+          createdAt: true,
+          items: { select: { name: true, quantity: true } },
+          payments: { select: { provider: true, status: true } },
+        },
+      },
     },
     orderBy: { updatedAt: "desc" },
     take: 100,
@@ -606,17 +671,39 @@ export async function getAdminCustomersFromDb(): Promise<AdminCustomer[]> {
     name: customer.name,
     mobile: customer.mobile,
     email: customer.email ?? undefined,
+    birthday: customer.birthday?.toISOString(),
+    anniversary: customer.anniversary?.toISOString(),
+    tags: tagNames,
     orders: customer.orders.length,
     ltv,
     points: rewardOrderCount,
     tier: getRewardTier(rewardOrderCount),
     isVip: tagNames.includes("VIP"),
     lastOrder: customer.orders[0]?.createdAt.toISOString(),
+    orderHistory: customer.orders.slice(0, 20).map((order) => ({
+      orderNumber: order.orderNumber,
+      status: order.status as AdminOrder["status"],
+      amount: order.grandTotal,
+      createdAt: order.createdAt.toISOString(),
+      itemSummary: order.items.map((item) => `${item.quantity} x ${item.name}`).join(", "),
+      paymentSummary: getAdminPaymentSummary(order.payments[0]),
+    })),
     };
   });
 }
 
-export async function getAdminDashboardMetrics() {
+export async function getCustomerTagsFromDb(): Promise<string[]> {
+  if (!isDatabaseConfigured()) return ["VIP"];
+
+  const tags = await prisma.customerTag.findMany({
+    orderBy: { name: "asc" },
+    select: { name: true },
+  });
+
+  return Array.from(new Set(["VIP", ...tags.map((tag) => tag.name)])).sort((a, b) => a.localeCompare(b));
+}
+
+export async function getAdminDashboardMetrics(preloadedProducts?: AdminProduct[]) {
   if (!isDatabaseConfigured()) {
     return {
       salesToday: 0,
@@ -640,7 +727,7 @@ export async function getAdminDashboardMetrics() {
     prisma.order.count(),
     prisma.order.count({ where: { status: { in: ["NEW", "CONFIRMED", "PREPARING", "PACKED", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] } } }),
     prisma.customer.count({ where: { orders: { some: {} } } }),
-    getAdminProductsFromDb(),
+    preloadedProducts ? Promise.resolve(preloadedProducts) : getAdminProductsFromDb(),
     getCouponsFromDb(),
   ]);
 
@@ -659,8 +746,8 @@ export async function getAdminDashboardMetrics() {
     unavailableItems: products.filter((product) => !product.available).length,
     lowStock,
     actionQueue: [
-      ...lowStock.slice(0, 3).map((product) => `${product.name} low stock: ${product.stock} left`),
       ...(openOrders ? [`${openOrders} orders need kitchen action`] : []),
+      ...(products.some((product) => !product.available) ? [`${products.filter((product) => !product.available).length} menu items are offline`] : []),
     ],
   };
 }

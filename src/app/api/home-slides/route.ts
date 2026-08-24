@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
+import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { defaultHomeSlides, logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
@@ -52,6 +53,8 @@ export async function PUT(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
+  const access = await requireAdminPermission(request, "settings");
+  if (!access.ok) return access.response;
 
   const parsed = slidesSchema.safeParse(await request.json());
   if (!parsed.success) {

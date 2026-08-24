@@ -1,12 +1,17 @@
 import { AdminCouponsClient } from "@/components/admin-coupons-client";
-import { getAdminCouponsFromDb, getProductsFromDb } from "@/lib/db";
+import { requireAdminPagePermission } from "@/lib/admin-page-auth";
+import { getAdminCouponsFromDb, getCustomerTagsFromDb, getProductsFromDb } from "@/lib/db";
 import { getIstDateInputValue } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminCouponsPage() {
-  const products = await getProductsFromDb();
-  const coupons = await getAdminCouponsFromDb();
+  await requireAdminPagePermission("coupons", "/admin/coupons");
+  const [products, coupons, customerTags] = await Promise.all([
+    getProductsFromDb(),
+    getAdminCouponsFromDb(),
+    getCustomerTagsFromDb(),
+  ]);
 
   return (
     <AdminCouponsClient
@@ -17,6 +22,7 @@ export default async function AdminCouponsPage() {
         endsAt: coupon.endsAt ? getIstDateInputValue(coupon.endsAt) : getIstDateInputValue(),
       }))}
       discountedProducts={products.filter((product) => product.offer).length}
+      initialCustomerTags={customerTags}
     />
   );
 }

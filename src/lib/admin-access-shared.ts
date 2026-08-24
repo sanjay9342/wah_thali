@@ -9,8 +9,21 @@ export type AdminPermission =
   | "categories"
   | "coupons"
   | "customers"
+  | "reports"
   | "settings"
   | "access";
+
+export const adminPermissions = [
+  "dashboard",
+  "orders",
+  "inventory",
+  "categories",
+  "coupons",
+  "customers",
+  "reports",
+  "settings",
+  "access",
+] as const satisfies readonly AdminPermission[];
 
 export type AdminAccessIdentity = {
   id?: string;
@@ -23,6 +36,7 @@ export type AdminAccessAssignment = Required<Pick<AdminAccessIdentity, "name" | 
   customerId?: string;
   email?: string;
   role: AdminRole;
+  permissions?: AdminPermission[];
   active: boolean;
   grantedAt: string;
   grantedBy?: string;
@@ -44,22 +58,62 @@ export const roleLabels: Record<AdminRole, string> = {
 
 export const roleDescriptions: Record<AdminRole, string> = {
   ADMIN: "Full access, including settings and staff role management.",
-  MANAGER: "Operational access for orders, products, coupons, customers, and categories.",
-  STAFF: "Kitchen and inventory access for daily restaurant work.",
+  MANAGER: "Operational access for daily menu, orders, coupons, customers, reports, and settings.",
+  STAFF: "Limited access for selected admin pages. Starts with orders only.",
+};
+
+export const permissionLabels: Record<AdminPermission, string> = {
+  dashboard: "Dashboard",
+  orders: "Orders",
+  inventory: "Inventory",
+  categories: "Categories",
+  coupons: "Coupons",
+  customers: "Customers",
+  reports: "Reports",
+  settings: "Settings",
+  access: "Staff Access",
+};
+
+export const permissionDescriptions: Record<AdminPermission, string> = {
+  dashboard: "View admin home and quick numbers.",
+  orders: "Accept, prepare, dispatch, cancel, and refund orders.",
+  inventory: "Create and update dishes, pricing, stock, variants, and addons.",
+  categories: "Create categories, images, offers, visibility, and display order.",
+  coupons: "Create, update, notify, and disable coupon offers.",
+  customers: "View customer accounts, tags, points, and order history.",
+  reports: "Open sales, tax, and performance reports.",
+  settings: "Update business, checkout, store, sound, payment, and WhatsApp settings.",
+  access: "Grant, edit, or disable staff roles and privileges.",
 };
 
 export const rolePermissions: Record<AdminRole, AdminPermission[]> = {
-  ADMIN: ["dashboard", "orders", "inventory", "categories", "coupons", "customers", "settings", "access"],
-  MANAGER: ["dashboard", "orders", "inventory", "categories", "coupons", "customers"],
-  STAFF: ["dashboard", "orders", "inventory"],
+  ADMIN: ["dashboard", "orders", "inventory", "categories", "coupons", "customers", "reports", "settings", "access"],
+  MANAGER: ["dashboard", "orders", "inventory", "categories", "coupons", "customers", "reports", "settings"],
+  STAFF: ["orders"],
 };
 
 export function getPermissionsForRole(role: AdminRole | null | undefined) {
   return role ? rolePermissions[role] : [];
 }
 
-export function hasAdminPermission(role: AdminRole | null | undefined, permission: AdminPermission) {
-  return getPermissionsForRole(role).includes(permission);
+export function isAdminPermission(value: unknown): value is AdminPermission {
+  return adminPermissions.includes(value as AdminPermission);
+}
+
+export function normalizeAdminPermissions(value: unknown, fallbackRole?: AdminRole | null) {
+  const fallback = fallbackRole ? getPermissionsForRole(fallbackRole) : [];
+  if (!Array.isArray(value)) return fallback;
+  const unique = Array.from(new Set(value.filter(isAdminPermission)));
+  return unique.length ? unique : fallback;
+}
+
+export function getPermissionsForAssignment(assignment: Pick<AdminAccessAssignment, "role" | "permissions">) {
+  return normalizeAdminPermissions(assignment.permissions, assignment.role);
+}
+
+export function hasAdminPermission(access: AdminRole | AdminPermission[] | null | undefined, permission: AdminPermission) {
+  const permissions = Array.isArray(access) ? access : getPermissionsForRole(access);
+  return permissions.includes(permission);
 }
 
 export function getAdminPathPermission(pathname: string): AdminPermission {
@@ -68,6 +122,7 @@ export function getAdminPathPermission(pathname: string): AdminPermission {
   if (pathname.startsWith("/admin/categories")) return "categories";
   if (pathname.startsWith("/admin/coupons")) return "coupons";
   if (pathname.startsWith("/admin/customers")) return "customers";
+  if (pathname.startsWith("/admin/reports")) return "reports";
   if (pathname.startsWith("/admin/settings")) return "settings";
   if (pathname.startsWith("/admin/access")) return "access";
   return "dashboard";
@@ -75,6 +130,10 @@ export function getAdminPathPermission(pathname: string): AdminPermission {
 
 export function canAccessAdminPath(role: AdminRole | null | undefined, pathname: string) {
   return hasAdminPermission(role, getAdminPathPermission(pathname));
+}
+
+export function canPermissionsAccessAdminPath(permissions: AdminPermission[], pathname: string) {
+  return hasAdminPermission(permissions, getAdminPathPermission(pathname));
 }
 
 export function isAdminRole(value: unknown): value is AdminRole {

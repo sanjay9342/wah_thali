@@ -587,6 +587,9 @@ function getPaymentSummary(payment?: { provider: string; status: string }) {
   if (payment.provider === "COD") {
     return payment.status === "COD_COLLECTED" ? "Cash collected" : "Cash on Delivery";
   }
+  if (payment.status === "REFUND_PENDING") return "Refund pending";
+  if (payment.status === "PARTIALLY_REFUNDED") return "Partially refunded";
+  if (payment.status === "REFUNDED") return "Refunded";
   if (payment.status === "PAID" || payment.status === "AUTHORIZED") return "Online payment received";
   if (payment.status === "FAILED") return "Online payment failed";
   return "Online payment pending";

@@ -7,6 +7,7 @@ const settings = {
   kitchenLatitude: "22.514805",
   kitchenLongitude: "88.398226",
   deliveryRadiusKm: 5,
+  deliveryFeeMode: "FLAT" as const,
 };
 
 describe("delivery radius", () => {

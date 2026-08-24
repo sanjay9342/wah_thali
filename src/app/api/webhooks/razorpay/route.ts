@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
-import { notifyOrderStatus } from "@/lib/customer-messaging";
+import { notifyOrderStatus, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import type { OrderStatus } from "@/lib/types";
 
@@ -12,6 +12,17 @@ type RazorpayWebhookPayload = {
       entity?: {
         id?: string;
         order_id?: string;
+      };
+    };
+    refund?: {
+      entity?: {
+        id?: string;
+        amount?: number;
+        payment_id?: string;
+        status?: "pending" | "processed" | "failed";
+        speed_requested?: string;
+        speed_processed?: string;
+        acquirer_data?: Record<string, string | null>;
       };
     };
   };
@@ -59,7 +70,10 @@ export async function POST(request: NextRequest) {
   const event = payload.event;
   const paymentId = payload.payload?.payment?.entity?.id;
   const razorpayOrderId = payload.payload?.payment?.entity?.order_id;
-  const eventId = paymentId ? `${event}:${paymentId}` : `${event}:${Date.now()}`;
+  const refund = payload.payload?.refund?.entity;
+  const refundId = refund?.id;
+  const refundPaymentId = refund?.payment_id;
+  const eventId = refundId ? `${event}:${refundId}` : paymentId ? `${event}:${paymentId}` : `${event}:${Date.now()}`;
 
   await prisma.webhookEvent.upsert({
     where: { provider_eventId: { provider: "razorpay", eventId } },
@@ -143,9 +157,16 @@ export async function POST(request: NextRequest) {
           include: {
             customer: { select: { id: true, name: true, mobile: true, email: true } },
             items: true,
+            payments: true,
             timeline: { orderBy: { createdAt: "asc" } },
           },
         });
+        if (settings.ownerWhatsAppOrderAlerts && notifiedOrder && notifiedStatus !== "CANCELLED") {
+          await notifyOwnerOrderAlert(notifiedOrder, settings.whatsappNumber, "NEW_ORDER", notificationNote).catch((error) => {
+            console.error("Owner Razorpay webhook order WhatsApp alert failed.", error);
+          });
+        }
+
         if (settings.whatsappOrderAlerts && notifiedOrder) {
           await notifyOrderStatus(notifiedOrder, notifiedStatus, notificationNote).catch((error) => {
             console.error("Razorpay webhook WhatsApp/customer notification failed.", error);
@@ -155,12 +176,80 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (event?.startsWith("refund.") && refundId && refundPaymentId) {
+    const payment = await prisma.payment.findFirst({
+      where: {
+        provider: "RAZORPAY",
+        providerPaymentId: refundPaymentId,
+      },
+      include: {
+        order: {
+          include: {
+            customer: { select: { id: true, name: true, mobile: true, email: true } },
+            items: true,
+            payments: true,
+            timeline: { orderBy: { createdAt: "asc" } },
+          },
+        },
+      },
+    });
+
+    if (payment) {
+      const refundedAmountRupees = refund.amount ? Math.round(refund.amount / 100) : payment.amount;
+      const fullyRefunded = refundedAmountRupees >= payment.amount;
+      const nextPaymentStatus =
+        event === "refund.failed" || refund.status === "failed"
+          ? "PAID"
+          : event === "refund.processed" || refund.status === "processed"
+            ? fullyRefunded ? "REFUNDED" : "PARTIALLY_REFUNDED"
+            : "REFUND_PENDING";
+
+      await prisma.$transaction(async (tx) => {
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: { status: nextPaymentStatus },
+        });
+
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: payment.orderId,
+            fromStatus: payment.order.status,
+            toStatus: payment.order.status,
+            note: [
+              `Razorpay ${event} for refund ${refundId}.`,
+              `Payment status: ${nextPaymentStatus}.`,
+              refund.amount ? `Refund amount: Rs ${refundedAmountRupees}.` : "",
+            ].filter(Boolean).join(" "),
+          },
+        });
+      });
+
+      await logActivity({
+        type: "RAZORPAY_REFUND_WEBHOOK",
+        entity: "Payment",
+        entityId: payment.id,
+        summary: `Razorpay refund webhook: ${event}`,
+        metadata: {
+          orderNumber: payment.order.orderNumber,
+          paymentId: refundPaymentId,
+          refundId,
+          refundStatus: refund.status,
+          paymentStatus: nextPaymentStatus,
+          amount: refundedAmountRupees,
+          speedRequested: refund.speed_requested,
+          speedProcessed: refund.speed_processed,
+          acquirerData: refund.acquirer_data,
+        },
+      });
+    }
+  }
+
   await logActivity({
     type: "RAZORPAY_WEBHOOK_RECEIVED",
     entity: "WebhookEvent",
     entityId: eventId,
     summary: `Razorpay webhook received: ${event}`,
-    metadata: { paymentId, razorpayOrderId },
+    metadata: { paymentId, razorpayOrderId, refundId, refundPaymentId },
   });
 
   return NextResponse.json({ ok: true });

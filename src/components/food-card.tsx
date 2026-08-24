@@ -1,15 +1,18 @@
 import { Heart, Plus, Star } from "lucide-react";
 import Link from "next/link";
 import type { Product } from "@/lib/types";
-import { formatRupees } from "@/lib/pricing";
+import { formatRupees, getProductUnitPricing } from "@/lib/pricing";
 
 export function FoodCard({ product }: { product: Product }) {
+  const pricing = getProductUnitPricing(product);
+
   return (
-    <article className="surface overflow-hidden rounded-2xl">
+    <article className="surface group overflow-hidden rounded-2xl transition duration-200 hover:-translate-y-1 hover:border-maroon/30 hover:shadow-[0_20px_42px_rgba(34,31,32,0.12)]">
       <Link href={`/menu#${product.slug}`} className="block">
-        <div className="relative aspect-[4/3] overflow-hidden bg-border">
+        <div className="relative aspect-[4/3] overflow-hidden bg-border transition duration-300 group-hover:bg-[#fff4f5]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
+          <img src={product.image} alt={product.name} className="h-full w-full object-cover transition duration-300 ease-out group-hover:scale-[1.08] group-hover:saturate-[1.08]" />
+          <span className="pointer-events-none absolute inset-0 opacity-0 ring-2 ring-inset ring-maroon/25 transition-opacity duration-300 group-hover:opacity-100" />
           <div className="absolute left-3 top-3 flex gap-2">
             <span
               className={`rounded-md px-2 py-1 text-xs font-bold text-white ${
@@ -41,14 +44,13 @@ export function FoodCard({ product }: { product: Product }) {
             <Star size={16} className="fill-gold text-gold" /> {product.rating}
           </span>
           <span>{product.ratingCount} ratings</span>
-          <span>{product.prepTimeMinutes} min</span>
         </div>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <span className="text-lg font-black text-charcoal">{formatRupees(product.price)}</span>
-            {product.originalPrice ? (
+            <span className="text-lg font-black text-charcoal">{formatRupees(pricing.unitPrice)}</span>
+            {pricing.discountPerUnit > 0 ? (
               <span className="ml-2 text-sm text-muted line-through">
-                {formatRupees(product.originalPrice)}
+                {formatRupees(pricing.originalUnitPrice)}
               </span>
             ) : null}
           </div>

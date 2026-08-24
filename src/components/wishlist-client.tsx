@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Heart, Minus, Plus, Search, ShoppingBag, Star, TimerReset, Utensils } from "lucide-react";
+import { ArrowRight, Heart, Minus, Plus, Search, ShoppingBag, Star, Utensils } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
@@ -8,7 +8,7 @@ import { Header } from "@/components/header";
 import { MobileNav } from "@/components/mobile-nav";
 import { writeStoredCart } from "@/lib/cart-storage";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
-import { formatRupees, getPricableCartLines } from "@/lib/pricing";
+import { formatRupees, getPricableCartLines, getProductUnitPricing } from "@/lib/pricing";
 import type { CartLine, Product } from "@/lib/types";
 import { useStoredCart } from "@/lib/use-stored-cart";
 import { useStoredWishlist } from "@/lib/use-stored-wishlist";
@@ -159,6 +159,7 @@ export function WishlistClient({ products }: { products: Product[] }) {
             <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {savedProducts.map((product) => {
                 const quantity = getQuantity(validCart, product.id);
+                const pricing = getProductUnitPricing(product);
 
                 return (
                   <article key={product.id} className="group overflow-hidden rounded-[24px] bg-white shadow-[0_14px_34px_rgba(34,31,32,0.07)] ring-1 ring-[#f1e7e4]">
@@ -193,14 +194,11 @@ export function WishlistClient({ products }: { products: Product[] }) {
                         <span className="inline-flex items-center gap-1 rounded-lg bg-[#fff4f5] px-2 py-1 text-maroon">
                           <Star size={13} className="fill-maroon" /> {product.rating}
                         </span>
-                        <span className="inline-flex items-center gap-1 rounded-lg bg-[#f7f8fb] px-2 py-1">
-                          <TimerReset size={13} /> {product.prepTimeMinutes}-{product.prepTimeMinutes + 8} min
-                        </span>
                       </div>
                       <div className="mt-4 flex items-center justify-between gap-3">
                         <span>
-                          <span className="block text-xl font-black text-charcoal">{formatRupees(product.price)}</span>
-                          {product.originalPrice ? <span className="text-xs font-bold text-muted line-through">{formatRupees(product.originalPrice)}</span> : null}
+                          <span className="block text-xl font-black text-charcoal">{formatRupees(pricing.unitPrice)}</span>
+                          {pricing.discountPerUnit > 0 ? <span className="text-xs font-bold text-muted line-through">{formatRupees(pricing.originalUnitPrice)}</span> : null}
                         </span>
                         {quantity ? (
                           <div className="inline-grid h-11 grid-cols-[38px_36px_38px] overflow-hidden rounded-xl bg-maroon text-white">

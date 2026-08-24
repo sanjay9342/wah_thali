@@ -11,7 +11,6 @@ import { clearNotifications, markNotificationsRead, useNotifications } from "@/l
 import { useEffect, useState } from "react";
 
 export function Header({ showContact = true, showLocation = false }: { showContact?: boolean; showLocation?: boolean; whatsappNumber?: string }) {
-  const deliveryLocation = useDeliveryLocation();
   const pathname = usePathname();
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -43,14 +42,10 @@ export function Header({ showContact = true, showLocation = false }: { showConta
         </Link>
 
         {showLocation ? (
-          <Link href="/address" className="flex min-w-0 max-w-[300px] items-center gap-2 rounded-full border border-[#e7ebf2] bg-white px-3 py-2 text-[13px] font-black text-charcoal">
-            <MapPin size={17} className="shrink-0 text-red" />
-            <span className="truncate">{deliveryLocation.address}</span>
-            <ChevronDown size={15} className="shrink-0 text-muted" />
-          </Link>
+          <DesktopLocationLink />
         ) : null}
 
-        <nav className="ml-auto flex items-center gap-8 text-[13px] font-black">
+        <nav className="ml-auto flex items-center gap-8 text-[13px] font-semibold">
           {[
             ["/", "Home"],
             ["/menu", "Search"],
@@ -79,7 +74,7 @@ export function Header({ showContact = true, showLocation = false }: { showConta
         {showContact ? (
           <Link
             href={customerSession ? "/account" : `/login?next=${encodeURIComponent(pathname || "/account")}`}
-            className={`inline-flex h-10 items-center gap-2 rounded-[10px] px-5 text-[12px] font-black shadow-[0_8px_18px_rgba(141,0,33,0.16)] ${
+            className={`inline-flex h-10 items-center gap-2 rounded-[10px] px-5 text-[12px] font-semibold shadow-[0_8px_18px_rgba(141,0,33,0.16)] ${
               customerSession ? "bg-[#fff4f5] text-red ring-1 ring-[#f1dce1]" : "bg-red text-white"
             }`}
           >
@@ -124,18 +119,7 @@ export function Header({ showContact = true, showLocation = false }: { showConta
         </div>
 
         {showLocation ? (
-          <Link href="/address" className="mt-2 grid min-h-[46px] w-full grid-cols-[36px_minmax(0,1fr)_26px] items-center gap-2 rounded-2xl border border-[#e7ebf2] bg-white px-2.5 py-2">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-maroon ring-1 ring-[#e7ebf2]">
-              <MapPin size={19} strokeWidth={2.6} />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-[9px] font-black uppercase tracking-wide text-maroon/75">Delivering to</span>
-              <span className="mt-0.5 block truncate text-[13px] font-black leading-tight text-charcoal">{deliveryLocation.address}</span>
-            </span>
-            <span className="grid h-6 w-6 place-items-center rounded-full bg-white text-[#6b7280] ring-1 ring-[#e7ebf2]">
-              <ChevronDown size={14} strokeWidth={2.6} />
-            </span>
-          </Link>
+          <MobileLocationLink />
         ) : null}
       </div>
 
@@ -187,5 +171,36 @@ export function Header({ showContact = true, showLocation = false }: { showConta
         </div>
       ) : null}
     </header>
+  );
+}
+
+function DesktopLocationLink() {
+  const deliveryLocation = useDeliveryLocation();
+
+  return (
+    <Link href="/address" className="flex min-w-0 max-w-[300px] items-center gap-2 rounded-full border border-[#e7ebf2] bg-white px-3 py-2 text-[13px] font-semibold text-charcoal">
+      <MapPin size={17} className="shrink-0 text-red" />
+      <span className="truncate">{deliveryLocation.address}</span>
+      <ChevronDown size={15} className="shrink-0 text-muted" />
+    </Link>
+  );
+}
+
+function MobileLocationLink() {
+  const deliveryLocation = useDeliveryLocation();
+
+  return (
+    <Link href="/address" className="mt-2 grid min-h-[46px] w-full grid-cols-[36px_minmax(0,1fr)_26px] items-center gap-2 rounded-2xl border border-[#e7ebf2] bg-white px-2.5 py-2">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-maroon ring-1 ring-[#e7ebf2]">
+        <MapPin size={19} strokeWidth={2.6} />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[9px] font-semibold uppercase tracking-wide text-maroon/75">Delivering to</span>
+        <span className="mt-0.5 block truncate text-[13px] font-semibold leading-tight text-charcoal">{deliveryLocation.address}</span>
+      </span>
+      <span className="grid h-6 w-6 place-items-center rounded-full bg-white text-[#6b7280] ring-1 ring-[#e7ebf2]">
+        <ChevronDown size={14} strokeWidth={2.6} />
+      </span>
+    </Link>
   );
 }
