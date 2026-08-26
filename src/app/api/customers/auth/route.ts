@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import type { PaymentStatus } from "@prisma/client";
 import { z } from "zod";
@@ -108,7 +109,7 @@ async function upsertBootstrapAdmin(email: string, password: string) {
   });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -181,3 +182,5 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ customer: toPublicCustomer(customer) });
 }
+
+export const POST = withApiErrorHandling(postHandler, "POST /api/customers/auth");

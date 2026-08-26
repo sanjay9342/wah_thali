@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { mkdir, writeFile } from "node:fs/promises";
 import pathModule from "node:path";
@@ -7,7 +8,7 @@ import { getSupabaseAdminClient, isSupabaseConfigured } from "@/lib/supabase";
 
 const defaultBucket = process.env.SUPABASE_STORAGE_BUCKET ?? "wah-thali-assets";
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const access = await requireAdminPermission(request, "settings");
   if (!access.ok) return access.response;
 
@@ -86,3 +87,5 @@ async function uploadToPublicFolder(storagePath: string, buffer: Buffer) {
 
   return NextResponse.json({ bucket: "public", path: normalizedPath, publicUrl, storage: "local" });
 }
+
+export const POST = withApiErrorHandling(postHandler, "POST /api/storage/upload");

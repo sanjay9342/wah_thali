@@ -2,22 +2,31 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  ArrowRight,
   Bell,
+  BellOff,
   ChevronRight,
+  CheckCircle2,
   Gift,
   Heart,
   HelpCircle,
   Home,
+  LockKeyhole,
   LogOut,
+  Mail,
   MapPin,
+  MessageCircle,
   PackageCheck,
+  Phone,
   ShieldCheck,
   Star,
+  TicketPercent,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { clearCustomerSession, readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
+import { saveNotificationPreferences, useNotificationPreferences, type WahNotificationPreferences } from "@/lib/notifications";
 import { formatRupees } from "@/lib/pricing";
 import { getRewardState, rewardMilestones } from "@/lib/rewards";
 
@@ -68,6 +77,8 @@ export function AccountClient() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [notificationSaving, setNotificationSaving] = useState(false);
+  const notificationPreferences = useNotificationPreferences(session?.mobile);
 
   useEffect(() => {
     function refreshSession() {
@@ -120,6 +131,8 @@ export function AccountClient() {
 
   const displayName = profile?.name || session?.name || "Guest";
   const displayMobile = profile?.mobile || session?.mobile || "";
+  const displayEmail = profile?.email || "";
+  const profileInitial = displayName.trim().charAt(0).toUpperCase() || "W";
   const addresses = useMemo(() => profile?.addresses ?? [], [profile?.addresses]);
   const orders = useMemo(() => profile?.orders ?? [], [profile?.orders]);
   const ltv = useMemo(() => orders.reduce((total, order) => total + order.grandTotal, 0), [orders]);
@@ -127,56 +140,95 @@ export function AccountClient() {
   const rewardState = getRewardState(rewardOrderCount);
   const tier = profile?.rewardTier || rewardState.tier;
   const unlockedRewardTotal = rewardState.completed.reduce((total, milestone) => total + milestone.value, 0);
+  const mutedCount = [notificationPreferences.appMuted, notificationPreferences.whatsappMuted].filter(Boolean).length;
+
+  async function updateNotificationPreference(key: keyof WahNotificationPreferences, value: boolean) {
+    if (!session?.mobile || notificationSaving) return;
+    setNotificationSaving(true);
+    setMessage("");
+    try {
+      await saveNotificationPreferences(session.mobile, {
+        ...notificationPreferences,
+        [key]: value,
+      });
+      setMessage(value ? "Notification mute setting saved." : "Notification alerts turned on.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save notification settings.");
+    } finally {
+      setNotificationSaving(false);
+    }
+  }
 
   if (!sessionReady || !session) {
     return <main className="min-h-screen bg-white" />;
   }
 
   return (
-    <main className="mx-auto w-full max-w-[430px] bg-[#fbf8f4] px-5 pb-28 pt-5 sm:max-w-5xl sm:px-6 lg:px-8">
-      <section className="rounded-[28px] bg-white p-5 shadow-[0_14px_34px_rgba(34,31,32,0.08)] ring-1 ring-border">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-4">
-            <div className="relative grid h-20 w-20 shrink-0 place-items-center rounded-full bg-cream text-maroon shadow-[0_12px_24px_rgba(34,31,32,0.08)] ring-1 ring-[#eadfd5]">
-              <UserRound size={34} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-black uppercase tracking-widest text-maroon/70">Profile</p>
-              <h1 className="truncate text-2xl font-black text-charcoal">{displayName}</h1>
-              <p className="mt-1 text-sm font-bold text-muted">+91 {displayMobile}</p>
-              {profile?.email ? <p className="mt-1 truncate text-xs font-bold text-muted">{profile.email}</p> : null}
-              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-cream px-3 py-1 text-xs font-black text-maroon">
-                <Star size={13} className="fill-maroon" /> {tier} member
+    <main className="mx-auto w-full max-w-[430px] bg-white px-5 pb-28 pt-5 sm:max-w-5xl sm:px-6 lg:max-w-none lg:px-0 lg:pb-14 lg:pt-8">
+      <div className="mx-auto w-full lg:max-w-[1248px] lg:px-8">
+      <section className="overflow-hidden rounded-[28px] bg-white shadow-[0_18px_44px_rgba(34,31,32,0.09)] ring-1 ring-[#eadfe3]">
+        <div className="bg-[linear-gradient(135deg,#8d0021_0%,#b9163f_62%,#221f20_100%)] p-5 text-white lg:p-7">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="relative grid h-20 w-20 shrink-0 place-items-center rounded-full bg-white text-[32px] font-black text-maroon shadow-[0_16px_30px_rgba(34,31,32,0.22)] ring-4 ring-white/24">
+                {profileInitial}
+                <span className="absolute -bottom-1 -right-1 grid h-7 w-7 place-items-center rounded-full bg-[#fff4f5] text-maroon ring-2 ring-white">
+                  <Star size={14} className="fill-maroon" />
+                </span>
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/72">Profile</p>
+                <h1 className="mt-1 truncate text-[27px] font-black leading-tight text-white lg:text-[36px]">{displayName}</h1>
+                <div className="mt-2 grid gap-1.5 text-[12px] font-bold text-white/84">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <Phone size={13} className="shrink-0" />
+                    <span className="truncate">+91 {displayMobile}</span>
+                  </span>
+                  {displayEmail ? (
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Mail size={13} className="shrink-0" />
+                      <span className="truncate">{displayEmail}</span>
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-[11px] font-black text-maroon shadow-sm">
+                  <Star size={13} className="fill-maroon" /> {tier} member
+                </div>
               </div>
             </div>
+            <Link href="/login" className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/12 text-white ring-1 ring-white/22 transition-colors hover:bg-white/20" aria-label="Edit profile">
+              <UserRound size={21} />
+            </Link>
           </div>
-          <Link href="/login" className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-cream text-charcoal" aria-label="Edit profile">
-            <UserRound size={21} />
-          </Link>
         </div>
 
-        <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-2xl border border-border bg-cream text-center">
-          {[
-            [loading ? "..." : String(rewardOrderCount), "Orders"],
-            [`${Math.round(rewardState.progress)}%`, "Reward"],
-            [formatRupees(ltv), "Spent"],
-          ].map(([value, label]) => (
-            <div key={label} className="min-w-0 border-r border-border px-1.5 py-3 last:border-r-0 sm:px-2">
-              <p className="truncate text-base font-black text-maroon sm:text-lg">{value}</p>
-              <p className="text-[11px] font-bold text-muted">{label}</p>
-            </div>
-          ))}
+        <div className="grid grid-cols-3 bg-white text-center">
+          <div className="min-w-0 border-r border-[#eef1f6] px-1.5 py-4 sm:px-2">
+            <PackageCheck size={18} className="mx-auto text-maroon" />
+            <p className="mt-1 truncate text-[17px] font-black text-maroon sm:text-lg">{loading ? "..." : String(rewardOrderCount)}</p>
+            <p className="text-[11px] font-bold text-muted">Orders</p>
+          </div>
+          <div className="min-w-0 border-r border-[#eef1f6] px-1.5 py-4 sm:px-2">
+            <TicketPercent size={18} className="mx-auto text-maroon" />
+            <p className="mt-1 truncate text-[17px] font-black text-maroon sm:text-lg">{Math.round(rewardState.progress)}%</p>
+            <p className="text-[11px] font-bold text-muted">Reward</p>
+          </div>
+          <div className="min-w-0 px-1.5 py-4 sm:px-2">
+            <Star size={18} className="mx-auto fill-maroon text-maroon" />
+            <p className="mt-1 truncate text-[17px] font-black text-maroon sm:text-lg">{formatRupees(ltv)}</p>
+            <p className="text-[11px] font-bold text-muted">Spent</p>
+          </div>
         </div>
       </section>
 
-      <section className="mt-5 grid gap-3 sm:grid-cols-3">
+      <section className="mt-5 grid gap-3 sm:grid-cols-3 lg:gap-5">
         {[
           ["/offers", Gift, "Coupons", "Active offers"],
           ["/loyalty", Star, "Rewards", `${rewardOrderCount} orders`],
           ["/support", HelpCircle, "Support", "Help center"],
         ].map(([href, Icon, title, subtitle]) => (
           <Link key={String(title)} href={String(href)} className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-border sm:p-4">
-            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-cream text-maroon ring-1 ring-[#eadfd5] sm:h-12 sm:w-12">
+            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-[#fff4f5] text-maroon ring-1 ring-[#f1dce1] sm:h-12 sm:w-12">
               <Icon size={20} />
             </span>
             <span>
@@ -187,12 +239,47 @@ export function AccountClient() {
         ))}
       </section>
 
+      <div className="lg:mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_390px] lg:items-start lg:gap-6">
+      <div className="min-w-0">
+      <section className="mt-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black text-charcoal">Notification Settings</h2>
+            <p className="mt-0.5 text-xs font-bold text-muted">
+              {mutedCount ? `${mutedCount} notification channel${mutedCount === 1 ? "" : "s"} muted` : "All notification channels are active"}
+            </p>
+          </div>
+          <Link href="/notifications" className="inline-flex h-10 items-center justify-center rounded-xl bg-white px-3 text-xs font-black text-maroon shadow-sm ring-1 ring-border">
+            View alerts
+          </Link>
+        </div>
+        <div className="mt-3 overflow-hidden rounded-[24px] bg-white shadow-sm ring-1 ring-border">
+          <NotificationPreferenceRow
+            icon={notificationPreferences.appMuted ? BellOff : Bell}
+            title="Notification Icon"
+            subtitle={notificationPreferences.appMuted ? "Bell alerts are muted" : "Bell alerts are active"}
+            muted={notificationPreferences.appMuted}
+            disabled={notificationSaving}
+            onToggle={(muted) => updateNotificationPreference("appMuted", muted)}
+          />
+          <NotificationPreferenceRow
+            icon={MessageCircle}
+            title="WhatsApp Notifications"
+            subtitle={notificationPreferences.whatsappMuted ? "WhatsApp messages are muted" : "WhatsApp messages are active"}
+            muted={notificationPreferences.whatsappMuted}
+            disabled={notificationSaving}
+            onToggle={(muted) => updateNotificationPreference("whatsappMuted", muted)}
+          />
+        </div>
+        {notificationSaving ? <p className="mt-2 text-xs font-black text-muted">Saving notification settings...</p> : null}
+      </section>
+
       <section className="mt-6">
         <h2 className="text-lg font-black text-charcoal">My Account</h2>
-        <div className="mt-3 overflow-hidden rounded-[24px] bg-white shadow-sm ring-1 ring-border">
+        <div className="mt-3 overflow-hidden rounded-[24px] bg-white shadow-sm ring-1 ring-border lg:grid lg:grid-cols-2">
           {accountRows.map((row) => (
-            <Link key={row.title} href={row.href} className="flex items-center gap-3 border-b border-border p-4 last:border-b-0">
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-cream text-maroon">
+            <Link key={row.title} href={row.href} className="flex items-center gap-3 border-b border-border p-4 last:border-b-0 lg:border-r lg:[&:nth-child(2n)]:border-r-0 lg:[&:nth-last-child(-n+2)]:border-b-0">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#fff4f5] text-maroon">
                 <row.icon size={20} />
               </span>
               <span className="min-w-0 flex-1">
@@ -214,13 +301,13 @@ export function AccountClient() {
           {addresses.length ? addresses.map((address) => (
             <article key={address.id} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-border">
               <div className="flex items-start gap-3">
-              <span className="grid h-11 w-11 place-items-center rounded-2xl bg-cream text-maroon">
+              <span className="grid h-11 w-11 place-items-center rounded-2xl bg-[#fff4f5] text-maroon">
                   <Home size={20} />
                 </span>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h3 className="font-black text-charcoal">{address.label}</h3>
-                    {address.isDefault ? <span className="rounded-full bg-cream px-2 py-0.5 text-[10px] font-black text-maroon ring-1 ring-[#eadfd5]">Default</span> : null}
+                    {address.isDefault ? <span className="rounded-full bg-[#fff4f5] px-2 py-0.5 text-[10px] font-black text-maroon ring-1 ring-[#f1dce1]">Default</span> : null}
                   </div>
                   <p className="mt-1 text-sm font-semibold leading-6 text-muted">
                     {[address.line1, address.area, address.city, address.state, address.pinCode].filter(Boolean).join(", ")}
@@ -235,43 +322,79 @@ export function AccountClient() {
           )}
         </div>
       </section>
+      </div>
 
-      <section className="mt-6 overflow-hidden rounded-[24px] border border-[#eadfd5] bg-[#f8f1ea] p-5 text-charcoal shadow-[0_14px_34px_rgba(34,31,32,0.06)]">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-black text-charcoal">Next reward</h2>
-            <p className="mt-1 text-sm font-bold text-muted">
-              {rewardState.next
-                ? `${rewardState.ordersToNext} more orders unlock ${formatRupees(rewardState.next.value)} coupon.`
-                : "All reward coupons are unlocked."}
-            </p>
+      <aside className="lg:sticky lg:top-24">
+      <section className="mt-6 overflow-hidden rounded-[24px] border border-[#eadfe3] bg-white text-charcoal shadow-[0_18px_42px_rgba(34,31,32,0.09)] lg:mt-0">
+        <div className="bg-[linear-gradient(135deg,#8d0021_0%,#ad1238_58%,#221f20_100%)] p-5 text-white">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/14 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-white ring-1 ring-white/20">
+                <TicketPercent size={13} /> Wah rewards
+              </span>
+              <h2 className="mt-3 text-[22px] font-black leading-tight text-white">Next reward</h2>
+              <p className="mt-1 max-w-[260px] text-sm font-bold leading-5 text-white/86">
+                {rewardState.next
+                  ? `${rewardState.ordersToNext} more orders unlock ${formatRupees(rewardState.next.value)} coupon.`
+                  : "All reward coupons are unlocked."}
+              </p>
+            </div>
+            <span className="shrink-0 rounded-[18px] bg-white px-3.5 py-2 text-right text-[11px] font-black text-maroon shadow-[0_12px_24px_rgba(34,31,32,0.16)]">
+              <span className="block text-[22px] leading-none">{rewardOrderCount}</span>
+              orders
+            </span>
           </div>
-          <span className="rounded-2xl bg-white px-3 py-2 text-right text-xs font-black text-maroon ring-1 ring-[#eadfd5]">
-            <span className="block text-lg leading-none">{rewardOrderCount}</span>
-            orders
-          </span>
+
+          <div className="mt-5">
+            <div className="flex items-center justify-between gap-3 text-[11px] font-black text-white/88">
+              <span>{rewardState.next ? `${Math.round(rewardState.progress)}% toward ${formatRupees(rewardState.next.value)}` : "Reward journey complete"}</span>
+              <span>{rewardState.next ? `${rewardState.next.orders} order goal` : `${rewardOrderCount} orders`}</span>
+            </div>
+            <div className="mt-2 h-3 overflow-hidden rounded-full bg-white/20 ring-1 ring-white/20">
+              <div className="wt-reward-progress h-full rounded-full bg-white" style={{ width: `${rewardState.progress}%` }} />
+            </div>
+          </div>
         </div>
-        <div className="mt-5 h-3 overflow-hidden rounded-full bg-white ring-1 ring-[#eadfd5]">
-          <div className="h-full rounded-full bg-maroon transition-[width] duration-700" style={{ width: `${rewardState.progress}%` }} />
+
+        <div className="p-4 sm:p-5">
+          <div className="grid grid-cols-3 gap-2">
+            {rewardMilestones.map((milestone) => {
+              const unlocked = rewardOrderCount >= milestone.orders;
+              const remainingOrders = Math.max(milestone.orders - rewardOrderCount, 0);
+              return (
+                <Link
+                  key={milestone.code}
+                  href={unlocked ? "/offers" : "/menu"}
+                  className={`min-w-0 rounded-[18px] p-3 text-center ring-1 transition duration-200 hover:-translate-y-0.5 ${
+                    unlocked
+                      ? "bg-[#fff4f5] text-maroon shadow-[0_10px_22px_rgba(141,0,33,0.08)] ring-[#f1dce1]"
+                      : "bg-[#f7f8fb] text-muted ring-[#e7ebf2]"
+                  }`}
+                >
+                  <span className={`mx-auto grid h-8 w-8 place-items-center rounded-full ${unlocked ? "bg-maroon text-white" : "bg-white text-muted ring-1 ring-[#e7ebf2]"}`}>
+                    {unlocked ? <CheckCircle2 size={16} /> : <LockKeyhole size={15} />}
+                  </span>
+                  <span className="mt-2 block truncate text-[15px] font-black">{formatRupees(milestone.value)}</span>
+                  <span className="mt-0.5 block text-[10px] font-black leading-4">{unlocked ? "Unlocked" : `${remainingOrders} left`}</span>
+                  <span className="block text-[10px] font-bold leading-4 text-muted">{milestone.orders} orders</span>
+                </Link>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 flex flex-col gap-3 rounded-[18px] bg-[#f7f8fb] p-3 ring-1 ring-[#e7ebf2] sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs font-black leading-5 text-muted">
+              {unlockedRewardTotal ? `${formatRupees(unlockedRewardTotal)} reward value unlocked in Coupons.` : "Place orders to start unlocking reward coupons."}
+            </p>
+            <Link
+              href={unlockedRewardTotal ? "/offers" : "/menu"}
+              className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-maroon px-4 text-xs font-black text-white shadow-[0_10px_20px_rgba(141,0,33,0.18)]"
+            >
+              {unlockedRewardTotal ? "Open coupons" : "Order now"}
+              <ArrowRight size={15} strokeWidth={3} />
+            </Link>
+          </div>
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-2">
-          {rewardMilestones.map((milestone) => {
-            const unlocked = rewardOrderCount >= milestone.orders;
-            return (
-              <Link
-                key={milestone.code}
-                href="/offers"
-                className={`rounded-2xl px-3 py-3 text-center ring-1 ring-[#eadfd5] ${unlocked ? "bg-white text-maroon" : "bg-white/60 text-muted"}`}
-              >
-                <span className="block text-sm font-black">{formatRupees(milestone.value)}</span>
-                <span className="mt-1 block text-[10px] font-black">{milestone.orders} orders</span>
-              </Link>
-            );
-          })}
-        </div>
-        <p className="mt-4 text-xs font-black text-muted">
-          {unlockedRewardTotal ? `${formatRupees(unlockedRewardTotal)} reward value unlocked in Coupons.` : "Place orders to start unlocking reward coupons."}
-        </p>
       </section>
 
       {message ? <p className="mt-4 rounded-2xl bg-white p-3 text-center text-xs font-black text-muted">{message}</p> : null}
@@ -283,11 +406,14 @@ export function AccountClient() {
       >
         <LogOut size={18} /> Logout
       </button>
+      </aside>
+      </div>
+      </div>
 
       {confirmLogout ? (
         <div className="fixed inset-0 z-[80] grid place-items-center bg-charcoal/45 p-5">
           <section className="w-full max-w-[360px] rounded-[24px] bg-white p-5 text-center shadow-2xl">
-            <span className="mx-auto grid h-13 w-13 place-items-center rounded-full bg-cream text-maroon">
+            <span className="mx-auto grid h-13 w-13 place-items-center rounded-full bg-[#fff4f5] text-maroon">
               <LogOut size={24} />
             </span>
             <h2 className="mt-4 text-xl font-black text-charcoal">Logout from Wah Thali?</h2>
@@ -319,5 +445,45 @@ export function AccountClient() {
         </div>
       ) : null}
     </main>
+  );
+}
+
+function NotificationPreferenceRow({
+  disabled,
+  icon: Icon,
+  muted,
+  onToggle,
+  subtitle,
+  title,
+}: {
+  disabled: boolean;
+  icon: typeof Bell;
+  muted: boolean;
+  onToggle: (muted: boolean) => void;
+  subtitle: string;
+  title: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 border-b border-border p-4 last:border-b-0">
+      <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${muted ? "bg-[#f7f8fb] text-muted" : "bg-[#fff4f5] text-maroon"}`}>
+        <Icon size={20} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-black text-charcoal">{title}</span>
+        <span className="mt-0.5 block truncate text-sm font-semibold text-muted">{subtitle}</span>
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={!muted}
+        disabled={disabled}
+        onClick={() => onToggle(!muted)}
+        className={`relative h-8 w-[58px] shrink-0 rounded-full p-1 transition-colors disabled:opacity-60 ${
+          muted ? "bg-[#d5d9e2]" : "bg-maroon"
+        }`}
+      >
+        <span className={`block h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${muted ? "translate-x-0" : "translate-x-6"}`} />
+      </button>
+    </div>
   );
 }

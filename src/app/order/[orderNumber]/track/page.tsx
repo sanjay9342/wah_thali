@@ -91,8 +91,8 @@ export default async function TrackPage({
   return (
     <>
       <OrderTrackAutoRefresh status={order.status} />
-      <main className="min-h-screen bg-[#fff4f5] text-charcoal">
-        <div className="mx-auto min-h-screen max-w-[430px] bg-[#fffafa] shadow-[0_24px_80px_rgba(34,31,32,0.14)] lg:max-w-5xl lg:bg-white">
+      <main className="min-h-screen bg-white text-charcoal">
+        <div className="mx-auto min-h-screen max-w-[430px] bg-[#fffafa] shadow-[0_24px_80px_rgba(34,31,32,0.14)] lg:max-w-[1248px] lg:bg-white">
           <div className="sticky top-0 z-30 flex h-[68px] items-center justify-between border-b border-[#efe1e5] bg-white/96 px-5 backdrop-blur">
             <Link href="/orders" className="grid h-10 w-10 place-items-center rounded-full bg-white text-charcoal shadow-sm ring-1 ring-[#eadfe3]" aria-label="Back to orders">
               <ArrowLeft size={20} strokeWidth={2.5} />
@@ -103,7 +103,7 @@ export default async function TrackPage({
             </span>
           </div>
 
-          <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6 lg:p-6">
+          <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_390px] lg:gap-7 lg:p-8">
             <div className="min-w-0">
               <section className={`relative overflow-hidden rounded-b-[30px] px-5 pb-6 pt-5 lg:rounded-[26px] ${palette.hero}`}>
                 <div className={`absolute -right-12 -top-12 h-40 w-40 rounded-full ${palette.orbLarge}`} />
@@ -144,37 +144,13 @@ export default async function TrackPage({
                   </div>
                 ) : null}
 
-                <section className="mt-5 rounded-[22px] bg-white p-4 shadow-sm ring-1 ring-[#f1dce1]">
-                  <h2 className="text-[16px] font-black text-charcoal">Live progress</h2>
-                  <div className="mt-4 grid gap-2.5">
-                    {visibleSteps.map((step, index) => {
-                      const event = getStepEvent(order.timeline, step.status);
-                      const done = !cancelled && index <= activeIndex;
-                      const active = !cancelled && index === activeIndex;
-
-                      return (
-                        <div key={step.status} className="grid grid-cols-[34px_minmax(0,1fr)] gap-2.5">
-                          <div className="grid justify-items-center">
-                            <span className={`grid h-8 w-8 place-items-center rounded-xl ${done ? palette.stepDone : "bg-[#f4f5f8] text-muted"} ${active ? "wt-step-active" : ""}`}>
-                              <IconGlyph icon={step.icon} size={15} strokeWidth={2.6} />
-                            </span>
-                            {index < visibleSteps.length - 1 ? <span className={`mt-1.5 h-6 w-0.5 rounded-full ${done ? palette.lineDone : "bg-[#e5e7eb]"}`} /> : null}
-                          </div>
-                          <div className={`min-w-0 rounded-[14px] px-3 py-2.5 ${active ? palette.stepActive : "bg-[#f7f8fb]"}`}>
-                            <div className="flex items-start justify-between gap-3">
-                              <span className="min-w-0">
-                                <span className="block text-[13px] font-black text-charcoal">{step.label}</span>
-                              </span>
-                              <span className="shrink-0 text-[11px] font-black text-maroon">
-                                {event ? formatIstTime(toIsoTimestamp(event.createdAt)) : done ? "Done" : "Soon"}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
+                <StatusMarkGrid
+                  steps={visibleSteps}
+                  activeIndex={activeIndex}
+                  cancelled={cancelled}
+                  timeline={order.timeline}
+                  palette={palette}
+                />
               </section>
             </div>
 
@@ -287,6 +263,77 @@ function StatusIconStrip({
       </div>
     </div>
   );
+}
+
+function StatusMarkGrid({
+  steps,
+  activeIndex,
+  cancelled,
+  timeline,
+  palette,
+}: {
+  steps: TrackerStep[];
+  activeIndex: number;
+  cancelled: boolean;
+  timeline: { toStatus: string; note?: string | null; createdAt: Date }[];
+  palette: ReturnType<typeof getTrackingPalette>;
+}) {
+  const currentLabel = cancelled ? "Cancelled" : steps[activeIndex]?.label ?? "Order";
+
+  return (
+    <section className="mt-4 rounded-[18px] bg-white p-3 shadow-sm ring-1 ring-[#f1dce1]">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[14px] font-black text-charcoal">Order Status</h2>
+        <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${cancelled ? "bg-[#eef2f7] text-[#475569]" : palette.stepActive}`}>
+          {currentLabel}
+        </span>
+      </div>
+
+      <div className="relative mt-3 grid grid-cols-4 gap-y-4">
+        {steps.map((step, index) => {
+          const event = getStepEvent(timeline, step.status);
+          const done = !cancelled && index <= activeIndex;
+          const active = !cancelled && index === activeIndex;
+          const stateLabel = event ? formatIstTime(toIsoTimestamp(event.createdAt)) : done ? "Done" : "Soon";
+          const rowBridgeDone = !cancelled && index < activeIndex;
+          const gridColumnStart = getStatusGridColumn(index, steps.length);
+          const isSecondRow = index >= 4;
+          const leftLineDone = isSecondRow ? index < activeIndex : index <= activeIndex;
+          const rightLineDone = isSecondRow ? index <= activeIndex : index < activeIndex;
+          const showLeftLine = isSecondRow ? index < steps.length - 1 : index > 0;
+          const showRightLine = isSecondRow ? index > 4 || gridColumnStart < 4 : index < 3 && index < steps.length - 1;
+
+          return (
+            <div
+              key={step.status}
+              className={`relative min-h-[58px] px-1.5 py-1.5 text-center ${active ? "rounded-[12px] bg-[#fff8f9]" : ""}`}
+              style={{ gridColumnStart, gridRowStart: index < 4 ? 1 : 2 }}
+            >
+              {showLeftLine ? <span className={`absolute left-0 top-[13px] h-0.5 w-1/2 ${leftLineDone ? palette.lineDone : "bg-[#e5e7eb]"}`} /> : null}
+              {showRightLine ? <span className={`absolute right-0 top-[13px] h-0.5 w-1/2 ${rightLineDone ? palette.lineDone : "bg-[#e5e7eb]"}`} /> : null}
+              {index === 3 ? (
+                <>
+                  <span className={`absolute right-1/2 top-[13px] h-[74px] w-0.5 translate-x-1/2 ${rowBridgeDone ? palette.lineDone : "bg-[#e5e7eb]"}`} />
+                </>
+              ) : null}
+              <span className={`relative z-[1] mx-auto grid h-6 w-6 place-items-center rounded-full ${done ? palette.stepDone : "bg-white text-muted ring-1 ring-[#e4e7ee]"} ${active ? "wt-step-active" : ""}`}>
+                <IconGlyph icon={step.icon} size={12} strokeWidth={2.7} />
+              </span>
+              <span className="mt-1.5 block truncate text-[9px] font-black leading-none text-charcoal">{step.label}</span>
+              <span className={`mt-1 block text-[8px] font-black leading-none ${done ? "text-maroon" : "text-muted"}`}>
+                {stateLabel}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function getStatusGridColumn(index: number, totalSteps: number) {
+  if (index < 4) return index + 1;
+  return Math.max(1, 4 - (index - 4) - Math.max(0, 7 - totalSteps));
 }
 
 function InfoRow({

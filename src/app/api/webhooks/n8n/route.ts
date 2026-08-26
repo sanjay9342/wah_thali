@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { createHmac, randomUUID, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { logActivity } from "@/lib/db";
@@ -11,7 +12,7 @@ function isValidSignature(body: string, signature: string | null) {
   return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
 }
 
-export async function POST(request: NextRequest) {
+async function postHandler(request: NextRequest) {
   const body = await request.text();
   const signature = request.headers.get("x-wah-signature");
   const idempotencyKey = request.headers.get("x-idempotency-key") ?? randomUUID();
@@ -40,3 +41,5 @@ export async function POST(request: NextRequest) {
     idempotencyKey,
   });
 }
+
+export const POST = withApiErrorHandling(postHandler, "POST /api/webhooks/n8n");

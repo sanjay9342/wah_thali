@@ -564,7 +564,7 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
   }
 
   return (
-    <section className="mx-auto min-h-screen w-full max-w-[430px] bg-[#f5f6fb] text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-5 sm:overflow-hidden sm:rounded-[28px] lg:max-w-[1120px]">
+    <section className="mx-auto min-h-screen w-full max-w-[430px] bg-white text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-5 sm:overflow-hidden sm:rounded-[28px] lg:max-w-[1248px]">
       {mode === "select" ? (
         <div className="px-5 pb-28 pt-7 lg:grid lg:min-h-[560px] lg:grid-cols-[390px_minmax(0,1fr)] lg:gap-7 lg:px-7 lg:py-7">
           <div className="min-w-0">

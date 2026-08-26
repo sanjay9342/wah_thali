@@ -1,6 +1,6 @@
 "use client";
 
-import { type DragEvent, useState, useTransition } from "react";
+import { type DragEvent, useEffect, useState, useTransition } from "react";
 import { ArrowDown, ArrowUp, CheckCircle2, Edit3, EyeOff, GripVertical, ImagePlus, Plus, Tag, Trash2, Upload, X } from "lucide-react";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
@@ -23,6 +23,8 @@ type OfferDraft = {
   amount: string;
 };
 
+type MessageTone = "success" | "error";
+
 const emptyOfferDraft: OfferDraft = {
   type: "NONE",
   percent: "",
@@ -36,12 +38,19 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
   const [newCategoryImage, setNewCategoryImage] = useState("");
   const [newCategoryOffer, setNewCategoryOffer] = useState<OfferDraft>(emptyOfferDraft);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<MessageTone>("success");
   const [uploading, setUploading] = useState(false);
   const [editingCategory, setEditingCategory] = useState<AdminCategory | null>(null);
   const [draggingCategoryId, setDraggingCategoryId] = useState<string | null>(null);
   const [dragOverCategoryId, setDragOverCategoryId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const adminAccess = useAdminAccess();
+
+  useEffect(() => {
+    if (!message) return;
+    const timer = window.setTimeout(() => setMessage(""), messageTone === "success" ? 4200 : 7000);
+    return () => window.clearTimeout(timer);
+  }, [message, messageTone]);
 
   async function refreshCategories() {
     const response = await fetch("/api/categories", { cache: "no-store" });
@@ -56,9 +65,19 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
       try {
         await task();
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Something went wrong.");
+        showError(error instanceof Error ? error.message : "Something went wrong.");
       }
     });
+  }
+
+  function showSuccess(text: string) {
+    setMessageTone("success");
+    setMessage(text);
+  }
+
+  function showError(text: string) {
+    setMessageTone("error");
+    setMessage(text);
   }
 
   async function uploadImage(file: File) {
@@ -96,7 +115,7 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
       setNewCategoryImage("");
       setNewCategoryOffer(emptyOfferDraft);
       await refreshCategories();
-      setMessage("Category added live.");
+      showSuccess("Category added successfully.");
     });
   }
 
@@ -110,7 +129,7 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Category update failed.");
       await refreshCategories();
-      setMessage("Category updated live.");
+      showSuccess("Category updated successfully.");
     });
   }
 
@@ -131,7 +150,7 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Category order save failed.");
       await refreshCategories();
-      setMessage("Category order saved.");
+      showSuccess("Category order saved successfully.");
     });
   }
 
@@ -179,7 +198,7 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Category delete failed.");
       await refreshCategories();
-      setMessage(data.archived ? "Category hidden because it has products." : "Category deleted.");
+      showSuccess(data.archived ? "Category hidden because it has products." : "Category deleted successfully.");
     });
   }
 
@@ -195,7 +214,7 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
         </div>
         <AdminSectionNav />
 
-        {message ? <p className="mt-4 rounded-lg border border-border bg-cream px-4 py-3 text-sm font-black text-maroon">{message}</p> : null}
+        {message ? <StatusMessage message={message} tone={messageTone} /> : null}
 
         <section className="mt-6 grid gap-5 lg:grid-cols-[360px_1fr]">
           <aside className="surface rounded-2xl p-5">
@@ -228,8 +247,9 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
                     if (!file) return;
                     try {
                       setNewCategoryImage(await uploadImage(file));
+                      showSuccess("Category image uploaded successfully.");
                     } catch (error) {
-                      setMessage(error instanceof Error ? error.message : "Image upload failed.");
+                      showError(error instanceof Error ? error.message : "Image upload failed.");
                     }
                   }}
                 />
@@ -342,7 +362,7 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
                             try {
                               updateCategory(category, { image: await uploadImage(file) });
                             } catch (error) {
-                              setMessage(error instanceof Error ? error.message : "Image upload failed.");
+                              showError(error instanceof Error ? error.message : "Image upload failed.");
                             }
                           }}
                         />
@@ -380,6 +400,24 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
 
 function safeImage(src?: string) {
   return src?.startsWith("/") ? src : src || "/wah-thali-meal-cutout-v2.png";
+}
+
+function StatusMessage({ message, tone }: { message: string; tone: MessageTone }) {
+  const success = tone === "success";
+  return (
+    <p
+      className={`fixed right-4 top-4 z-[80] max-w-[min(420px,calc(100vw-32px))] rounded-lg border px-4 py-3 text-sm font-black shadow-[0_18px_42px_rgba(34,31,32,0.16)] ${
+        success
+          ? "border-[#bfe7cf] bg-[#effaf4] text-[#0f7a45]"
+          : "border-[#ffd1d6] bg-[#fff4f5] text-red"
+      }`}
+      role="status"
+      aria-live="polite"
+    >
+      {success ? "Success: " : "Error: "}
+      {message}
+    </p>
+  );
 }
 
 function moveItem<T>(items: T[], fromIndex: number, toIndex: number) {

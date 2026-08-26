@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeMobile } from "@/lib/customer-auth";
@@ -10,7 +11,7 @@ const verifySchema = z.object({
   otp: z.string().min(4),
 });
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -32,3 +33,5 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ message: result.message });
 }
+
+export const POST = withApiErrorHandling(postHandler, "POST /api/customers/otp/verify");

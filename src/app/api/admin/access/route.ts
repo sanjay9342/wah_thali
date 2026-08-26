@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAdminAccessAssignments, getAdminAccessForIdentity, upsertAdminAccessAssignment } from "@/lib/admin-access";
@@ -31,7 +32,7 @@ function identityFromSearchParams(searchParams: URLSearchParams) {
   };
 }
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -69,7 +70,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ assignments, customers, access: actorAccess, queryRequired: query.length < 2 });
 }
 
-export async function PATCH(request: Request) {
+async function patchHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -86,3 +87,6 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not update staff access." }, { status: 403 });
   }
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/admin/access");
+export const PATCH = withApiErrorHandling(patchHandler, "PATCH /api/admin/access");

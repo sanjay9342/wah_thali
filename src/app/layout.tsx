@@ -120,10 +120,10 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${foodieSans.variable} h-full antialiased`}
+      className={`${foodieSans.variable} ${foodieSans.className} h-full antialiased`}
       data-scroll-behavior="smooth"
     >
-      <body className="min-h-full flex flex-col">
+      <body className="wt-soft-type min-h-full flex flex-col font-sans">
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(restaurantJsonLd).replace(/</g, "\\u003c") }}

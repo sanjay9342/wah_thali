@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import type { PaymentStatus, Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -61,7 +62,7 @@ function isMissingPasswordHashColumn(error: unknown) {
   return error instanceof Error && error.message.includes("Customer.passwordHash");
 }
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ customer: null, configured: false }, { status: 503 });
   }
@@ -81,7 +82,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ customer: customer ? toPublicCustomer(customer, rewardOrderCount) : null, configured: true });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -173,3 +174,6 @@ function visiblePlacedOrderWhere(mobile: string): Prisma.OrderWhereInput {
 function countRewardOrders(mobile: string) {
   return prisma.order.count({ where: visiblePlacedOrderWhere(mobile) });
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/customers/profile");
+export const POST = withApiErrorHandling(postHandler, "POST /api/customers/profile");

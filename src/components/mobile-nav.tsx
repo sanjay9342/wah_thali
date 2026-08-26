@@ -16,7 +16,6 @@ const items = [
 
 export function MobileNav() {
   const pathname = usePathname();
-  const isHome = pathname === "/";
   const [session, setSession] = useState<CustomerSession | null>(null);
 
   useEffect(() => {
@@ -30,15 +29,11 @@ export function MobileNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-4 lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-50 border-t border-[#eadfd7] bg-white/98 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_rgba(34,31,32,0.08)] backdrop-blur lg:hidden"
       style={{ viewTransitionName: "site-mobile-nav" }}
       aria-label="Primary navigation"
     >
-      <div
-        className={`mx-auto grid h-[72px] w-full grid-cols-5 items-center rounded-t-xl border border-[#eadfd7] bg-white/98 px-2 shadow-[0_-8px_24px_rgba(34,31,32,0.08)] backdrop-blur ${
-          isHome ? "max-w-xl" : "max-w-[430px]"
-        }`}
-      >
+      <div className="grid h-[72px] w-full grid-cols-5 items-center px-2">
         {items.map(({ href, icon: Icon, label, match }) => {
           const active = match(pathname);
           const resolvedHref = label === "Profile" && !session ? "/login?next=/account" : href;

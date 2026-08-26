@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
@@ -10,7 +11,7 @@ const resetSchema = z.object({
   confirmation: z.literal(RESET_CONFIRMATION_TEXT),
 });
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -71,3 +72,5 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ deleted });
 }
+
+export const POST = withApiErrorHandling(postHandler, "POST /api/admin/orders/reset");

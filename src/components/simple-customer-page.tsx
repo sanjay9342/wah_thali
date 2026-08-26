@@ -1,12 +1,17 @@
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { Header } from "@/components/header";
 import { MobileNav } from "@/components/mobile-nav";
 
 export function SimpleCustomerPage({
+  backHref,
+  backLabel = "Back",
   title,
   intro,
   sections,
 }: {
+  backHref?: string;
+  backLabel?: string;
   title: string;
   intro: string;
   sections: { title: string; body: string; action?: string; href?: string }[];
@@ -14,8 +19,17 @@ export function SimpleCustomerPage({
   return (
     <>
       <Header />
-      <main className="mx-auto min-h-screen w-full max-w-7xl bg-[#fbf8f4] px-5 pb-28 pt-5 sm:px-6 lg:px-8 lg:pb-12 lg:pt-6">
-        <div className="overflow-hidden rounded-[24px] border border-[#eadfd5] bg-[#f8f1ea] p-6 text-charcoal shadow-[0_16px_36px_rgba(34,31,32,0.055)] sm:p-8 lg:p-10">
+      <main className="mx-auto min-h-screen w-full max-w-7xl bg-white px-5 pb-28 pt-5 sm:px-6 lg:px-8 lg:pb-12 lg:pt-6">
+        {backHref ? (
+          <Link
+            href={backHref}
+            className="mb-4 inline-flex h-11 items-center gap-2 rounded-full bg-white px-4 text-sm font-black text-maroon shadow-sm ring-1 ring-[#eadfd5] transition-colors hover:bg-[#fff8f9]"
+          >
+            <ArrowLeft size={18} strokeWidth={2.7} />
+            <span>{backLabel}</span>
+          </Link>
+        ) : null}
+        <div className="overflow-hidden rounded-[24px] border border-[#eadfd5] bg-white p-6 text-charcoal shadow-[0_16px_36px_rgba(34,31,32,0.055)] sm:p-8 lg:p-10">
           <p className="text-xs font-black uppercase tracking-[0.22em] text-maroon/70">Wah Thali</p>
           <h1 className="mt-3 max-w-3xl text-4xl font-black leading-tight text-charcoal sm:text-5xl">{title}</h1>
           <p className="mt-4 max-w-3xl text-base font-semibold leading-7 text-muted sm:text-lg">{intro}</p>

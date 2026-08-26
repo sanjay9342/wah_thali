@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeMobile } from "@/lib/customer-auth";
@@ -15,7 +16,7 @@ const addressSchema = z.object({
   isDefault: z.boolean().default(false),
 });
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ addresses: [], configured: false }, { status: 503 });
   }
@@ -36,7 +37,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ addresses: customer?.addresses ?? [], configured: true });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
   return NextResponse.json({ address: saved }, { status: 201 });
 }
 
-export async function DELETE(request: Request) {
+async function deleteHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -88,3 +89,7 @@ export async function DELETE(request: Request) {
 
   return NextResponse.json({ ok: true });
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/customers/addresses");
+export const POST = withApiErrorHandling(postHandler, "POST /api/customers/addresses");
+export const DELETE = withApiErrorHandling(deleteHandler, "DELETE /api/customers/addresses");

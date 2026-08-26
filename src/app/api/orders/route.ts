@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import type { PaymentStatus, Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -108,7 +109,7 @@ async function calculateServerOrder(lines: CartLine[], couponCode: string | unde
   };
 }
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ orders: [], configured: false });
   }
@@ -152,7 +153,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ orders: orders.map((order) => ({ ...order, reviews: [] })), configured: true });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -434,3 +435,6 @@ function visiblePlacedOrderWhere(): Prisma.OrderWhereInput {
     ],
   };
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/orders");
+export const POST = withApiErrorHandling(postHandler, "POST /api/orders");

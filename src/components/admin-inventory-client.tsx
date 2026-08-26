@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition, type SyntheticEvent } from "react";
+import { useEffect, useMemo, useState, useTransition, type SyntheticEvent } from "react";
 import { CheckCircle2, Download, Edit3, EyeOff, PackagePlus, Plus, Search, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
@@ -34,6 +34,8 @@ type OfferDraft = {
   cap: string;
   amount: string;
 };
+
+type MessageTone = "success" | "error";
 
 const emptyOfferDraft: OfferDraft = {
   type: "NONE",
@@ -78,10 +80,18 @@ export function AdminInventoryClient({
     return product ? toProductForm(product) : null;
   });
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<MessageTone>("success");
   const [uploading, setUploading] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const [savingProductIds, setSavingProductIds] = useState<Set<string>>(() => new Set());
   const [isPending, startTransition] = useTransition();
   const adminAccess = useAdminAccess();
+
+  useEffect(() => {
+    if (!message) return;
+    const timer = window.setTimeout(() => setMessage(""), messageTone === "success" ? 4200 : 7000);
+    return () => window.clearTimeout(timer);
+  }, [message, messageTone]);
 
   const categories = useMemo(
     () => Array.from(new Set([...initialCategories, ...products.map((product) => product.category)])).sort(),
@@ -96,7 +106,7 @@ export function AdminInventoryClient({
         filter === "All products" ||
         (filter === "Available" && product.available) ||
         (filter === "Unavailable" && !product.available) ||
-        (filter === "Popular Dishes" && product.bestseller) ||
+        (filter === "Best Sellers" && product.bestseller) ||
         (filter === "Discounted" && Boolean(product.offer || product.originalPrice));
 
       return matchesQuery && matchesCategory && matchesFilter;
@@ -125,9 +135,19 @@ export function AdminInventoryClient({
       try {
         await task();
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Something went wrong.");
+        showError(error instanceof Error ? error.message : "Something went wrong.");
       }
     });
+  }
+
+  function showSuccess(text: string) {
+    setMessageTone("success");
+    setMessage(text);
+  }
+
+  function showError(text: string) {
+    setMessageTone("error");
+    setMessage(text);
   }
 
   function openEdit(product: AdminProduct) {
@@ -137,7 +157,7 @@ export function AdminInventoryClient({
   function handleRefresh() {
     runMutation(async () => {
       await refreshProducts();
-      setMessage("Inventory refreshed from live database.");
+      showSuccess("Inventory refreshed successfully.");
     });
   }
 
@@ -184,15 +204,21 @@ export function AdminInventoryClient({
 
       await refreshProducts();
       setForm(null);
-      setMessage(form.id ? "Product updated live." : "Product added live.");
+      showSuccess(form.id ? "Dish updated successfully." : "Dish added successfully.");
     });
   }
 
-  function quickUpdate(product: AdminProduct, patch: Partial<AdminProduct>) {
+  async function quickUpdate(product: AdminProduct, patch: Partial<AdminProduct>) {
+    if (savingProductIds.has(product.id)) return;
+
+    const previousProduct = product;
+    setMessage("");
+    setSavingProductIds((current) => new Set(current).add(product.id));
     setProducts((current) =>
       current.map((item) => item.id === product.id ? { ...item, ...patch } : item).sort(compareProductsForMenuState),
     );
-    runMutation(async () => {
+
+    try {
       const response = await adminFetch(adminAccess?.session, `/api/products/${product.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -200,9 +226,25 @@ export function AdminInventoryClient({
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Update failed.");
-      await refreshProducts();
-      setMessage("Inventory updated live.");
-    });
+      if (data.product?.available !== undefined) {
+        setProducts((current) =>
+          current.map((item) => item.id === product.id ? { ...item, available: data.product.available } : item).sort(compareProductsForMenuState),
+        );
+      }
+      setLastSyncedAt(new Date());
+      showSuccess(`${product.name} is now ${patch.available ? "online" : "offline"}.`);
+    } catch (error) {
+      setProducts((current) =>
+        current.map((item) => item.id === product.id ? previousProduct : item).sort(compareProductsForMenuState),
+      );
+      showError(error instanceof Error ? error.message : "Update failed.");
+    } finally {
+      setSavingProductIds((current) => {
+        const next = new Set(current);
+        next.delete(product.id);
+        return next;
+      });
+    }
   }
 
   function deleteProduct(product: AdminProduct) {
@@ -214,7 +256,7 @@ export function AdminInventoryClient({
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Delete failed.");
       await refreshProducts();
-      setMessage(data.archived ? "Product is archived because it has order history." : "Product deleted.");
+      showSuccess(data.archived ? "Dish archived because it has order history." : "Dish deleted successfully.");
     });
   }
 
@@ -272,7 +314,7 @@ export function AdminInventoryClient({
         </div>
         <AdminSectionNav />
 
-        {message ? <p className="mt-4 rounded-lg border border-border bg-cream px-4 py-3 text-sm font-black text-maroon">{message}</p> : null}
+        {message ? <StatusMessage message={message} tone={messageTone} /> : null}
 
         <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
@@ -300,7 +342,7 @@ export function AdminInventoryClient({
               <input value={query} onChange={(event) => setQuery(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm font-semibold" placeholder="Search name or code" />
             </label>
             <div className="mt-4 grid gap-2">
-              {["All products", "Available", "Unavailable", "Popular Dishes", "Discounted"].map((item) => (
+              {["All products", "Available", "Unavailable", "Best Sellers", "Discounted"].map((item) => (
                 <button key={item} onClick={() => setFilter(item)} className={`rounded-lg px-3 py-2 text-left text-sm font-black ${filter === item ? "bg-maroon text-white" : "bg-cream text-charcoal"}`}>
                   {item}
                 </button>
@@ -347,6 +389,7 @@ export function AdminInventoryClient({
                   {filteredProducts.map((product) => {
                     const pricing = getProductUnitPricing(product);
                     const offerLabel = product.offer || (pricing.discountPerUnit > 0 ? "Strike price" : "Category/default");
+                    const saving = savingProductIds.has(product.id);
 
                     return (
                       <tr key={product.id} className={`border-t border-border align-top ${product.available ? "" : "bg-[#f7f7f7] grayscale"}`}>
@@ -378,7 +421,7 @@ export function AdminInventoryClient({
                         <td className="p-3">{product.variants.length}</td>
                         <td className="p-3">{product.addons.length}</td>
                         <td className="p-3">
-                          <button onClick={() => quickUpdate(product, { available: !product.available })} disabled={isPending} className={`inline-flex h-9 min-w-28 items-center justify-center gap-2 rounded-lg px-3 text-xs font-black disabled:opacity-60 ${product.available ? "bg-maroon text-white" : "border border-border bg-white text-charcoal"}`}>
+                          <button onClick={() => quickUpdate(product, { available: !product.available })} disabled={saving} aria-busy={saving} className={`inline-flex h-9 min-w-28 items-center justify-center gap-2 rounded-lg px-3 text-xs font-black disabled:opacity-60 ${product.available ? "bg-maroon text-white" : "border border-border bg-white text-charcoal"}`}>
                             {product.available ? <CheckCircle2 size={15} /> : <EyeOff size={15} />}
                             {product.available ? "Online" : "Offline"}
                           </button>
@@ -415,6 +458,24 @@ function safeAdminImage(src: string) {
 function useFallbackImage(event: SyntheticEvent<HTMLImageElement>) {
   event.currentTarget.onerror = null;
   event.currentTarget.src = "/wah-thali-meal-cutout-v2.png";
+}
+
+function StatusMessage({ message, tone }: { message: string; tone: MessageTone }) {
+  const success = tone === "success";
+  return (
+    <p
+      className={`fixed right-4 top-4 z-[80] max-w-[min(420px,calc(100vw-32px))] rounded-lg border px-4 py-3 text-sm font-black shadow-[0_18px_42px_rgba(34,31,32,0.16)] ${
+        success
+          ? "border-[#bfe7cf] bg-[#effaf4] text-[#0f7a45]"
+          : "border-[#ffd1d6] bg-[#fff4f5] text-red"
+      }`}
+      role="status"
+      aria-live="polite"
+    >
+      {success ? "Success: " : "Error: "}
+      {message}
+    </p>
+  );
 }
 
 function compareProductsForMenuState(a: AdminProduct, b: AdminProduct) {
@@ -522,6 +583,13 @@ function ProductModal({
             value={form.originalPrice}
             onChange={(value) => update({ originalPrice: value })}
           />
+          <label className="flex min-h-16 items-center justify-between gap-3 rounded-lg border border-[#f0d7dd] bg-[#fff4f5] px-3 py-3 text-sm font-black text-charcoal">
+            <span className="min-w-0">
+              <span className="block text-maroon">Best seller tag</span>
+              <span className="mt-0.5 block text-xs font-bold text-muted">Shows a small BEST SELLER tag on this dish card.</span>
+            </span>
+            <input className="h-5 w-5 shrink-0 accent-maroon" type="checkbox" checked={form.bestseller} onChange={(event) => update({ bestseller: event.target.checked })} />
+          </label>
           <PricePreview form={form} />
           <label className="grid min-w-0 gap-2 text-sm font-black text-maroon">
             Dietary
@@ -635,10 +703,6 @@ function ProductModal({
           <label className="flex items-center gap-3 rounded-lg border border-border bg-cream px-3 py-3 text-sm font-black text-charcoal">
             <input type="checkbox" checked={form.available} onChange={(event) => update({ available: event.target.checked })} />
             Online on live menu
-          </label>
-          <label className="flex items-center gap-3 rounded-lg border border-border bg-cream px-3 py-3 text-sm font-black text-charcoal">
-            <input type="checkbox" checked={form.bestseller} onChange={(event) => update({ bestseller: event.target.checked })} />
-            Show in Popular Dishes
           </label>
           <label className="grid gap-2 text-sm font-black text-maroon sm:col-span-2">
             Description

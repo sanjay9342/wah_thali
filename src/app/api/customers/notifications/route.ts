@@ -1,7 +1,9 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeMobile } from "@/lib/customer-auth";
+import { getCustomerNotificationPreferences } from "@/lib/customer-notification-preferences";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
 const notificationSchema = z.object({
@@ -35,7 +37,7 @@ function toNotification(event: {
   };
 }
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ notifications: [], configured: false }, { status: 503 });
   }
@@ -43,6 +45,11 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const mobile = normalizeMobile(searchParams.get("mobile") ?? "");
   if (!mobile) return NextResponse.json({ notifications: [], configured: true });
+
+  const preferences = await getCustomerNotificationPreferences(mobile);
+  if (preferences.appMuted) {
+    return NextResponse.json({ notifications: [], preferences, configured: true });
+  }
 
   const notifications = await prisma.activityEvent.findMany({
     where: {
@@ -53,10 +60,10 @@ export async function GET(request: Request) {
     take: 25,
   });
 
-  return NextResponse.json({ notifications: notifications.map(toNotification), configured: true });
+  return NextResponse.json({ notifications: notifications.map(toNotification), preferences, configured: true });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -67,6 +74,11 @@ export async function POST(request: Request) {
   }
 
   const mobile = normalizeMobile(parsed.data.mobile);
+  const preferences = await getCustomerNotificationPreferences(mobile);
+  if (preferences.appMuted) {
+    return NextResponse.json({ notification: null, preferences, muted: true });
+  }
+
   const event = await prisma.activityEvent.create({
     data: {
       type: "CUSTOMER_NOTIFICATION",
@@ -82,10 +94,10 @@ export async function POST(request: Request) {
     },
   });
 
-  return NextResponse.json({ notification: toNotification(event) }, { status: 201 });
+  return NextResponse.json({ notification: toNotification(event), preferences }, { status: 201 });
 }
 
-export async function PATCH(request: Request) {
+async function patchHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -117,7 +129,7 @@ export async function PATCH(request: Request) {
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(request: Request) {
+async function deleteHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -132,3 +144,8 @@ export async function DELETE(request: Request) {
 
   return NextResponse.json({ ok: true });
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/customers/notifications");
+export const POST = withApiErrorHandling(postHandler, "POST /api/customers/notifications");
+export const PATCH = withApiErrorHandling(patchHandler, "PATCH /api/customers/notifications");
+export const DELETE = withApiErrorHandling(deleteHandler, "DELETE /api/customers/notifications");

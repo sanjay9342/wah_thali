@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeMobile } from "@/lib/customer-auth";
@@ -24,7 +25,7 @@ function getSessionMobile(request: Request) {
   );
 }
 
-export async function POST(request: Request, { params }: { params: Promise<{ orderNumber: string }> }) {
+async function postHandler(request: Request, { params }: { params: Promise<{ orderNumber: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -116,3 +117,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
 
   return NextResponse.json({ order });
 }
+
+export const POST = withApiErrorHandling(postHandler, "POST /api/orders/[orderNumber]/customer-cancel");

@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -19,7 +20,7 @@ function safeCompareHex(expected: string, actual: string) {
   return expectedBuffer.length === actualBuffer.length && timingSafeEqual(expectedBuffer, actualBuffer);
 }
 
-export async function POST(request: NextRequest) {
+async function postHandler(request: NextRequest) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -162,3 +163,5 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ verified });
 }
+
+export const POST = withApiErrorHandling(postHandler, "POST /api/payments/razorpay");

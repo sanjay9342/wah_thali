@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeMobile } from "@/lib/customer-auth";
@@ -49,7 +50,7 @@ function toDeliveryLocation(address?: {
   };
 }
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ location: null, configured: false }, { status: 503 });
   }
@@ -70,7 +71,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ location: toDeliveryLocation(customer?.addresses[0]), configured: true });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -109,3 +110,6 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ saved: true, location: toDeliveryLocation(saved) });
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/customers/selected-location");
+export const POST = withApiErrorHandling(postHandler, "POST /api/customers/selected-location");

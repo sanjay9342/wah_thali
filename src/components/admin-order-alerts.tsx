@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BellRing, Volume2 } from "lucide-react";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { adminFetch } from "@/lib/admin-client-auth";
-import { getNewOrderSound, getNewOrderSoundSteps } from "@/lib/order-sounds";
+import { getNewOrderSound, getNewOrderSoundAudioSrc, getNewOrderSoundDurationMs, getNewOrderSoundSteps } from "@/lib/order-sounds";
 import type { NewOrderSound, OrderStatus } from "@/lib/types";
 
 type ApiOrder = {
@@ -25,6 +25,7 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [audioReady, setAudioReady] = useState(false);
   const knownOrders = useRef<Set<string>>(new Set());
+  const hasLoadedOrders = useRef(false);
   const audioContext = useRef<AudioContext | null>(null);
   const adminAccess = useAdminAccess();
 
@@ -38,6 +39,23 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
 
   const playAlarmSound = useCallback(async () => {
     if (!alertEnabled) return;
+
+    const audioSrc = getNewOrderSoundAudioSrc(alertSound);
+    if (audioSrc) {
+      const audio = new Audio(audioSrc);
+      audio.loop = false;
+      audio.currentTime = 0;
+      const played = await audio.play().then(() => true).catch(() => false);
+      if (played) {
+        window.setTimeout(() => {
+          audio.pause();
+          audio.currentTime = 0;
+        }, getNewOrderSoundDurationMs(alertSound));
+      }
+      setAudioBlocked(!played);
+      setAudioReady(played);
+      return;
+    }
 
     const audio = getAudioContext();
     if (!audio) return;
@@ -74,6 +92,23 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
   }, [alertEnabled, alertSound, getAudioContext]);
 
   const unlockAudio = useCallback(async () => {
+    const audioSrc = getNewOrderSoundAudioSrc(alertSound);
+    if (audioSrc) {
+      const audio = new Audio(audioSrc);
+      audio.loop = false;
+      audio.currentTime = 0;
+      const played = await audio.play().then(() => true).catch(() => false);
+      if (played) {
+        window.setTimeout(() => {
+          audio.pause();
+          audio.currentTime = 0;
+        }, getNewOrderSoundDurationMs(alertSound));
+      }
+      setAudioBlocked(!played);
+      setAudioReady(played);
+      return;
+    }
+
     const audio = getAudioContext();
     if (!audio) return;
     await audio.resume().catch(() => undefined);
@@ -83,7 +118,7 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
     if (incomingCount > 0) {
       await playAlarmSound();
     }
-  }, [getAudioContext, incomingCount, playAlarmSound]);
+  }, [alertSound, getAudioContext, incomingCount, playAlarmSound]);
 
   const refreshOrders = useCallback(async () => {
     if (!alertEnabled) {
@@ -100,6 +135,11 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
     const newIncoming = incoming.find((order) => !knownOrders.current.has(order.orderNumber));
     knownOrders.current = new Set(orders.map((order) => order.orderNumber));
     setIncomingCount(incoming.length);
+
+    if (!hasLoadedOrders.current) {
+      hasLoadedOrders.current = true;
+      return;
+    }
 
     if (newIncoming) {
       document.title = `New order ${newIncoming.orderNumber} - Wah Thali Admin`;
@@ -130,19 +170,6 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
   }, []);
 
   useEffect(() => {
-    function unlock() {
-      void unlockAudio();
-    }
-
-    window.addEventListener("pointerdown", unlock, { passive: true });
-    window.addEventListener("keydown", unlock);
-    return () => {
-      window.removeEventListener("pointerdown", unlock);
-      window.removeEventListener("keydown", unlock);
-    };
-  }, [unlockAudio]);
-
-  useEffect(() => {
     const firstRun = window.setTimeout(() => {
       void refreshOrders();
     }, 0);
@@ -161,21 +188,6 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
     }, 30000);
     return () => window.clearInterval(timer);
   }, [refreshAlertSettings]);
-
-  useEffect(() => {
-    if (!alertEnabled || incomingCount === 0) return;
-
-    const firstRing = window.setTimeout(() => {
-      void playAlarmSound();
-    }, 0);
-    const timer = window.setInterval(() => {
-      void playAlarmSound();
-    }, 3200);
-    return () => {
-      window.clearTimeout(firstRing);
-      window.clearInterval(timer);
-    };
-  }, [alertEnabled, incomingCount, playAlarmSound]);
 
   useEffect(() => {
     return () => {

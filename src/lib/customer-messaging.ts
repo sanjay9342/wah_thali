@@ -2,6 +2,7 @@ import "server-only";
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getCustomerNotificationPreferences } from "@/lib/customer-notification-preferences";
 import { formatRupees } from "@/lib/pricing";
 import { readServerEnv } from "@/lib/server-env";
 import { sendWhatsAppTemplate, sendWhatsAppText } from "@/lib/whatsapp";
@@ -328,11 +329,20 @@ async function sendWhatsAppNotification(input: NotifyCustomerInput): Promise<Mes
 }
 
 export async function notifyCustomer(input: NotifyCustomerInput) {
-  const whatsapp = await sendWhatsAppNotification(input).catch((error): MessageResult => ({
-    ok: false,
-    channel: "skipped",
-    message: error instanceof Error ? error.message : "WhatsApp send failed.",
-  }));
+  const preferences = await getCustomerNotificationPreferences(input.mobile);
+  const whatsapp = preferences.whatsappMuted
+    ? {
+        ok: true,
+        channel: "skipped" as const,
+        message: "Customer muted WhatsApp notifications.",
+      }
+    : await sendWhatsAppNotification(input).catch((error): MessageResult => ({
+        ok: false,
+        channel: "skipped",
+        message: error instanceof Error ? error.message : "WhatsApp send failed.",
+      }));
+
+  if (preferences.appMuted) return whatsapp;
 
   await prisma.activityEvent.create({
     data: {

@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { logActivity } from "@/lib/db";
@@ -19,7 +20,7 @@ const leadSchema = z.object({
   notes: z.string().optional().or(z.literal("")),
 });
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -95,3 +96,5 @@ export async function POST(request: Request) {
 
   return NextResponse.json(result, { status: 201 });
 }
+
+export const POST = withApiErrorHandling(postHandler, "POST /api/leads");

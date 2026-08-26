@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
@@ -13,7 +14,7 @@ const categorySchema = z.object({
   sortOrder: z.coerce.number().int().optional(),
 });
 
-export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function patchHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -88,7 +89,7 @@ function getTextMap(value: unknown): Record<string, string> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, string>) : {};
 }
 
-export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function deleteHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -115,3 +116,6 @@ function slugify(value: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
+
+export const PATCH = withApiErrorHandling(patchHandler, "PATCH /api/categories/[id]");
+export const DELETE = withApiErrorHandling(deleteHandler, "DELETE /api/categories/[id]");

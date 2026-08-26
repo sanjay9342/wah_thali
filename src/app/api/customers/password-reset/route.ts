@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
@@ -109,7 +110,7 @@ async function createPasswordResetUrl(request: Request, customerId: string) {
   };
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -214,7 +215,7 @@ export async function POST(request: Request) {
   });
 }
 
-export async function PATCH(request: Request) {
+async function patchHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -315,3 +316,6 @@ export async function PATCH(request: Request) {
 
   return NextResponse.json({ message: "Your password has been reset. Please log in with your new password." });
 }
+
+export const POST = withApiErrorHandling(postHandler, "POST /api/customers/password-reset");
+export const PATCH = withApiErrorHandling(patchHandler, "PATCH /api/customers/password-reset");

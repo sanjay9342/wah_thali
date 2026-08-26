@@ -47,43 +47,43 @@ export default async function SupportTopicPage({
   return (
     <>
       <Header />
-      <main className="min-h-screen bg-[#f7f8fc] pb-20 text-[#061129] lg:pb-0">
-        <section className="mx-auto max-w-[1240px] px-5 py-8 lg:px-6 lg:py-10 xl:px-0">
+      <main className="min-h-screen bg-white pb-16 text-[#061129] lg:pb-0">
+        <section className="mx-auto max-w-[980px] px-4 py-6 sm:px-6 lg:px-6 lg:py-10 xl:px-0">
           <div className="text-center">
-            <span className={`mx-auto grid h-[120px] w-[120px] place-items-center rounded-full ${tone.iconBg} ${tone.iconText}`}>
-              <Icon size={52} strokeWidth={2.4} />
+            <span className={`mx-auto grid h-16 w-16 place-items-center rounded-full lg:h-20 lg:w-20 ${tone.iconBg} ${tone.iconText}`}>
+              <Icon className="h-8 w-8 lg:h-10 lg:w-10" strokeWidth={2.4} />
             </span>
-            <h1 className="mx-auto mt-7 max-w-[760px] text-[24px] font-bold leading-tight text-[#061129] lg:text-[27px]">
+            <h1 className="mx-auto mt-4 max-w-[640px] text-[20px] font-black leading-tight text-[#061129] lg:text-[26px]">
               How can we help with {topic.title}?
             </h1>
-            <p className="mx-auto mt-7 max-w-[680px] text-[21px] font-semibold leading-9 text-[#061129]">
+            <p className="mx-auto mt-2 max-w-[560px] text-[13px] font-bold leading-5 text-[#5f6875] lg:text-[15px] lg:leading-6">
               Browse the common issues below or contact support<br className="hidden sm:block" /> if you need direct assistance.
             </p>
           </div>
 
-          <div className="mx-auto mt-11 overflow-hidden rounded-[16px] bg-white shadow-[0_14px_34px_rgba(34,31,32,0.045)] ring-1 ring-[#eef1f6]">
+          <div className="mx-auto mt-6 overflow-hidden rounded-[16px] bg-white shadow-[0_10px_26px_rgba(34,31,32,0.045)] ring-1 ring-[#eef1f6] lg:mt-8">
             {topic.questions.map((question) => (
-              <article key={question.title} className="border-b border-[#d9e2f0] px-6 py-6 last:border-b-0 lg:px-8">
-                <h2 className="text-[24px] font-black text-[#061129]">{question.title}</h2>
-                <p className="mt-4 text-[21px] font-semibold leading-8 text-[#061129]">{question.body}</p>
+              <article key={question.title} className="border-b border-[#e9eef5] px-5 py-5 last:border-b-0 lg:px-7">
+                <h2 className="text-[17px] font-black leading-snug text-[#061129] lg:text-[20px]">{question.title}</h2>
+                <p className="mt-3 text-[14px] font-bold leading-6 text-[#061129] lg:text-[16px] lg:leading-7">{question.body}</p>
               </article>
             ))}
           </div>
 
-          <div className="mt-9 flex flex-wrap items-center justify-center gap-4">
-            <Link href="/support" className="inline-flex h-[72px] min-w-[218px] items-center justify-center rounded-full bg-maroon px-8 text-[25px] font-bold text-white shadow-[0_14px_28px_rgba(141,0,33,0.18)] transition duration-200 hover:-translate-y-0.5 hover:bg-red">
+          <div className="mx-auto mt-7 grid max-w-[360px] grid-cols-[1fr_auto_auto] items-center justify-center gap-2 lg:mt-8 lg:max-w-[460px] lg:gap-3">
+            <Link href="/support" className="inline-flex h-12 min-w-0 items-center justify-center rounded-full bg-maroon px-5 text-[15px] font-black text-white shadow-[0_12px_24px_rgba(141,0,33,0.16)] transition duration-200 hover:-translate-y-0.5 hover:bg-red lg:h-13 lg:px-7 lg:text-[16px]">
               Back to Help
             </Link>
-            <a href={`tel:${business.phone}`} className="inline-flex h-[58px] items-center gap-2 rounded-full bg-white px-6 text-[16px] font-black text-[#061129] shadow-[0_12px_28px_rgba(34,31,32,0.05)] ring-1 ring-[#eef1f6] transition hover:text-maroon">
-              <Phone size={20} /> Call
+            <a href={`tel:${business.phone}`} className="inline-flex h-12 items-center gap-1.5 rounded-full bg-white px-4 text-[13px] font-black text-[#061129] shadow-[0_10px_22px_rgba(34,31,32,0.05)] ring-1 ring-[#eef1f6] transition hover:text-maroon lg:h-13 lg:px-5 lg:text-[14px]">
+              <Phone size={17} /> Call
             </a>
-            <a href={`https://wa.me/91${business.phone}`} className="inline-flex h-[58px] items-center gap-2 rounded-full bg-white px-6 text-[16px] font-black text-[#061129] shadow-[0_12px_28px_rgba(34,31,32,0.05)] ring-1 ring-[#eef1f6] transition hover:text-maroon">
-              <MessageCircle size={20} /> Chat
+            <a href={`https://wa.me/91${business.phone}`} className="inline-flex h-12 items-center gap-1.5 rounded-full bg-white px-4 text-[13px] font-black text-[#061129] shadow-[0_10px_22px_rgba(34,31,32,0.05)] ring-1 ring-[#eef1f6] transition hover:text-maroon lg:h-13 lg:px-5 lg:text-[14px]">
+              <MessageCircle size={17} /> Chat
             </a>
           </div>
         </section>
       </main>
-      <SiteFooter />
+      <SiteFooter showLogo={false} />
       <MobileNav />
     </>
   );

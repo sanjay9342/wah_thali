@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { getConfiguredDatabaseUrlKey, isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { hasServerEnv, readServerEnv } from "@/lib/server-env";
@@ -60,7 +61,7 @@ async function checkDatabase(): Promise<Check> {
   }
 }
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const requestHost = getRequestHost(request);
   const expectedHost = getExpectedHost();
   const database = await checkDatabase();
@@ -163,3 +164,5 @@ export async function GET(request: Request) {
     { status: ok ? 200 : 503 },
   );
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/health");

@@ -702,9 +702,9 @@ export function CartClient({
   }
 
   return (
-    <section className="relative mx-auto min-h-screen max-w-[430px] bg-[#f6f7fb] pb-32 text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-6 sm:min-h-0 sm:overflow-hidden sm:rounded-[28px] lg:max-w-none lg:overflow-visible lg:rounded-none lg:bg-white lg:pb-0 lg:shadow-none">
+    <section className="relative mx-auto min-h-screen max-w-[430px] bg-white pb-32 text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-6 sm:min-h-0 sm:overflow-hidden sm:rounded-[28px] lg:max-w-none lg:overflow-visible lg:rounded-none lg:pb-0 lg:shadow-none">
       {placingStage ? <OrderPlacingOverlay message={placingStage} /> : null}
-      <div className="mx-auto hidden max-w-[1248px] grid-cols-[230px_minmax(0,1fr)_360px] gap-8 px-6 py-9 lg:grid">
+      <div className="mx-auto hidden max-w-[1248px] grid-cols-[210px_minmax(0,1fr)_330px] gap-6 px-6 pb-9 pt-14 lg:grid">
         <aside className="sticky top-[88px] h-[calc(100vh-108px)] overflow-hidden rounded-[22px] border border-[#f1e7e4] bg-white shadow-[0_18px_44px_rgba(34,31,32,0.06)]">
           <div className="border-b border-[#f1e7e4] px-5 py-5">
             <p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-muted">
@@ -737,8 +737,8 @@ export function CartClient({
                   )}
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-black">{category.name}</span>
-                  <span className={`mt-0.5 block text-[11px] font-bold ${index === 0 ? "text-white/75" : "text-muted"}`}>{category.count} items</span>
+                  <span className="block truncate text-[13px] font-black">{category.name}</span>
+                  <span className={`mt-0.5 block text-[10px] font-bold ${index === 0 ? "text-white/75" : "text-muted"}`}>{category.count} items</span>
                 </span>
               </Link>
             ))}
@@ -746,17 +746,17 @@ export function CartClient({
         </aside>
 
         <div className="min-w-0">
-          <div className="mb-6 flex items-end justify-between gap-4">
+          <div className="mb-5 flex items-end justify-between gap-4">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-maroon">Wah Thali Cart</p>
-              <h1 className="mt-2 text-[32px] font-black leading-none text-charcoal">Your Basket</h1>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-maroon">Wah Thali Cart</p>
+              <h1 className="mt-1.5 text-[28px] font-black leading-none text-charcoal">Your Basket</h1>
             </div>
-            <span className="rounded-full bg-[#fff4f5] px-4 py-2 text-sm font-black text-maroon">
+            <span className="rounded-full bg-[#fff4f5] px-3.5 py-1.5 text-[13px] font-black text-maroon">
               {cartItemCount} {cartItemCount === 1 ? "Item" : "Items"}
             </span>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-3">
             {validLines.map((line, index) => {
               const product = initialProducts.find((item) => item.id === line.productId);
               if (!product) return null;
@@ -773,8 +773,8 @@ export function CartClient({
               const originalTotal = pricing.discountPerUnit > 0 ? pricing.originalUnitPrice * line.quantity : undefined;
 
               return (
-                <article key={`${line.productId}-${index}`} className="grid grid-cols-[132px_minmax(0,1fr)_150px] items-center gap-6 rounded-[18px] border border-[#f1e7e4] bg-white p-5 shadow-[0_14px_34px_rgba(34,31,32,0.05)]">
-                  <div className="relative h-[108px] overflow-hidden rounded-[14px] bg-cream">
+                <article key={`${line.productId}-${index}`} className="grid grid-cols-[118px_minmax(0,1fr)_130px] items-center gap-5 rounded-[16px] border border-[#f1e7e4] bg-white p-4 shadow-[0_12px_28px_rgba(34,31,32,0.045)]">
+                  <div className="relative h-[96px] overflow-hidden rounded-[13px] bg-cream">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={product.image || "/wah-thali-meal-cutout-v2.png"}
@@ -795,27 +795,27 @@ export function CartClient({
                       >
                         <span className={`h-2 w-2 rounded-full ${product.dietaryType === "NON_VEG" ? "bg-red" : "bg-maroon"}`} />
                       </span>
-                      <p className="truncate text-[12px] font-black uppercase tracking-[0.14em] text-muted">{product.category}</p>
+                      <p className="truncate text-[11px] font-black uppercase tracking-[0.14em] text-muted">{product.category}</p>
                     </div>
-                    <h2 className="mt-2 line-clamp-1 text-[22px] font-black text-charcoal">{product.name}</h2>
-                    <p className="mt-1 text-sm font-black text-muted">{variant?.name || "Regular"}</p>
-                    {addons.length ? <p className="mt-1 line-clamp-1 text-xs font-bold text-muted">With {addons.join(", ")}</p> : null}
-                    <div className="mt-5 flex items-center gap-2">
-                      {originalTotal ? <span className="text-sm font-bold text-muted line-through">{formatRupees(originalTotal)}</span> : null}
-                      <span className="text-lg font-black text-maroon">{formatRupees(lineTotal)}</span>
+                    <h2 className="mt-1.5 line-clamp-1 text-[19px] font-black text-charcoal">{product.name}</h2>
+                    <p className="mt-0.5 text-[13px] font-black text-muted">{variant?.name || "Regular"}</p>
+                    {addons.length ? <p className="mt-1 line-clamp-1 text-[11px] font-bold text-muted">With {addons.join(", ")}</p> : null}
+                    <div className="mt-4 flex items-center gap-2">
+                      {originalTotal ? <span className="text-[13px] font-bold text-muted line-through">{formatRupees(originalTotal)}</span> : null}
+                      <span className="text-[17px] font-black text-maroon">{formatRupees(lineTotal)}</span>
                     </div>
                   </div>
-                  <div className="grid justify-items-end gap-5">
-                    <button onClick={() => updateQuantity(index, 0)} className="grid h-9 w-9 place-items-center rounded-xl bg-[#fff4f5] text-red" aria-label={`Remove ${product.name}`}>
-                      <Trash2 size={17} />
+                  <div className="grid justify-items-end gap-4">
+                    <button onClick={() => updateQuantity(index, 0)} className="grid h-8 w-8 place-items-center rounded-xl bg-[#fff4f5] text-red" aria-label={`Remove ${product.name}`}>
+                      <Trash2 size={16} />
                     </button>
-                    <div className="grid h-11 w-[132px] grid-cols-3 overflow-hidden rounded-full bg-white text-maroon shadow-sm ring-1 ring-maroon/20">
+                    <div className="grid h-10 w-[118px] grid-cols-3 overflow-hidden rounded-full bg-white text-maroon shadow-sm ring-1 ring-maroon/20">
                       <button onClick={() => updateQuantity(index, line.quantity - 1)} className="grid place-items-center" aria-label={`Decrease ${product.name}`}>
                         <Minus size={15} />
                       </button>
-                      <span className="grid place-items-center text-base font-black">{line.quantity}</span>
+                      <span className="grid place-items-center text-[15px] font-black">{line.quantity}</span>
                       <button onClick={() => updateQuantity(index, line.quantity + 1)} className="grid place-items-center bg-[#fff4f5]" aria-label={`Increase ${product.name}`}>
-                        <Plus size={17} />
+                        <Plus size={16} />
                       </button>
                     </div>
                   </div>
@@ -825,12 +825,12 @@ export function CartClient({
           </div>
 
           {suggestions.length ? (
-            <section className="mt-8">
-              <h2 className="text-2xl font-black text-charcoal">Before you checkout</h2>
+            <section className="mt-7">
+              <h2 className="text-[22px] font-black text-charcoal">Before you checkout</h2>
               <div className="mt-4 grid grid-cols-3 gap-4">
                 {suggestions.slice(0, 3).map((product) => (
-                  <article key={product.id} className="rounded-[18px] border border-[#f1e7e4] bg-[#fff8f9] p-4 shadow-sm">
-                    <div className="h-[116px] overflow-hidden rounded-[14px] bg-cream">
+                  <article key={product.id} className="rounded-[16px] border border-[#f1e7e4] bg-[#fff8f9] p-3.5 shadow-sm">
+                    <div className="h-[104px] overflow-hidden rounded-[13px] bg-cream">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={product.image || "/wah-thali-meal-cutout-v2.png"}
@@ -842,11 +842,11 @@ export function CartClient({
                         }}
                       />
                     </div>
-                    <h3 className="mt-3 line-clamp-1 text-base font-black text-charcoal">{product.name}</h3>
-                    <p className="mt-2 text-lg font-black text-maroon">{formatRupees(getProductUnitPricing(product, initialCategoryOffers).unitPrice)}</p>
+                    <h3 className="mt-3 line-clamp-1 text-[15px] font-black text-charcoal">{product.name}</h3>
+                    <p className="mt-2 text-[17px] font-black text-maroon">{formatRupees(getProductUnitPricing(product, initialCategoryOffers).unitPrice)}</p>
                     <button
                       onClick={() => addSuggestedProduct(product)}
-                      className="mt-4 h-10 w-full rounded-xl bg-maroon text-sm font-black text-white shadow-[0_10px_22px_rgba(141,0,33,0.16)]"
+                      className="mt-4 h-9 w-full rounded-xl bg-maroon text-[13px] font-black text-white shadow-[0_10px_22px_rgba(141,0,33,0.16)]"
                     >
                       Add
                     </button>
@@ -858,9 +858,9 @@ export function CartClient({
         </div>
 
         <aside className="sticky top-[88px] h-max">
-          <div className="rounded-[22px] bg-[#f5f6fb] p-6 shadow-[0_18px_44px_rgba(34,31,32,0.08)] ring-1 ring-[#edf0f5]">
-            <h2 className="text-[24px] font-black text-charcoal">Bill Summary</h2>
-            <dl className="mt-6 space-y-5 text-[17px]">
+          <div className="rounded-[20px] bg-[#f5f6fb] p-5 shadow-[0_16px_38px_rgba(34,31,32,0.07)] ring-1 ring-[#edf0f5]">
+            <h2 className="text-[22px] font-black text-charcoal">Bill Summary</h2>
+            <dl className="mt-5 space-y-4 text-[15px]">
               <div className="flex items-center justify-between gap-4">
                 <dt className="font-bold text-[#1f2937]">Item Total</dt>
                 <dd className="font-black text-charcoal">{formatRupees(totals.subtotal)}</dd>
@@ -875,17 +875,17 @@ export function CartClient({
               </div>
               {totals.discount > 0 ? (
                 <div className="flex items-center justify-between gap-4 rounded-2xl bg-[#e7f6ee] px-4 py-3 text-maroon">
-                  <dt className="flex items-center gap-2 font-black"><Tag size={18} /> {appliedCoupon ? `Coupon ${appliedCoupon.code}` : "Discount Applied"}</dt>
+                  <dt className="flex items-center gap-2 font-black"><Tag size={16} /> {appliedCoupon ? `Coupon ${appliedCoupon.code}` : "Discount Applied"}</dt>
                   <dd className="font-black">-{formatRupees(totals.discount)}</dd>
                 </div>
               ) : null}
               <div className="flex items-center justify-between gap-4 border-t border-[#dfe3ea] pt-5">
-                <dt className="text-xl font-black text-charcoal">To Pay</dt>
-                <dd className="text-[30px] font-black text-charcoal">{formatRupees(totals.grandTotal)}</dd>
+                <dt className="text-[18px] font-black text-charcoal">To Pay</dt>
+                <dd className="text-[26px] font-black text-charcoal">{formatRupees(totals.grandTotal)}</dd>
               </div>
             </dl>
             {totalSavings > 0 ? (
-              <div className="mt-5 rounded-2xl border border-maroon/20 bg-white px-4 py-3 text-center text-sm font-black text-maroon shadow-sm">
+              <div className="mt-5 rounded-2xl border border-maroon/20 bg-white px-4 py-3 text-center text-[13px] font-black text-maroon shadow-sm">
                 Your Savings {formatRupees(totalSavings)}
               </div>
             ) : null}
@@ -896,7 +896,7 @@ export function CartClient({
                     key={option}
                     type="button"
                     onClick={() => setPaymentMethod(option)}
-                    className={`h-11 rounded-xl text-sm font-black ring-1 ${
+                    className={`h-10 rounded-xl text-[13px] font-black ring-1 ${
                       selectedPaymentMethod === option
                         ? "bg-maroon text-white ring-maroon"
                         : "bg-white text-charcoal ring-border"
@@ -914,17 +914,17 @@ export function CartClient({
             ) : null}
           </div>
 
-          <div className="mt-4 rounded-[22px] bg-white p-6 shadow-[0_18px_44px_rgba(34,31,32,0.08)] ring-1 ring-[#edf0f5]">
+          <div className="mt-4 rounded-[20px] bg-white p-5 shadow-[0_16px_38px_rgba(34,31,32,0.07)] ring-1 ring-[#edf0f5]">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-muted">Total Payable</p>
-              <p className="text-[30px] font-black text-maroon">{formatRupees(totals.grandTotal)}</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-muted">Total Payable</p>
+              <p className="text-[26px] font-black text-maroon">{formatRupees(totals.grandTotal)}</p>
             </div>
             {storeOrderingDisabled ? (
-              <button disabled className="mt-6 h-14 w-full cursor-not-allowed rounded-2xl bg-muted/30 text-lg font-black text-muted">
+              <button disabled className="mt-5 h-12 w-full cursor-not-allowed rounded-2xl bg-muted/30 text-base font-black text-muted">
                 Closed
               </button>
             ) : !serviceable ? (
-              <button type="button" onClick={openLocationSheet} className="mt-6 h-14 w-full rounded-2xl bg-maroon text-lg font-black text-white">
+              <button type="button" onClick={openLocationSheet} className="mt-5 h-12 w-full rounded-2xl bg-maroon text-base font-black text-white">
                 Choose Location
               </button>
             ) : paymentOptions.length ? (
@@ -932,12 +932,12 @@ export function CartClient({
                 type="button"
                 onClick={requestPlaceOrderConfirmation}
                 disabled={submitting}
-                className="mt-6 inline-flex h-14 w-full items-center justify-center gap-3 rounded-2xl bg-maroon text-lg font-black text-white shadow-[0_12px_24px_rgba(141,0,33,0.22)] disabled:opacity-60"
+                className="mt-5 inline-flex h-12 w-full items-center justify-center gap-3 rounded-2xl bg-maroon text-base font-black text-white shadow-[0_12px_24px_rgba(141,0,33,0.22)] disabled:opacity-60"
               >
-                {submitting ? "Placing..." : "Place Order"} <ArrowRight size={22} />
+                {submitting ? "Placing..." : "Place Order"} <ArrowRight size={20} />
               </button>
             ) : (
-              <button disabled className="mt-6 h-14 w-full cursor-not-allowed rounded-2xl bg-muted/30 text-lg font-black text-muted">
+              <button disabled className="mt-5 h-12 w-full cursor-not-allowed rounded-2xl bg-muted/30 text-base font-black text-muted">
                 Payment unavailable
               </button>
             )}
@@ -1219,65 +1219,67 @@ export function CartClient({
       {showBillSummary ? (
         <div className="fixed inset-0 z-[70] flex items-end bg-charcoal/60" onClick={() => setShowBillSummary(false)}>
           <section
-            className="w-full rounded-t-[26px] bg-[#f6f7fb] px-4 pb-[calc(env(safe-area-inset-bottom)+22px)] pt-5 shadow-[0_-18px_48px_rgba(17,24,39,0.25)]"
+            className="w-full rounded-t-[24px] bg-[#f6f7fb] px-4 pb-[calc(env(safe-area-inset-bottom)+18px)] pt-4 font-sans shadow-[0_-18px_48px_rgba(17,24,39,0.25)]"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-labelledby="bill-summary-title"
           >
-            <div className="grid grid-cols-[minmax(0,1fr)_40px] items-start gap-3">
-              <h2 id="bill-summary-title" className="min-w-0 text-[22px] font-black text-charcoal">Bill Summary</h2>
+            <div className="grid grid-cols-[minmax(0,1fr)_36px] items-start gap-3">
+              <h2 id="bill-summary-title" className="min-w-0 text-[18px] font-black leading-9 text-charcoal">Bill Summary</h2>
               <button
                 type="button"
-                className="grid h-10 w-10 place-items-center rounded-full bg-white text-charcoal shadow-sm ring-1 ring-border"
+                className="grid h-9 w-9 place-items-center rounded-full bg-white text-charcoal shadow-sm ring-1 ring-border"
                 onClick={() => setShowBillSummary(false)}
                 aria-label="Close bill summary"
               >
-                <X size={22} strokeWidth={3} />
+                <X size={19} strokeWidth={3} />
               </button>
             </div>
-            <div className="mt-5 overflow-hidden rounded-[18px] bg-white shadow-sm">
-              <dl className="space-y-4 px-4 py-5 text-[17px]">
+            <div className="mt-3 overflow-hidden rounded-[16px] bg-white shadow-sm ring-1 ring-[#eef1f6]">
+              <dl className="space-y-3 px-3.5 py-4 text-[14px]">
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="font-black text-charcoal">Item total</dt>
-                  <dd className="font-black text-charcoal">
+                  <dt className="font-extrabold text-charcoal">Item total</dt>
+                  <dd className="font-extrabold text-charcoal">
                     {itemSavings > 0 ? <span className="mr-2 text-muted line-through">{formatRupees(totals.subtotal + itemSavings)}</span> : null}
                     {formatRupees(totals.subtotal)}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="border-b border-dashed border-charcoal font-black text-charcoal">Delivery partner fee</dt>
-                  <dd className="font-black text-charcoal">
+                  <dt className="border-b border-dashed border-charcoal font-extrabold text-charcoal">Delivery partner fee</dt>
+                  <dd className="font-extrabold text-charcoal">
                     {totals.delivery === 0 ? <span className="mr-2 text-muted line-through">{formatRupees(restaurantSettings.deliveryFee)}</span> : null}
                     {formatRupees(totals.delivery)}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="border-b border-dashed border-charcoal font-black text-charcoal">Platform fee</dt>
-                  <dd className="font-black text-charcoal">{formatRupees(totals.packaging)}</dd>
+                  <dt className="border-b border-dashed border-charcoal font-extrabold text-charcoal">Platform fee</dt>
+                  <dd className="font-extrabold text-charcoal">{formatRupees(totals.packaging)}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="border-b border-dashed border-charcoal font-black text-charcoal">GST (govt. taxes)</dt>
-                  <dd className="font-black text-charcoal">{formatRupees(totals.gst)}</dd>
+                  <dt className="border-b border-dashed border-charcoal font-extrabold text-charcoal">GST (govt. taxes)</dt>
+                  <dd className="font-extrabold text-charcoal">{formatRupees(totals.gst)}</dd>
                 </div>
-                <div className="flex items-center justify-between gap-3 border-t border-[#eef1f6] pt-5">
-                  <dt className="text-[19px] font-black text-charcoal">Grand Total</dt>
-                  <dd className="text-[19px] font-black text-charcoal">{formatRupees(totals.subtotal + totals.delivery + totals.packaging + totals.gst)}</dd>
+                <div className="flex items-center justify-between gap-3 border-t border-[#eef1f6] pt-4">
+                  <dt className="text-[16px] font-black text-charcoal">Grand Total</dt>
+                  <dd className="text-[16px] font-black text-charcoal">{formatRupees(totals.subtotal + totals.delivery + totals.packaging + totals.gst)}</dd>
                 </div>
                 {totals.discount > 0 ? (
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-[17px] font-black text-[#1769c2]">{appliedCoupon ? `Coupon ${appliedCoupon.code}` : "Limited Time Offer"}</dt>
+                  <dt className="text-[14px] font-black text-[#1769c2]">{appliedCoupon ? `Coupon ${appliedCoupon.code}` : "Limited Time Offer"}</dt>
                   <dd className="font-black text-[#1769c2]">-{formatRupees(totals.discount)}</dd>
                 </div>
                 ) : null}
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-[19px] font-black text-charcoal">To pay</dt>
-                  <dd className="text-[19px] font-black text-charcoal">{formatRupees(totals.grandTotal)}</dd>
+                  <dt className="text-[16px] font-black text-charcoal">To pay</dt>
+                  <dd className="text-[16px] font-black text-charcoal">{formatRupees(totals.grandTotal)}</dd>
                 </div>
               </dl>
-              <div className="bg-[#d8eaff] px-4 py-4 text-center text-[16px] font-black text-[#1769c2]">
-                You saved {formatRupees(totalSavings)} on this order
-              </div>
+              {totalSavings > 0 ? (
+                <div className="border-t border-[#cfe3fb] bg-[#d8eaff] px-4 py-3 text-center text-[13px] font-black text-[#1769c2]">
+                  You saved {formatRupees(totalSavings)} on this order
+                </div>
+              ) : null}
             </div>
           </section>
         </div>

@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
@@ -13,7 +14,7 @@ const refundSchema = z.object({
 const refundablePaymentStatuses = new Set(["PAID"]);
 const blockedRefundStatuses = new Set(["REFUND_PENDING", "PARTIALLY_REFUNDED", "REFUNDED"]);
 
-export async function POST(request: Request, { params }: { params: Promise<{ orderNumber: string }> }) {
+async function postHandler(request: Request, { params }: { params: Promise<{ orderNumber: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -143,3 +144,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
     paymentStatus: nextPaymentStatus,
   });
 }
+
+export const POST = withApiErrorHandling(postHandler, "POST /api/orders/[orderNumber]/refund");

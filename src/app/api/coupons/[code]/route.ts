@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
@@ -28,7 +29,7 @@ const couponSchema = z.object({
   tagNames: z.array(z.string().min(1)).optional(),
 });
 
-export async function PATCH(request: Request, { params }: { params: Promise<{ code: string }> }) {
+async function patchHandler(request: Request, { params }: { params: Promise<{ code: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -60,7 +61,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
   return NextResponse.json({ coupon });
 }
 
-export async function DELETE(request: Request, { params }: { params: Promise<{ code: string }> }) {
+async function deleteHandler(request: Request, { params }: { params: Promise<{ code: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -72,3 +73,6 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ c
   await deleteCouponRule(code);
   return NextResponse.json({ deleted: true, coupon });
 }
+
+export const PATCH = withApiErrorHandling(patchHandler, "PATCH /api/coupons/[code]");
+export const DELETE = withApiErrorHandling(deleteHandler, "DELETE /api/coupons/[code]");

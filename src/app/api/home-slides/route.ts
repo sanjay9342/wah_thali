@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
@@ -21,7 +22,7 @@ const slidesSchema = z.object({
   slides: z.array(slideSchema),
 });
 
-export async function GET() {
+async function getHandler() {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ slides: defaultHomeSlides, configured: false, connected: false });
   }
@@ -49,7 +50,7 @@ export async function GET() {
   }
 }
 
-export async function PUT(request: Request) {
+async function putHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -76,3 +77,6 @@ export async function PUT(request: Request) {
 
   return NextResponse.json({ slides: parsed.data.slides });
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/home-slides");
+export const PUT = withApiErrorHandling(putHandler, "PUT /api/home-slides");

@@ -31,6 +31,11 @@ export type CustomerReportRow = {
   lastOrder?: string;
 };
 
+export type DishCustomerReportRow = CustomerReportRow & {
+  quantity: number;
+  favouriteItem: string;
+};
+
 export type OrderReportRow = {
   orderNumber: string;
   customerName: string;
@@ -45,6 +50,24 @@ export type ReportBucket = {
   label: string;
   orders: number;
   sales: number;
+};
+
+export type DishSearchReport = {
+  active: boolean;
+  query: string;
+  matchedDishes: number;
+  orders: number;
+  delivered: number;
+  activeOrders: number;
+  cancelled: number;
+  quantity: number;
+  itemSales: number;
+  customers: number;
+  repeatCustomers: number;
+  averageOrderValue: number;
+  topDishes: ReportRow[];
+  customerFavourites: DishCustomerReportRow[];
+  recentOrders: OrderReportRow[];
 };
 
 export type AdminReportsSnapshot = {
@@ -90,6 +113,7 @@ export type AdminReportsSnapshot = {
     best: ReportRow[];
     worst: ReportRow[];
   };
+  dishSearch: DishSearchReport;
   timeline: ReportBucket[];
 };
 
@@ -225,13 +249,21 @@ function buildSnapshot(input: {
   const codSales = sum(revenueOrders.filter((order) => order.payments.some((payment) => payment.provider === "COD")), (order) => order.grandTotal);
   const onlineSales = sum(revenueOrders.filter((order) => order.payments.some((payment) => payment.provider !== "COD" && paidOnlineStatuses.includes(payment.status as PaymentStatus))), (order) => order.grandTotal);
   const cancelledValue = sum(cancelledOrders, (order) => order.grandTotal);
-  const itemRows = getItemRows(input.products, revenueOrders);
+  const itemRows = getItemRows(input.products, revenueOrders, input.searchQuery);
+  const dishSearch = getDishSearchReport(input.searchQuery, input.orders, revenueOrders, itemRows);
   const statusRows = getStatusRows(input.orders);
   const topCustomers = getCustomerRows(input.orders);
   const orderingCustomers = new Set(revenueOrders.map((order) => order.customerId)).size;
   const repeatCustomers = topCustomers.filter((customer) => customer.orders > 1).length;
   const totalItemsSold = sum(itemRows, (item) => item.quantity);
   const uniqueItemsSold = itemRows.filter((item) => item.quantity > 0).length;
+  const primaryGrossSales = dishSearch.active ? dishSearch.itemSales : grossSales;
+  const primaryNetRevenue = dishSearch.active ? dishSearch.itemSales : netRevenue;
+  const primaryOrders = dishSearch.active ? dishSearch.orders : input.orders.length;
+  const primaryDelivered = dishSearch.active ? dishSearch.delivered : delivered;
+  const primaryActive = dishSearch.active ? dishSearch.activeOrders : active;
+  const primaryCustomers = dishSearch.active ? dishSearch.customers : orderingCustomers;
+  const primaryAverageOrder = dishSearch.active ? dishSearch.averageOrderValue : averageOrderValue;
 
   return {
     period: input.period,
@@ -242,12 +274,12 @@ function buildSnapshot(input: {
     generatedAt: input.generatedAt,
     searchQuery: input.searchQuery,
     metrics: [
-      { label: "Gross sales", value: currency(grossSales), detail: `${revenueOrders.length} paid/COD order${revenueOrders.length === 1 ? "" : "s"}` },
-      { label: "Net revenue", value: currency(netRevenue), detail: `After ${currency(discount)} discount` },
-      { label: "Orders", value: String(input.orders.length), detail: `${delivered} delivered, ${active} active` },
-      { label: "Customers", value: String(orderingCustomers), detail: `${input.newCustomers} new in this period` },
+      { label: dishSearch.active ? "Dish sales" : "Gross sales", value: currency(primaryGrossSales), detail: dishSearch.active ? `${dishSearch.quantity} searched item${dishSearch.quantity === 1 ? "" : "s"} sold` : `${revenueOrders.length} paid/COD order${revenueOrders.length === 1 ? "" : "s"}` },
+      { label: dishSearch.active ? "Item revenue" : "Net revenue", value: currency(primaryNetRevenue), detail: dishSearch.active ? `${dishSearch.matchedDishes} matching dish${dishSearch.matchedDishes === 1 ? "" : "es"}` : `After ${currency(discount)} discount` },
+      { label: "Orders", value: String(primaryOrders), detail: `${primaryDelivered} delivered, ${primaryActive} active` },
+      { label: "Customers", value: String(primaryCustomers), detail: dishSearch.active ? `${dishSearch.repeatCustomers} repeat dish customer${dishSearch.repeatCustomers === 1 ? "" : "s"}` : `${input.newCustomers} new in this period` },
       { label: "Items sold", value: String(totalItemsSold), detail: `${uniqueItemsSold} unique menu item${uniqueItemsSold === 1 ? "" : "s"}` },
-      { label: "Average order", value: currency(averageOrderValue), detail: `${currency(cancelledValue)} cancelled value` },
+      { label: "Average order", value: currency(primaryAverageOrder), detail: `${currency(cancelledValue)} cancelled value` },
     ],
     sales: {
       subtotal,
@@ -291,12 +323,14 @@ function buildSnapshot(input: {
       best: [...itemRows].filter((row) => row.quantity > 0).sort((a, b) => b.netSales - a.netSales || b.quantity - a.quantity).slice(0, 8),
       worst: [...itemRows].sort((a, b) => a.quantity - b.quantity || a.netSales - b.netSales || a.label.localeCompare(b.label)).slice(0, 8),
     },
+    dishSearch,
     timeline: getTimelineRows(input.period, input.date, revenueOrders, input.fromDate, input.toDate),
   };
 }
 
-function getItemRows(products: ReportProduct[], orders: ReportOrder[]): ReportRow[] {
+function getItemRows(products: ReportProduct[], orders: ReportOrder[], searchQuery = ""): ReportRow[] {
   const rows = new Map<string, ReportRow>();
+  const needle = searchQuery.toLowerCase();
 
   for (const product of products) {
     rows.set(product.id, {
@@ -312,6 +346,7 @@ function getItemRows(products: ReportProduct[], orders: ReportOrder[]): ReportRo
   for (const order of orders) {
     const seenInOrder = new Set<string>();
     for (const item of order.items) {
+      if (needle && !getReportItemSearchText(item).includes(needle)) continue;
       const key = item.productId || item.name;
       const row = rows.get(key) ?? {
         label: getReportItemLabel(item),
@@ -333,6 +368,99 @@ function getItemRows(products: ReportProduct[], orders: ReportOrder[]): ReportRo
   }
 
   return [...rows.values()].sort((a, b) => b.netSales - a.netSales || b.quantity - a.quantity || a.label.localeCompare(b.label));
+}
+
+function getDishSearchReport(searchQuery: string, allMatchingOrders: ReportOrder[], revenueOrders: ReportOrder[], itemRows: ReportRow[]): DishSearchReport {
+  const active = Boolean(searchQuery);
+  if (!active) {
+    return {
+      active: false,
+      query: "",
+      matchedDishes: 0,
+      orders: 0,
+      delivered: 0,
+      activeOrders: 0,
+      cancelled: 0,
+      quantity: 0,
+      itemSales: 0,
+      customers: 0,
+      repeatCustomers: 0,
+      averageOrderValue: 0,
+      topDishes: [],
+      customerFavourites: [],
+      recentOrders: [],
+    };
+  }
+
+  const needle = searchQuery.toLowerCase();
+  const matchedRevenueOrders = revenueOrders.filter((order) => order.items.some((item) => getReportItemSearchText(item).includes(needle)));
+  const matchedAllOrders = allMatchingOrders.filter((order) => order.items.some((item) => getReportItemSearchText(item).includes(needle)));
+  const customerRows = getDishCustomerRows(matchedRevenueOrders, needle);
+  const itemSales = sum(itemRows, (row) => row.netSales);
+  const orders = matchedRevenueOrders.length;
+
+  return {
+    active: true,
+    query: searchQuery,
+    matchedDishes: itemRows.filter((row) => row.quantity > 0 || row.searchText?.includes(needle)).length,
+    orders,
+    delivered: matchedAllOrders.filter((order) => order.status === "DELIVERED").length,
+    activeOrders: matchedAllOrders.filter((order) => activeStatuses.has(order.status)).length,
+    cancelled: matchedAllOrders.filter((order) => cancelledStatuses.has(order.status)).length,
+    quantity: sum(itemRows, (row) => row.quantity),
+    itemSales,
+    customers: customerRows.length,
+    repeatCustomers: customerRows.filter((customer) => customer.orders > 1).length,
+    averageOrderValue: orders ? Math.round(itemSales / orders) : 0,
+    topDishes: [...itemRows].filter((row) => row.quantity > 0).sort((a, b) => b.netSales - a.netSales || b.quantity - a.quantity).slice(0, 10),
+    customerFavourites: customerRows,
+    recentOrders: matchedAllOrders.slice(0, 12).map((order) => {
+      const matchedItems = order.items.filter((item) => getReportItemSearchText(item).includes(needle));
+      return {
+        orderNumber: order.orderNumber,
+        customerName: order.customer.name,
+        status: prettifyStatus(order.status),
+        amount: sum(matchedItems, (item) => item.price * item.quantity),
+        items: sum(matchedItems, (item) => item.quantity),
+        itemSummary: matchedItems.map((item) => `${item.quantity} x ${getReportItemDisplayName(item)}`).join(", "),
+        createdAt: order.createdAt.toISOString(),
+      };
+    }),
+  };
+}
+
+function getDishCustomerRows(orders: ReportOrder[], needle: string): DishCustomerReportRow[] {
+  const rows = new Map<string, DishCustomerReportRow>();
+
+  for (const order of orders) {
+    const matchedItems = order.items.filter((item) => getReportItemSearchText(item).includes(needle));
+    if (!matchedItems.length) continue;
+
+    const key = order.customerId;
+    const row = rows.get(key) ?? {
+      name: order.customer.name,
+      mobile: order.customer.mobile,
+      orders: 0,
+      spend: 0,
+      quantity: 0,
+      favouriteItem: "",
+      lastOrder: order.createdAt.toISOString(),
+    };
+    row.orders += 1;
+    row.spend += sum(matchedItems, (item) => item.price * item.quantity);
+    row.quantity += sum(matchedItems, (item) => item.quantity);
+    if (!row.lastOrder || order.createdAt > new Date(row.lastOrder)) row.lastOrder = order.createdAt.toISOString();
+    const itemCounts = new Map<string, number>();
+    for (const item of matchedItems) {
+      const label = getReportItemDisplayName(item);
+      itemCounts.set(label, (itemCounts.get(label) ?? 0) + item.quantity);
+    }
+    const bestItem = [...itemCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0];
+    row.favouriteItem = bestItem || row.favouriteItem;
+    rows.set(key, row);
+  }
+
+  return [...rows.values()].sort((a, b) => b.orders - a.orders || b.quantity - a.quantity || b.spend - a.spend).slice(0, 20);
 }
 
 function getStatusRows(orders: ReportOrder[]): ReportRow[] {

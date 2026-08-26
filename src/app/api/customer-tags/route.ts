@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
@@ -10,7 +11,7 @@ const tagSchema = z.object({
     .refine((value) => value.length > 0 && value.length <= 32, "Tag name must be 1 to 32 characters."),
 });
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ tags: ["VIP"], configured: false });
   }
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ tags: Array.from(new Set(["VIP", ...tags.map((tag) => tag.name)])).sort((a, b) => a.localeCompare(b)), configured: true });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -52,3 +53,6 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ tag }, { status: 201 });
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/customer-tags");
+export const POST = withApiErrorHandling(postHandler, "POST /api/customer-tags");

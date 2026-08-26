@@ -94,8 +94,9 @@ export function OrdersClient() {
 
   if (!session) {
     return (
-      <main className="mx-auto min-h-screen w-full max-w-[430px] bg-[#fbf8f4] px-5 pb-32 pt-8 text-charcoal sm:max-w-5xl">
-        <section className="mt-20 rounded-[28px] bg-white p-6 text-center shadow-sm ring-1 ring-border">
+      <main className="mx-auto min-h-screen w-full max-w-[430px] bg-white px-5 pb-32 pt-8 text-charcoal sm:max-w-5xl lg:max-w-none lg:px-0 lg:pb-14 lg:pt-10">
+        <div className="mx-auto w-full lg:max-w-[1248px] lg:px-8">
+        <section className="mt-20 rounded-[28px] bg-white p-6 text-center shadow-sm ring-1 ring-border lg:mx-auto lg:max-w-[520px]">
           <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-cream text-maroon">
             <PackageCheck size={35} />
           </div>
@@ -107,69 +108,71 @@ export function OrdersClient() {
             <LogIn size={19} /> Login or Sign Up
           </Link>
         </section>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-[430px] bg-[#fbf8f4] px-5 pb-40 pt-5 text-charcoal sm:max-w-5xl sm:px-6 lg:px-8">
-      <div className="mb-5 rounded-[24px] border border-[#eadfd5] bg-[#f8f1ea] p-6 text-charcoal shadow-[0_16px_36px_rgba(34,31,32,0.055)]">
-        <p className="text-xs font-black uppercase tracking-[0.22em] text-maroon/70">Wah Thali</p>
-        <h1 className="mt-2 text-4xl font-black leading-tight text-charcoal">My Orders</h1>
-        <p className="mt-2 text-sm font-semibold text-muted">{profile?.name || session.name}, track your live orders here.</p>
+    <main className="mx-auto min-h-screen w-full max-w-[430px] bg-white px-4 pb-32 pt-4 text-charcoal sm:max-w-5xl sm:px-6 lg:max-w-none lg:px-0 lg:pb-14 lg:pt-8">
+      <div className="mx-auto w-full lg:max-w-[1248px] lg:px-8">
+      <div className="mb-3 rounded-[18px] border border-[#eadfd5] bg-white p-4 text-charcoal shadow-[0_12px_28px_rgba(34,31,32,0.045)] lg:mb-5 lg:p-6">
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-maroon/70">Wah Thali</p>
+        <h1 className="mt-1 text-2xl font-black leading-tight text-charcoal lg:text-[34px]">My Orders</h1>
+        <p className="mt-1 text-xs font-semibold text-muted lg:text-sm">{profile?.name || session.name}, track your live orders here.</p>
       </div>
 
-      <label className="flex h-14 items-center gap-4 rounded-2xl bg-white px-4 shadow-[0_12px_34px_rgba(34,31,32,0.06)] ring-1 ring-border">
-        <Search size={24} className="shrink-0 text-maroon" strokeWidth={3} />
+      <label className="flex h-11 items-center gap-3 rounded-xl bg-white px-3 shadow-[0_10px_24px_rgba(34,31,32,0.05)] ring-1 ring-border">
+        <Search size={19} className="shrink-0 text-maroon" strokeWidth={3} />
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          className="min-w-0 flex-1 bg-transparent text-sm font-bold text-charcoal outline-none placeholder:text-muted"
+          className="min-w-0 flex-1 bg-transparent text-xs font-bold text-charcoal outline-none placeholder:text-muted"
           placeholder="Search by order or dish..."
         />
       </label>
 
       {message ? <p className="mt-4 rounded-2xl bg-cream p-3 text-center text-xs font-black text-muted">{message}</p> : null}
 
-      <section className="mt-6 grid gap-5 lg:grid-cols-2">
+      <section className="mt-4 grid gap-3 lg:mt-5 lg:grid-cols-2 lg:gap-5 xl:grid-cols-3">
         {loading ? (
-          <div className="rounded-[24px] bg-white p-6 text-center text-sm font-black text-muted shadow-sm ring-1 ring-border lg:col-span-2">Loading orders...</div>
+          <div className="rounded-[18px] bg-white p-4 text-center text-xs font-black text-muted shadow-sm ring-1 ring-border lg:col-span-2 xl:col-span-3">Loading orders...</div>
         ) : orders.length ? orders.map((order) => (
-          <article key={order.orderNumber} className="overflow-hidden rounded-[22px] bg-white shadow-[0_12px_34px_rgba(34,31,32,0.06)] ring-1 ring-border">
-            <div className="grid grid-cols-[54px_1fr_auto] gap-3 p-4">
-              <div className="grid h-[54px] w-[54px] place-items-center rounded-xl bg-cream text-maroon">
-                <PackageCheck size={25} />
+          <article key={order.orderNumber} className="overflow-hidden rounded-[18px] bg-white shadow-[0_10px_26px_rgba(34,31,32,0.05)] ring-1 ring-border">
+            <div className="grid grid-cols-[42px_1fr] gap-3 p-3">
+              <div className="grid h-[42px] w-[42px] place-items-center rounded-lg bg-cream text-maroon">
+                <PackageCheck size={20} />
               </div>
               <div className="min-w-0">
-                <h2 className="text-xl font-black leading-tight text-charcoal">Order #{order.orderNumber}</h2>
-                <p className="mt-1 truncate text-[14px] font-semibold text-muted">{formatOrderDate(order.createdAt)}</p>
-                <span className={`mt-2 inline-flex rounded-lg px-2.5 py-1 text-[11px] font-black ${getOrderStatusTone(order.status)}`}>
+                <h2 className="text-base font-black leading-tight text-charcoal">Order #{order.orderNumber}</h2>
+                <p className="mt-0.5 truncate text-xs font-semibold text-muted">{formatOrderDate(order.createdAt)}</p>
+                <span className={`mt-1.5 inline-flex rounded-md px-2 py-0.5 text-[10px] font-black ${getOrderStatusTone(order.status)}`}>
                   {formatStatus(order.status)}
                 </span>
-                <Link href={`/order/${order.orderNumber}/track`} className="mt-1 inline-flex text-[14px] font-black text-maroon">
+                <Link href={`/order/${order.orderNumber}/track`} className="mt-1 inline-flex text-xs font-black text-maroon">
                   Track order
-                  <ChevronRight size={15} />
+                  <ChevronRight size={13} />
                 </Link>
               </div>
             </div>
 
-            <div className="border-t border-border px-4 py-4">
-              <div className="grid gap-2">
+            <div className="border-t border-border px-3 py-3">
+              <div className="grid gap-1.5">
                 {order.items.slice(0, 3).map((item) => (
-                  <div key={item.id} className="flex items-center justify-between rounded-xl bg-[#fbf7f1] px-3 py-2 text-sm">
+                  <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-2.5 py-1.5 text-xs ring-1 ring-border">
                     <span className="font-bold text-charcoal">{item.quantity} x {item.name}</span>
                     <span className="font-black text-maroon">{formatRupees(item.price * item.quantity)}</span>
                   </div>
                 ))}
               </div>
-              <div className="mt-5 flex items-center justify-between border-t border-border pt-4">
-                <span className="text-[17px] font-black text-charcoal">{formatRupees(order.grandTotal)}</span>
+              <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
+                <span className="text-sm font-black text-charcoal">{formatRupees(order.grandTotal)}</span>
                 <OrderReorderButton items={order.items} />
               </div>
             </div>
           </article>
         )) : (
-          <section className="rounded-[24px] bg-white p-6 text-center shadow-sm ring-1 ring-border lg:col-span-2">
+          <section className="rounded-[24px] bg-white p-6 text-center shadow-sm ring-1 ring-border lg:col-span-2 xl:col-span-3">
             <PackageCheck className="mx-auto text-maroon" size={34} />
             <h2 className="mt-3 text-[20px] font-black text-charcoal">No orders yet</h2>
             <p className="mt-2 text-sm font-bold leading-6 text-muted">Your orders will appear here after checkout.</p>
@@ -179,6 +182,7 @@ export function OrdersClient() {
           </section>
         )}
       </section>
+      </div>
     </main>
   );
 }

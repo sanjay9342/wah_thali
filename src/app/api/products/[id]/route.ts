@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -42,7 +43,7 @@ const updateProductSchema = z.object({
   })).optional(),
 });
 
-export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function patchHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -53,6 +54,24 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const parsed = updateProductSchema.safeParse(await request.json());
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid product update", issues: parsed.error.flatten() }, { status: 400 });
+  }
+
+  if (isAvailabilityOnlyUpdate(parsed.data)) {
+    const product = await prisma.product.update({
+      where: { id },
+      data: { available: parsed.data.available },
+      select: { id: true, name: true, available: true },
+    });
+
+    await logActivity({
+      type: "PRODUCT_UPDATED",
+      entity: "Product",
+      entityId: product.id,
+      summary: `${product.available ? "Enabled" : "Disabled"} product ${product.name}`,
+      metadata: { available: product.available },
+    });
+
+    return NextResponse.json({ product });
   }
 
   const { category, image, prepTimeMinutes, stock, reorderAt, margin, addons, variants, ...productUpdate } = parsed.data;
@@ -159,7 +178,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   return NextResponse.json({ product });
 }
 
-export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function deleteHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -229,9 +248,16 @@ function nullableReportCode() {
   ).transform((value) => value || null);
 }
 
+function isAvailabilityOnlyUpdate(data: z.infer<typeof updateProductSchema>) {
+  return data.available !== undefined && Object.keys(data).length === 1;
+}
+
 function isUniqueReportCodeError(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError &&
     error.code === "P2002" &&
     Array.isArray(error.meta?.target) &&
     error.meta.target.includes("reportCode");
 }
+
+export const PATCH = withApiErrorHandling(patchHandler, "PATCH /api/products/[id]");
+export const DELETE = withApiErrorHandling(deleteHandler, "DELETE /api/products/[id]");

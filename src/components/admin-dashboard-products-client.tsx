@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { CheckCircle2, Edit3, EyeOff } from "lucide-react";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { adminFetch } from "@/lib/admin-client-auth";
@@ -8,28 +8,20 @@ import type { Product } from "@/lib/types";
 import { formatRupees, getProductUnitPricing } from "@/lib/pricing";
 
 export function AdminDashboardProductsClient({ initialProducts }: { initialProducts: Product[] }) {
-  const [products, setProducts] = useState(initialProducts);
+  const [products, setProducts] = useState(() => sortProductsForAvailability(initialProducts));
   const [message, setMessage] = useState("");
-  const [isPending, startTransition] = useTransition();
+  const [savingProductIds, setSavingProductIds] = useState<Set<string>>(() => new Set());
   const adminAccess = useAdminAccess();
 
-  function run(task: () => Promise<void>) {
-    setMessage("");
-    startTransition(async () => {
-      try {
-        await task();
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Something went wrong.");
-      }
-    });
-  }
+  async function toggleAvailability(product: Product) {
+    if (savingProductIds.has(product.id)) return;
 
-  function toggleAvailability(product: Product) {
+    setMessage("");
     const nextAvailable = !product.available;
-    setProducts((current) =>
-      sortProductsForAvailability(current.map((item) => item.id === product.id ? { ...item, available: nextAvailable } : item)),
-    );
-    run(async () => {
+    setSavingProductIds((current) => new Set(current).add(product.id));
+    setProducts((current) => current.map((item) => item.id === product.id ? { ...item, available: nextAvailable } : item));
+
+    try {
       const response = await adminFetch(adminAccess?.session, `/api/products/${product.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -38,7 +30,16 @@ export function AdminDashboardProductsClient({ initialProducts }: { initialProdu
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Status update failed.");
       setMessage(`${product.name} is now ${nextAvailable ? "online" : "offline"}.`);
-    });
+    } catch (error) {
+      setProducts((current) => current.map((item) => item.id === product.id ? { ...item, available: product.available } : item));
+      setMessage(error instanceof Error ? error.message : "Status update failed.");
+    } finally {
+      setSavingProductIds((current) => {
+        const next = new Set(current);
+        next.delete(product.id);
+        return next;
+      });
+    }
   }
 
   return (
@@ -54,8 +55,9 @@ export function AdminDashboardProductsClient({ initialProducts }: { initialProdu
             </tr>
           </thead>
           <tbody>
-            {sortProductsForAvailability(products).map((product) => {
+            {products.map((product) => {
               const pricing = getProductUnitPricing(product);
+              const saving = savingProductIds.has(product.id);
 
               return (
                 <tr key={product.id} className={`border-t border-border ${product.available ? "" : "bg-[#f7f7f7] grayscale"}`}>
@@ -67,7 +69,8 @@ export function AdminDashboardProductsClient({ initialProducts }: { initialProdu
                   </td>
                   <td className="p-4">
                     <button
-                      disabled={isPending}
+                      disabled={saving}
+                      aria-busy={saving}
                       onClick={() => toggleAvailability(product)}
                       className={`inline-flex h-10 min-w-36 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 text-xs font-black disabled:cursor-not-allowed disabled:opacity-60 ${
                         product.available ? "bg-maroon text-white" : "border border-border bg-white text-maroon"

@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
@@ -20,7 +21,7 @@ const updateOrderSchema = z.object({
   note: z.string().optional(),
 });
 
-export async function GET(_request: Request, { params }: { params: Promise<{ orderNumber: string }> }) {
+async function getHandler(_request: Request, { params }: { params: Promise<{ orderNumber: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ order: null, configured: false }, { status: 404 });
   }
@@ -39,7 +40,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ord
   return NextResponse.json({ order, configured: true }, { status: order ? 200 : 404 });
 }
 
-export async function PATCH(request: Request, { params }: { params: Promise<{ orderNumber: string }> }) {
+async function patchHandler(request: Request, { params }: { params: Promise<{ orderNumber: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -119,3 +120,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ or
 
   return NextResponse.json({ order });
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/orders/[orderNumber]");
+export const PATCH = withApiErrorHandling(patchHandler, "PATCH /api/orders/[orderNumber]");

@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
@@ -28,7 +29,7 @@ const couponSchema = z.object({
   tagNames: z.array(z.string().min(1)).default([]),
 });
 
-export async function GET() {
+async function getHandler() {
   if (isDatabaseConfigured()) {
     const coupons = await getAdminCouponsFromDb();
     return NextResponse.json({ coupons });
@@ -38,7 +39,7 @@ export async function GET() {
   return NextResponse.json({ coupons });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -67,3 +68,6 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ coupon }, { status: 201 });
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/coupons");
+export const POST = withApiErrorHandling(postHandler, "POST /api/coupons");

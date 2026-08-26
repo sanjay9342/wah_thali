@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
@@ -20,7 +21,7 @@ const reorderSchema = z.object({
   })).min(1),
 });
 
-export async function GET() {
+async function getHandler() {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ categories: [], configured: false });
   }
@@ -52,7 +53,7 @@ export async function GET() {
   });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -112,7 +113,7 @@ export async function POST(request: Request) {
   return NextResponse.json({ category }, { status: 201 });
 }
 
-export async function PATCH(request: Request) {
+async function patchHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -157,3 +158,7 @@ function slugify(value: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/categories");
+export const POST = withApiErrorHandling(postHandler, "POST /api/categories");
+export const PATCH = withApiErrorHandling(patchHandler, "PATCH /api/categories");

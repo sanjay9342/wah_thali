@@ -49,11 +49,12 @@ function getVariantQuantity(lines: CartLine[], productId: string, variantId: str
     .reduce((total, line) => total + line.quantity, 0);
 }
 
-type MenuFilterId = "veg" | "offers" | "rating" | "under199";
+type MenuFilterId = "veg" | "offers" | "bestseller" | "rating" | "under199";
 
 const menuFilterOptions: { id: MenuFilterId; label: string; helper: string }[] = [
   { id: "veg", label: "Pure Veg", helper: "Veg and Jain dishes" },
   { id: "offers", label: "Offers", helper: "Deals and discounts" },
+  { id: "bestseller", label: "Bestseller", helper: "Most loved dishes" },
   { id: "rating", label: "Rating 4.5+", helper: "Top rated items" },
   { id: "under199", label: "Under Rs 199", helper: "Budget picks" },
 ];
@@ -61,6 +62,7 @@ const menuFilterOptions: { id: MenuFilterId; label: string; helper: string }[] =
 function MenuFilterIcon({ filterId, className }: { filterId: MenuFilterId; className?: string }) {
   if (filterId === "veg") return <Leaf size={15} strokeWidth={2.6} className={className} />;
   if (filterId === "offers") return <BadgePercent size={15} strokeWidth={2.6} className={className} />;
+  if (filterId === "bestseller") return <BadgeCheck size={15} strokeWidth={2.6} className={className} />;
   if (filterId === "rating") return <Star size={15} strokeWidth={2.6} className={className} />;
   return <IndianRupee size={15} strokeWidth={2.6} className={className} />;
 }
@@ -71,6 +73,7 @@ function productMatchesMenuFilters(product: Product, activeFilters: MenuFilterId
   return activeFilters.every((filterId) => {
     if (filterId === "veg") return product.dietaryType === "VEG" || product.dietaryType === "JAIN";
     if (filterId === "offers") return Boolean(getProductOffer(product, categoryOffers) || product.originalPrice);
+    if (filterId === "bestseller") return Boolean(product.bestseller);
     if (filterId === "rating") return product.rating >= 4.5;
     return product.price <= 199;
   });
@@ -268,6 +271,14 @@ function DietMark({ type, compact = false }: { type: Product["dietaryType"]; com
   );
 }
 
+function BestSellerBadge({ className = "" }: { className?: string }) {
+  return (
+    <span className={`pointer-events-none inline-flex h-5 items-center rounded-full bg-maroon px-2 text-[8px] font-black uppercase tracking-[0.08em] text-white shadow-[0_8px_18px_rgba(141,0,33,0.22)] ${className}`}>
+      Best Seller
+    </span>
+  );
+}
+
 function needsDishDetail(product: Product) {
   return product.addons.length > 0 || product.variants.length > 1;
 }
@@ -305,6 +316,7 @@ function ProductCard({
           <img src={product.image} alt={product.name} className={`h-full w-full object-cover transition duration-300 ease-out group-hover:scale-[1.08] group-hover:saturate-[1.08] ${unavailable ? "opacity-70" : ""}`} loading="lazy" decoding="async" onError={useFallbackImage} />
         </button>
         <span className="pointer-events-none absolute inset-0 opacity-0 ring-2 ring-inset ring-maroon/25 transition-opacity duration-300 group-hover:opacity-100" />
+        {product.bestseller ? <BestSellerBadge className="absolute left-1.5 top-1.5 sm:left-3 sm:top-3" /> : null}
         {unavailable ? <span className="absolute inset-x-3 bottom-3 rounded-lg bg-charcoal/82 px-2 py-1 text-center text-[10px] font-black uppercase tracking-wide text-white">Unavailable</span> : null}
         <button
           className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-white text-red shadow-[0_8px_18px_rgba(34,31,32,0.12)] sm:right-3 sm:top-3 sm:h-9 sm:w-9"
@@ -381,6 +393,7 @@ function FoodieProductCard({
           <img src={product.image} alt={product.name} className={`h-full w-full object-cover transition duration-300 ease-out group-hover:scale-[1.08] group-hover:saturate-[1.08] ${unavailable ? "opacity-70" : ""}`} loading="lazy" decoding="async" onError={useFallbackImage} />
         </button>
         <span className="pointer-events-none absolute inset-0 opacity-0 ring-2 ring-inset ring-maroon/25 transition-opacity duration-300 group-hover:opacity-100" />
+        {product.bestseller ? <BestSellerBadge className="absolute left-2 top-2" /> : null}
         {unavailable ? <span className="absolute inset-x-3 bottom-3 rounded-lg bg-[#111827]/85 px-2 py-1 text-center text-[10px] font-black uppercase tracking-wide text-white">Unavailable</span> : null}
         <button
           className="absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-full bg-white text-[#98a0ad] shadow-[0_8px_18px_rgba(34,31,32,0.12)]"
@@ -605,6 +618,8 @@ function DishDetailSheet({
   relatedProducts,
   freeDeliveryThreshold,
   cartCount,
+  saved,
+  onToggleSave,
 }: {
   product: Product;
   getQuantityForVariant: (variantId: string) => number;
@@ -618,6 +633,8 @@ function DishDetailSheet({
   relatedProducts: Product[];
   freeDeliveryThreshold?: number;
   cartCount: number;
+  saved: boolean;
+  onToggleSave: () => void;
 }) {
   const defaultVariantId = product.variants[0]?.id ?? "regular";
   const variants = product.variants.length ? product.variants : [{ id: defaultVariantId, name: "Regular", price: 0 }];
@@ -875,8 +892,16 @@ function DishDetailSheet({
             {selectedQuantity > 0 ? (
               <DetailQuantityControl quantity={selectedQuantity} onAdd={() => onAdd(selectedVariant.id, selectedAddonIds)} onDecrease={() => onDecrease(selectedVariant.id)} disabled={orderingDisabled || unavailable} />
             ) : (
-              <button type="button" className="grid h-13 place-items-center rounded-[15px] border border-[#e0e3ea] bg-white text-muted" aria-label="Save dish">
-                <Heart size={24} />
+              <button
+                type="button"
+                onClick={onToggleSave}
+                className={`grid h-13 place-items-center rounded-[15px] border bg-white transition-colors ${
+                  saved ? "border-maroon text-maroon" : "border-[#e0e3ea] text-muted hover:border-maroon/35 hover:text-maroon"
+                }`}
+                aria-label={saved ? `Remove ${product.name} from wishlist` : `Save ${product.name}`}
+                aria-pressed={saved}
+              >
+                <Heart size={24} className={saved ? "fill-maroon" : ""} />
               </button>
             )}
           </div>
@@ -1080,11 +1105,6 @@ export function MenuExperience({
   }
 
   function toggleSaved(product: Product) {
-    if (!cartOwnerId) {
-      router.push(`/login?next=${encodeURIComponent(pathname)}`);
-      return;
-    }
-
     writeStoredWishlist(
       savedProductIdSet.has(product.id)
         ? savedProductIds.filter((id) => id !== product.id)
@@ -1213,13 +1233,13 @@ export function MenuExperience({
   }
 
   return (
-    <main className="wt-soft-type min-h-screen bg-white pb-24 text-charcoal lg:pb-0">
+    <main className={`wt-soft-type min-h-screen bg-white text-charcoal ${isSearchPage ? "pb-0" : "pb-24 lg:pb-0"}`}>
       <div className={mobileMenuView === "category" || isSearchPage ? "hidden lg:block" : undefined}>
         <Header showLocation={isHomePage && mobileMenuView === "home"} />
       </div>
 
       {isSearchPage ? (
-        <section className="min-h-screen bg-[#f7f8fc] px-6 pb-24 pt-1 lg:hidden">
+        <section className="min-h-screen bg-white px-6 pb-24 pt-1 lg:hidden">
           <div className="rounded-[26px] bg-[#d8f7e9] px-6 py-6 shadow-[0_12px_30px_rgba(17,24,39,0.04)]">
             <h1 className="max-w-[250px] text-[25px] font-black leading-[1.35] text-[#111827]">
               What are you
@@ -1345,7 +1365,7 @@ export function MenuExperience({
       ) : null}
 
       {mobileMenuView === "category" ? (
-        <section className="min-h-screen bg-[#f7f8fc] pb-24 lg:hidden">
+        <section className="min-h-screen bg-white pb-24 lg:hidden">
           <div className="sticky top-0 z-40 grid h-[58px] grid-cols-[46px_1fr_46px] items-center border-b border-[#e7ebf2] bg-white px-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)]">
             <button className="grid h-10 w-10 place-items-center text-maroon" onClick={() => setMobileMenuView("categories")} aria-label="Back to categories">
               <ArrowLeft size={25} strokeWidth={2.7} />
@@ -1561,7 +1581,7 @@ export function MenuExperience({
                       ? `${shortCategoryName(configuredHomeCategories[0])} Dishes`
                       : usingConfiguredHomeDishes
                         ? "Today's Dishes"
-                        : "Popular Dishes"
+                        : "Best Sellers"
                     : `${shortCategoryName(activeCategory)} Dishes`}
                 </h2>
               </div>
@@ -1759,6 +1779,8 @@ export function MenuExperience({
             .filter((product) => product.id !== selectedProduct.id && product.available && product.category === selectedProduct.category)
             .slice(0, 4)}
           cartCount={cartCount}
+          saved={savedProductIdSet.has(selectedProduct.id)}
+          onToggleSave={() => toggleSaved(selectedProduct)}
         />
       ) : null}
 

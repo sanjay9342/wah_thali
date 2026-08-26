@@ -87,6 +87,13 @@ body {
 html {
   scroll-behavior: smooth;
   scroll-padding-top: 88px;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+body {
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 button,
@@ -94,6 +101,7 @@ a,
 input,
 select,
 textarea {
+  font-family: inherit;
   outline-color: var(--brand-gold);
 }
 

@@ -1,8 +1,9 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { getGstr1Rows } from "@/lib/invoice";
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const access = await requireAdminPermission(request, "settings");
   if (!access.ok) return access.response;
 
@@ -45,3 +46,5 @@ export async function GET(request: Request) {
     },
   });
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/reports/gstr1");

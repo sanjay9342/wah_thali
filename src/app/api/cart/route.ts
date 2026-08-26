@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeMobile } from "@/lib/customer-auth";
@@ -46,7 +47,7 @@ function toCartLine(item: {
   };
 }
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ items: [], configured: false }, { status: 503 });
   }
@@ -68,7 +69,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ items: cart?.items.map(toCartLine) ?? [], configured: true });
 }
 
-export async function PUT(request: Request) {
+async function putHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -114,3 +115,6 @@ export async function PUT(request: Request) {
 
   return NextResponse.json({ items: parsed.data.items });
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/cart");
+export const PUT = withApiErrorHandling(putHandler, "PUT /api/cart");

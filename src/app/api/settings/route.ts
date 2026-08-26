@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
@@ -51,12 +52,12 @@ const settingsSchema = z.object({
   homeDishCategories: z.array(z.string().trim().min(1)).max(24),
 }).partial().strict();
 
-export async function GET() {
+async function getHandler() {
   const settings = await getRestaurantSettingsFromDb();
   return NextResponse.json({ settings });
 }
 
-export async function PATCH(request: Request) {
+async function patchHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -128,3 +129,6 @@ function parseCoordinate(value: string | number | undefined, maxAbs: number) {
   const numeric = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numeric) && Math.abs(numeric) <= maxAbs ? numeric : null;
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/settings");
+export const PATCH = withApiErrorHandling(patchHandler, "PATCH /api/settings");

@@ -33,6 +33,14 @@ export const newOrderSoundOptions = [
       { frequency: 1568, startMs: 520, durationMs: 120, wave: "triangle", gain: 0.38 },
     ],
   },
+  {
+    id: "whatsapp-incoming",
+    label: "WhatsApp incoming",
+    helper: "Uploaded WhatsApp audio for a familiar incoming-order alert.",
+    audioSrc: "/order-sounds/whatsapp-new-order.mpeg",
+    durationMs: 2400,
+    steps: [],
+  },
 ] as const;
 
 export type NewOrderSound = (typeof newOrderSoundOptions)[number]["id"];
@@ -62,4 +70,14 @@ export function getNewOrderSound(value: unknown): NewOrderSound {
 
 export function getNewOrderSoundSteps(sound: NewOrderSound): readonly NewOrderSoundStep[] {
   return newOrderSoundOptions.find((option) => option.id === sound)?.steps ?? newOrderSoundOptions[0].steps;
+}
+
+export function getNewOrderSoundAudioSrc(sound: NewOrderSound) {
+  const option = newOrderSoundOptions.find((item) => item.id === sound);
+  return option && "audioSrc" in option ? option.audioSrc : undefined;
+}
+
+export function getNewOrderSoundDurationMs(sound: NewOrderSound) {
+  const option = newOrderSoundOptions.find((item) => item.id === sound);
+  return option && "durationMs" in option ? option.durationMs : 850;
 }

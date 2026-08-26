@@ -1,10 +1,11 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { getAdminCouponsFromDb } from "@/lib/db";
 import { notifyCouponAudience } from "@/lib/customer-messaging";
 import { isDatabaseConfigured } from "@/lib/prisma";
 
-export async function POST(request: Request, { params }: { params: Promise<{ code: string }> }) {
+async function postHandler(request: Request, { params }: { params: Promise<{ code: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -24,3 +25,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ cod
   const result = await notifyCouponAudience(coupon);
   return NextResponse.json({ ok: true, ...result });
 }
+
+export const POST = withApiErrorHandling(postHandler, "POST /api/coupons/[code]/notify");

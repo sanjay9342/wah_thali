@@ -399,7 +399,7 @@ export function LoginClient() {
   const pageMessage = otpInlineMessage ? "" : message;
 
   return (
-    <main className="min-h-screen bg-[#f7f8fc] text-charcoal">
+    <main className="min-h-screen bg-white text-charcoal">
       <section className="mx-auto min-h-screen w-full max-w-[430px] px-5 pb-10 pt-6">
         <button type="button" onClick={goBack} className="grid h-10 w-10 place-items-center rounded-full text-charcoal" aria-label="Back">
           <ArrowLeft size={25} strokeWidth={3} />

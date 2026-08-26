@@ -1,12 +1,12 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import type { ReactNode } from "react";
-import { BellRing, CheckCircle2, Clock3, CreditCard, ImagePlus, LocateFixed, MapPin, Play, Save, Settings2, Store, Trash2, Truck, Volume2 } from "lucide-react";
+import { BellRing, CheckCircle2, Clock3, CreditCard, ImagePlus, LocateFixed, MapPin, Play, Save, Settings2, Square, Store, Trash2, Truck, Volume2, VolumeX } from "lucide-react";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { adminFetch } from "@/lib/admin-client-auth";
-import { defaultNewOrderSound, getNewOrderSound, getNewOrderSoundSteps, newOrderSoundOptions } from "@/lib/order-sounds";
+import { defaultNewOrderSound, getNewOrderSound, getNewOrderSoundAudioSrc, getNewOrderSoundDurationMs, getNewOrderSoundSteps, newOrderSoundOptions } from "@/lib/order-sounds";
 import { buildOpeningHours, minutesToTimeInput, parseOpeningHours } from "@/lib/store-hours";
 import type { BusinessSettings, HomeSlide, NewOrderSound, StoreMode } from "@/lib/types";
 
@@ -61,11 +61,7 @@ const storeModeOptions: { mode: StoreMode; label: string; helper: string }[] = [
   { mode: "CLOSED", label: "Close now", helper: "Stop orders" },
 ];
 
-function defaultStoreModeReason(mode: StoreMode) {
-  if (mode === "CLOSED") return "Store is closed right now. Please wait for opening hours.";
-  if (mode === "PAUSED") return "Ordering is paused for a short time. Please check back soon.";
-  return "";
-}
+const defaultDeliveryDistanceSlabsText = "1=20\n2=30\n3=40\n4=50\n5=60";
 
 export function AdminSettingsClient({
   initialSettings,
@@ -127,8 +123,12 @@ export function AdminSettingsClient({
   const [storeModeSaving, setStoreModeSaving] = useState<StoreMode | null>(null);
   const [lastPreviewedSound, setLastPreviewedSound] = useState<NewOrderSound | null>(null);
   const [previewingSound, setPreviewingSound] = useState<NewOrderSound | null>(null);
+  const [notificationSaving, setNotificationSaving] = useState(false);
   const [isPending, startTransition] = useTransition();
   const soundPreviewContext = useRef<AudioContext | null>(null);
+  const soundPreviewAudio = useRef<HTMLAudioElement | null>(null);
+  const soundPreviewOscillators = useRef<OscillatorNode[]>([]);
+  const soundPreviewTimer = useRef<number | null>(null);
   const adminAccess = useAdminAccess();
   const kitchenCoordinatesReady = hasValidCoordinate(settings.kitchenLatitude, 90) && hasValidCoordinate(settings.kitchenLongitude, 180);
 
@@ -152,6 +152,10 @@ export function AdminSettingsClient({
       if (settings.locationRestrictionEnabled && !kitchenCoordinatesReady) {
         throw new Error("Kitchen latitude and longitude are required before enabling delivery radius restriction.");
       }
+      const deliveryDistanceSlabs = parseDeliveryDistanceSlabs(settings.deliveryDistanceSlabs);
+      if (settings.deliveryFeeMode === "DISTANCE" && deliveryDistanceSlabs.length === 0) {
+        throw new Error("Add at least one distance slab before saving distance wise delivery charges.");
+      }
 
       const response = await adminFetch(adminAccess?.session, "/api/settings", {
         method: "PATCH",
@@ -164,7 +168,7 @@ export function AdminSettingsClient({
           deliveryFee: Number(settings.deliveryFee),
           deliveryFeeMode: settings.deliveryFeeMode,
           deliveryFeePercent: Number(settings.deliveryFeePercent),
-          deliveryDistanceSlabs: parseDeliveryDistanceSlabs(settings.deliveryDistanceSlabs),
+          deliveryDistanceSlabs,
           freeDeliveryThreshold: Number(settings.freeDeliveryThreshold),
           packagingFee: Number(settings.packagingFee),
           gstRate: Number(settings.gstRate),
@@ -175,6 +179,7 @@ export function AdminSettingsClient({
           kitchenLongitude: settings.kitchenLongitude,
           deliveryRadiusKm: Number(settings.deliveryRadiusKm),
           ...advanced,
+          storeStatusReason: "",
           maxOrdersPerSlot: Number(advanced.maxOrdersPerSlot),
           defaultPrepMinutes: Number(advanced.defaultPrepMinutes),
           rushPrepBufferMinutes: Number(advanced.rushPrepBufferMinutes),
@@ -203,7 +208,131 @@ export function AdminSettingsClient({
     });
   }
 
+  function applyDeliveryDistanceFormat() {
+    const currentSlabs = parseDeliveryDistanceSlabs(settings.deliveryDistanceSlabs);
+    setSettings({
+      ...settings,
+      deliveryFeeMode: "DISTANCE",
+      deliveryDistanceSlabs: currentSlabs.length ? formatDeliveryDistanceSlabs(currentSlabs) : defaultDeliveryDistanceSlabsText,
+    });
+    setMessage("Distance wise delivery format is ready. Review the charges, then save delivery rules.");
+  }
+
+  function applyDefaultDeliverySlabs() {
+    setSettings({
+      ...settings,
+      deliveryFeeMode: "DISTANCE",
+      deliveryDistanceSlabs: defaultDeliveryDistanceSlabsText,
+    });
+    setMessage("Default distance slabs added. Click Save delivery rules to publish them.");
+  }
+
+  function addNextDeliverySlab() {
+    const currentSlabs = parseDeliveryDistanceSlabs(settings.deliveryDistanceSlabs);
+    const lastSlab = currentSlabs.at(-1);
+    const nextKm = lastSlab ? Math.ceil(lastSlab.upToKm) + 1 : 1;
+    const fallbackFee = Number(settings.deliveryFee);
+    const nextFee = lastSlab ? lastSlab.fee + 10 : (Number.isFinite(fallbackFee) && fallbackFee > 0 ? fallbackFee : 20);
+    const nextSlabs = [...currentSlabs, { upToKm: nextKm, fee: nextFee }];
+
+    setSettings({
+      ...settings,
+      deliveryFeeMode: "DISTANCE",
+      deliveryDistanceSlabs: formatDeliveryDistanceSlabs(nextSlabs),
+    });
+    setMessage(`Added ${nextKm} km delivery slab. Update the fee if needed, then save.`);
+  }
+
+  function formatDeliverySlabs() {
+    const currentSlabs = parseDeliveryDistanceSlabs(settings.deliveryDistanceSlabs);
+    if (!currentSlabs.length) {
+      setMessage("Add delivery slabs like 1=20, 2=30 before formatting.");
+      return;
+    }
+
+    setSettings({
+      ...settings,
+      deliveryFeeMode: "DISTANCE",
+      deliveryDistanceSlabs: formatDeliveryDistanceSlabs(currentSlabs),
+    });
+    setMessage("Delivery slabs formatted as km=fee. Click Save delivery rules to publish.");
+  }
+
+  function clearDeliverySlabs() {
+    setSettings({ ...settings, deliveryDistanceSlabs: "" });
+    setMessage("Distance slabs cleared. Add slabs or choose another delivery charge type before saving.");
+  }
+
+  function stopOrderSoundPreview() {
+    if (soundPreviewTimer.current !== null) {
+      window.clearTimeout(soundPreviewTimer.current);
+      soundPreviewTimer.current = null;
+    }
+
+    if (soundPreviewAudio.current) {
+      soundPreviewAudio.current.pause();
+      soundPreviewAudio.current.currentTime = 0;
+    }
+    soundPreviewAudio.current = null;
+    soundPreviewOscillators.current.forEach((oscillator) => {
+      try {
+        oscillator.stop();
+      } catch {
+        // Oscillators may already have ended.
+      }
+    });
+    soundPreviewOscillators.current = [];
+    setPreviewingSound(null);
+  }
+
+  useEffect(() => {
+    return () => {
+      stopOrderSoundPreview();
+      void soundPreviewContext.current?.close();
+    };
+  }, []);
+
   async function previewOrderSound(sound: NewOrderSound) {
+    if (previewingSound === sound) {
+      stopOrderSoundPreview();
+      setMessage(`${getSoundLabel(sound)} preview stopped.`);
+      return;
+    }
+
+    stopOrderSoundPreview();
+    const audioSrc = getNewOrderSoundAudioSrc(sound);
+    if (audioSrc) {
+      const audio = new Audio(audioSrc);
+      audio.loop = false;
+      soundPreviewAudio.current = audio;
+      audio.currentTime = 0;
+      const played = await audio.play().then(() => true).catch(() => false);
+      if (!played) {
+        soundPreviewAudio.current = null;
+        setMessage("Sound preview is blocked. Click Preview again or allow sound in this browser.");
+        return;
+      }
+      setLastPreviewedSound(sound);
+      setPreviewingSound(sound);
+      audio.addEventListener("ended", () => {
+        if (soundPreviewAudio.current !== audio) return;
+        soundPreviewTimer.current = null;
+        soundPreviewAudio.current = null;
+        setPreviewingSound((current) => current === sound ? null : current);
+      }, { once: true });
+      soundPreviewTimer.current = window.setTimeout(() => {
+        soundPreviewTimer.current = null;
+        if (soundPreviewAudio.current === audio) {
+          audio.pause();
+          audio.currentTime = 0;
+          soundPreviewAudio.current = null;
+        }
+        setPreviewingSound((current) => current === sound ? null : current);
+      }, getNewOrderSoundDurationMs(sound));
+      setMessage(`Previewing ${newOrderSoundOptions.find((option) => option.id === sound)?.label ?? "order sound"}.`);
+      return;
+    }
+
     const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextClass) {
       setMessage("This browser does not support order sound previews.");
@@ -220,17 +349,66 @@ export function AdminSettingsClient({
       return;
     }
 
-    playNewOrderSoundSteps(audio, sound);
+    soundPreviewOscillators.current = playNewOrderSoundSteps(audio, sound);
     setLastPreviewedSound(sound);
     setPreviewingSound(sound);
-    window.setTimeout(() => {
+    soundPreviewTimer.current = window.setTimeout(() => {
+      soundPreviewTimer.current = null;
+      soundPreviewOscillators.current = [];
       setPreviewingSound((current) => current === sound ? null : current);
-    }, 850);
+    }, getNewOrderSoundDurationMs(sound));
     setMessage(`Previewing ${newOrderSoundOptions.find((option) => option.id === sound)?.label ?? "order sound"}.`);
   }
 
+  async function publishNotificationSetting(patch: Partial<Pick<AdvancedSettings, "newOrderSoundEnabled" | "newOrderSound" | "whatsappOrderAlerts" | "ownerWhatsAppOrderAlerts" | "adminDailyDigestTime">>) {
+    const previous = advanced;
+    const nextAdvanced = { ...advanced, ...patch };
+    setAdvanced(nextAdvanced);
+    setNotificationSaving(true);
+    setMessage("");
+
+    if (patch.newOrderSoundEnabled === false) {
+      stopOrderSoundPreview();
+    }
+
+    try {
+      const response = await adminFetch(adminAccess?.session, "/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Notification setting save failed.");
+
+      const storedSettings = data.settings ?? {};
+      const storedSound = getNewOrderSound(storedSettings.newOrderSound ?? nextAdvanced.newOrderSound);
+      const storedSoundEnabled = storedSettings.newOrderSoundEnabled ?? nextAdvanced.newOrderSoundEnabled;
+      setAdvanced((current) => ({
+        ...current,
+        ...patch,
+        newOrderSoundEnabled: storedSoundEnabled,
+        newOrderSound: storedSound,
+        whatsappOrderAlerts: storedSettings.whatsappOrderAlerts ?? nextAdvanced.whatsappOrderAlerts,
+        ownerWhatsAppOrderAlerts: storedSettings.ownerWhatsAppOrderAlerts ?? nextAdvanced.ownerWhatsAppOrderAlerts,
+        adminDailyDigestTime: storedSettings.adminDailyDigestTime ?? nextAdvanced.adminDailyDigestTime,
+      }));
+      window.dispatchEvent(new CustomEvent("wah-thali-admin-alert-settings-updated", {
+        detail: {
+          enabled: storedSoundEnabled,
+          sound: storedSound,
+        },
+      }));
+      setMessage(`Notification setting saved. New order sound ${storedSoundEnabled ? "On" : "Off"} - ${getSoundLabel(storedSound)}.`);
+    } catch (error) {
+      setAdvanced(previous);
+      setMessage(error instanceof Error ? error.message : "Notification setting save failed.");
+    } finally {
+      setNotificationSaving(false);
+    }
+  }
+
   async function publishStoreMode(mode: StoreMode) {
-    const nextReason = mode === "OPEN" || mode === "BUSY" ? "" : advanced.storeStatusReason.trim() || defaultStoreModeReason(mode);
+    const nextReason = "";
     const previous = advanced;
 
     setAdvanced({ ...advanced, storeMode: mode, storeStatusReason: nextReason });
@@ -484,7 +662,6 @@ export function AdminSettingsClient({
                 Current live mode: {advanced.storeMode}
               </p>
             </div>
-            <Input label="Customer status reason" value={advanced.storeStatusReason} onChange={(value) => setAdvanced({ ...advanced, storeStatusReason: value })} />
             <Textarea label="Busy message" value={advanced.busyMessage} onChange={(value) => setAdvanced({ ...advanced, busyMessage: value })} />
             <Textarea label="Paused message" value={advanced.pausedMessage} onChange={(value) => setAdvanced({ ...advanced, pausedMessage: value })} />
             <Textarea label="Closed message" value={advanced.closedMessage} onChange={(value) => setAdvanced({ ...advanced, closedMessage: value })} />
@@ -507,13 +684,17 @@ export function AdminSettingsClient({
           </Panel>
 
           <Panel title="Notifications" icon={<BellRing className="text-red" size={22} />}>
-            <Toggle label="New order sound" checked={advanced.newOrderSoundEnabled} onChange={(value) => setAdvanced({ ...advanced, newOrderSoundEnabled: value })} />
+            <Toggle
+              label="New order sound"
+              checked={advanced.newOrderSoundEnabled}
+              onChange={(value) => void publishNotificationSetting({ newOrderSoundEnabled: value })}
+              disabled={notificationSaving}
+            />
             <div className="grid gap-2">
               <p className="text-sm font-black text-charcoal">New order sound style</p>
               <div className="grid gap-2">
                 {newOrderSoundOptions.map((option) => {
                   const active = advanced.newOrderSound === option.id;
-                  const previewed = lastPreviewedSound === option.id;
                   const playing = previewingSound === option.id;
 
                   return (
@@ -531,21 +712,23 @@ export function AdminSettingsClient({
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-black text-charcoal">{option.label}</span>
-                          {playing ? <span className="block text-[10px] font-black text-[#0f7a45]">Playing</span> : null}
+                          <span className={`block text-[10px] font-black ${playing ? "text-[#0f7a45]" : "text-muted"}`}>
+                            {playing ? "Playing" : lastPreviewedSound === option.id ? "Preview ready" : option.helper}
+                          </span>
                         </span>
                       </div>
                       <button
                         type="button"
                         onClick={() => previewOrderSound(option.id)}
-                        className="grid h-9 w-9 place-items-center rounded-lg bg-charcoal text-white"
-                        aria-label={`Preview ${option.label}`}
+                        className={`grid h-9 w-9 place-items-center rounded-lg text-white ${playing ? "bg-maroon" : "bg-charcoal"}`}
+                        aria-label={playing ? `Stop ${option.label}` : `Preview ${option.label}`}
                       >
-                        <Play size={14} fill="currentColor" />
+                        {playing ? <Square size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setAdvanced({ ...advanced, newOrderSound: option.id })}
-                        disabled={!previewed && !active}
+                        onClick={() => void publishNotificationSetting({ newOrderSound: option.id })}
+                        disabled={notificationSaving}
                         className={`h-9 min-w-16 rounded-lg px-3 text-xs font-black disabled:opacity-45 ${
                           active ? "bg-white text-maroon ring-1 ring-[#efd8de]" : "bg-maroon text-white"
                         }`}
@@ -557,9 +740,20 @@ export function AdminSettingsClient({
                 })}
               </div>
             </div>
-            <Toggle label="Customer WhatsApp updates" checked={advanced.whatsappOrderAlerts} onChange={(value) => setAdvanced({ ...advanced, whatsappOrderAlerts: value })} />
-            <Toggle label="Owner WhatsApp alerts" checked={advanced.ownerWhatsAppOrderAlerts} onChange={(value) => setAdvanced({ ...advanced, ownerWhatsAppOrderAlerts: value })} />
-            <Input label="Daily digest time" value={advanced.adminDailyDigestTime} onChange={(value) => setAdvanced({ ...advanced, adminDailyDigestTime: value })} />
+            <Toggle
+              label="Customer WhatsApp updates"
+              checked={advanced.whatsappOrderAlerts}
+              onChange={(value) => void publishNotificationSetting({ whatsappOrderAlerts: value })}
+              disabled={notificationSaving}
+            />
+            <Toggle
+              label="Owner WhatsApp alerts"
+              checked={advanced.ownerWhatsAppOrderAlerts}
+              onChange={(value) => void publishNotificationSetting({ ownerWhatsAppOrderAlerts: value })}
+              disabled={notificationSaving}
+            />
+            <Input label="Daily digest time" value={advanced.adminDailyDigestTime} onChange={(value) => setAdvanced({ ...advanced, adminDailyDigestTime: value })} onBlur={() => void publishNotificationSetting({ adminDailyDigestTime: advanced.adminDailyDigestTime })} />
+            {notificationSaving ? <p className="text-xs font-black text-muted">Saving notification setting...</p> : null}
           </Panel>
 
           <Panel title="Delivery rules" icon={<Truck className="text-red" size={22} />}>
@@ -570,18 +764,40 @@ export function AdminSettingsClient({
               onChange={(value) => setSettings({ ...settings, deliveryFee: value })}
               helper="Used for flat delivery, and as fallback if distance cannot be calculated."
             />
-            <label className="grid gap-2 text-sm font-bold text-charcoal">
-              Delivery charge type
-              <select
-                value={settings.deliveryFeeMode}
-                onChange={(event) => setSettings({ ...settings, deliveryFeeMode: event.target.value as "FLAT" | "PERCENT" | "DISTANCE" })}
-                className="h-11 rounded-lg border border-border bg-cream px-3"
-              >
-                <option value="FLAT">Flat fee</option>
-                <option value="PERCENT">Percentage of order price</option>
-                <option value="DISTANCE">Distance wise slabs</option>
-              </select>
-            </label>
+            <div className="grid gap-2 text-sm font-bold text-charcoal">
+              <p>Delivery charge type</p>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {[
+                  { mode: "FLAT", label: "Flat fee" },
+                  { mode: "PERCENT", label: "Percentage" },
+                  { mode: "DISTANCE", label: "Distance slabs" },
+                ].map((option) => {
+                  const active = settings.deliveryFeeMode === option.mode;
+
+                  return (
+                    <button
+                      key={option.mode}
+                      type="button"
+                      onClick={() => {
+                        if (option.mode === "DISTANCE") {
+                          applyDeliveryDistanceFormat();
+                          return;
+                        }
+                        setSettings({ ...settings, deliveryFeeMode: option.mode as "FLAT" | "PERCENT" | "DISTANCE" });
+                      }}
+                      aria-pressed={active}
+                      className={`min-h-11 rounded-lg px-3 text-sm font-black transition ${
+                        active
+                          ? "bg-maroon text-white"
+                          : "border border-border bg-cream text-maroon hover:border-maroon/40"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             {settings.deliveryFeeMode === "PERCENT" ? (
               <Input
                 label="Delivery percentage"
@@ -591,9 +807,42 @@ export function AdminSettingsClient({
               />
             ) : null}
             {settings.deliveryFeeMode === "DISTANCE" ? (
-              <label className="grid gap-2 text-sm font-bold text-charcoal">
-                Distance wise delivery charges
+              <div className="grid gap-2 text-sm font-bold text-charcoal">
+                <span className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <span>Distance wise delivery charges</span>
+                  <span className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={applyDefaultDeliverySlabs}
+                      className="min-h-9 rounded-lg border border-maroon/25 bg-white px-3 text-xs font-black text-maroon"
+                    >
+                      Use sample
+                    </button>
+                    <button
+                      type="button"
+                      onClick={addNextDeliverySlab}
+                      className="min-h-9 rounded-lg border border-maroon/25 bg-cream px-3 text-xs font-black text-maroon"
+                    >
+                      Add slab
+                    </button>
+                    <button
+                      type="button"
+                      onClick={formatDeliverySlabs}
+                      className="min-h-9 rounded-lg border border-maroon/25 bg-white px-3 text-xs font-black text-maroon"
+                    >
+                      Format
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearDeliverySlabs}
+                      className="min-h-9 rounded-lg border border-border bg-white px-3 text-xs font-black text-muted"
+                    >
+                      Clear
+                    </button>
+                  </span>
+                </span>
                 <textarea
+                  aria-label="Distance wise delivery charges"
                   value={settings.deliveryDistanceSlabs}
                   onChange={(event) => setSettings({ ...settings, deliveryDistanceSlabs: event.target.value })}
                   className="min-h-32 rounded-lg border border-border bg-cream p-3 font-mono text-xs leading-5"
@@ -602,7 +851,7 @@ export function AdminSettingsClient({
                 <span className="text-xs font-bold leading-5 text-muted">
                   One slab per line: up to km = fee. Example 3=40 means orders up to 3 km charge Rs 40.
                 </span>
-              </label>
+              </div>
             ) : null}
             <Input
               label="Free delivery above order price"
@@ -642,6 +891,14 @@ export function AdminSettingsClient({
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-maroon/25 bg-cream px-3 text-sm font-black text-maroon disabled:cursor-wait disabled:opacity-60"
             >
               <LocateFixed size={17} /> {locatingKitchen ? "Detecting..." : "Use this device location as kitchen"}
+            </button>
+            <button
+              type="button"
+              onClick={saveSettings}
+              disabled={isPending}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-red px-4 text-sm font-black text-white disabled:opacity-60"
+            >
+              <Save size={17} /> {isPending ? "Saving..." : "Save delivery rules"}
             </button>
           </Panel>
 
@@ -811,11 +1068,11 @@ function Panel({ title, icon, children }: { title: string; icon: ReactNode; chil
   );
 }
 
-function Input({ label, value, onChange, type = "text", helper }: { label: string; value: string; onChange: (value: string) => void; type?: string; helper?: string }) {
+function Input({ label, value, onChange, onBlur, type = "text", helper }: { label: string; value: string; onChange: (value: string) => void; onBlur?: () => void; type?: string; helper?: string }) {
   return (
     <label className="grid gap-2 text-sm font-bold text-charcoal">
       {label}
-      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-lg border border-border bg-cream px-3" />
+      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} onBlur={onBlur} className="h-11 rounded-lg border border-border bg-cream px-3" />
       {helper ? <span className="text-xs font-bold leading-5 text-muted">{helper}</span> : null}
     </label>
   );
@@ -830,10 +1087,13 @@ function Textarea({ label, value, onChange }: { label: string; value: string; on
   );
 }
 
-function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
+function Toggle({ label, checked, onChange, disabled = false }: { label: string; checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
   return (
-    <button type="button" onClick={() => onChange(!checked)} className={`flex min-h-11 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm font-black ${checked ? "bg-maroon text-white" : "border border-border bg-cream text-maroon"}`}>
-      <span className="min-w-0">{label}</span>
+    <button type="button" onClick={() => onChange(!checked)} disabled={disabled} className={`flex min-h-11 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm font-black disabled:cursor-wait disabled:opacity-70 ${checked ? "bg-maroon text-white" : "border border-border bg-cream text-maroon"}`}>
+      <span className="flex min-w-0 items-center gap-2">
+        {label === "New order sound" ? (checked ? <Volume2 size={16} /> : <VolumeX size={16} />) : null}
+        <span className="min-w-0">{label}</span>
+      </span>
       <span>{checked ? "On" : "Off"}</span>
     </button>
   );
@@ -871,6 +1131,7 @@ function parseDeliveryDistanceSlabs(value: string) {
 
 function playNewOrderSoundSteps(audio: AudioContext, sound: NewOrderSound) {
   const now = audio.currentTime;
+  const oscillators: OscillatorNode[] = [];
 
   getNewOrderSoundSteps(sound).forEach((step) => {
     const oscillator = audio.createOscillator();
@@ -887,7 +1148,10 @@ function playNewOrderSoundSteps(audio: AudioContext, sound: NewOrderSound) {
     gain.gain.exponentialRampToValueAtTime(0.0001, end);
     oscillator.start(start);
     oscillator.stop(end + 0.02);
+    oscillators.push(oscillator);
   });
+
+  return oscillators;
 }
 
 function hasValidCoordinate(value: string, maxAbs: number) {

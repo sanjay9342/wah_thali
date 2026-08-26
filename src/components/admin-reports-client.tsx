@@ -206,6 +206,8 @@ export function AdminReportsClient({ snapshot }: { snapshot: AdminReportsSnapsho
           ))}
         </section>
 
+        {snapshot.dishSearch.active ? <DishSearchReportSection snapshot={snapshot} /> : null}
+
         <section className="mt-6 grid gap-5 lg:grid-cols-[1fr_360px]">
           <div className="surface overflow-hidden rounded-2xl">
             <div className="flex flex-col gap-3 border-b border-border p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -371,6 +373,96 @@ function isValidDateInput(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
+function DishSearchReportSection({ snapshot }: { snapshot: AdminReportsSnapshot }) {
+  const report = snapshot.dishSearch;
+  const bestCustomer = report.customerFavourites[0];
+
+  return (
+    <section className="mt-6 overflow-hidden rounded-2xl border border-[#f0d7dd] bg-[#fff8f9] shadow-[0_14px_34px_rgba(34,31,32,0.05)]">
+      <div className="flex flex-col gap-3 border-b border-[#f0d7dd] p-5 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-red">Dish search CRM</p>
+          <h2 className="mt-1 text-2xl font-black text-maroon">Report for &quot;{report.query}&quot;</h2>
+          <p className="mt-1 text-sm font-semibold text-muted">
+            Dish-level sales, total orders, repeat customers, and ordering favourites for {snapshot.rangeLabel}.
+          </p>
+        </div>
+        <div className="grid min-w-[220px] gap-1 rounded-xl border border-[#f0d7dd] bg-white px-4 py-3">
+          <p className="text-xs font-black uppercase text-muted">Best CRM lead</p>
+          <p className="text-sm font-black text-charcoal">{bestCustomer ? bestCustomer.name : "No customer yet"}</p>
+          <p className="text-xs font-bold text-muted">{bestCustomer ? `${bestCustomer.orders} orders / ${formatRupees(bestCustomer.spend)}` : "No matching dish orders in this period"}</p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-6">
+        {[
+          ["Matched dishes", report.matchedDishes],
+          ["Total dish orders", report.orders],
+          ["Items sold", report.quantity],
+          ["Item sales", formatRupees(report.itemSales)],
+          ["Customers", report.customers],
+          ["Repeat customers", report.repeatCustomers],
+        ].map(([label, value]) => (
+          <div key={String(label)} className="rounded-xl border border-[#f0d7dd] bg-white p-4">
+            <p className="text-xs font-bold text-muted">{String(label)}</p>
+            <p className="mt-1 text-xl font-black text-maroon">{String(value)}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-5 p-5 pt-0 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.2fr)]">
+        <div className="overflow-hidden rounded-xl border border-[#f0d7dd] bg-white">
+          <div className="border-b border-[#f0d7dd] px-4 py-3">
+            <h3 className="text-base font-black text-maroon">Matched dishes</h3>
+            <p className="text-xs font-bold text-muted">Only dishes matching the search name, display name, kitchen name, or shortcut code.</p>
+          </div>
+          <ItemsTable rows={report.topDishes} emptyLabel="No matching dish sales in this period." />
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-[#f0d7dd] bg-white">
+          <div className="border-b border-[#f0d7dd] px-4 py-3">
+            <h3 className="text-base font-black text-maroon">Customer favourites list</h3>
+            <p className="text-xs font-bold text-muted">Customers ranked by repeat orders of the searched dish. Wishlist saves are stored on customer devices, so this uses ordering behaviour.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="bg-cream text-maroon">
+                <tr>
+                  {["Customer", "Mobile", "Orders", "Qty", "Item sales", "Favourite dish", "Last order"].map((head) => <th key={head} className="p-3">{head}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {report.customerFavourites.map((customer) => (
+                  <tr key={`${customer.mobile}-${customer.name}`} className="border-t border-border">
+                    <td className="p-3 font-black">{customer.name}</td>
+                    <td className="p-3 text-muted">{customer.mobile}</td>
+                    <td className="p-3 font-black">{customer.orders}</td>
+                    <td className="p-3 font-black">{customer.quantity}</td>
+                    <td className="p-3 font-black text-maroon">{formatRupees(customer.spend)}</td>
+                    <td className="p-3 text-muted">{customer.favouriteItem || "-"}</td>
+                    <td className="p-3 text-muted">{customer.lastOrder ? formatIstDateTime(customer.lastOrder) : "-"}</td>
+                  </tr>
+                ))}
+                {!report.customerFavourites.length ? <EmptyTableRow colSpan={7} label="No customers ordered this searched dish in the selected period." /> : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-5 pb-5">
+        <div className="overflow-hidden rounded-xl border border-[#f0d7dd] bg-white">
+          <div className="border-b border-[#f0d7dd] px-4 py-3">
+            <h3 className="text-base font-black text-maroon">Recent searched-dish orders</h3>
+            <p className="text-xs font-bold text-muted">{report.delivered} delivered, {report.activeOrders} active, {report.cancelled} cancelled.</p>
+          </div>
+          <OrdersTable rows={report.recentOrders} emptyLabel="No recent orders for this searched dish." />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function MetricCard({ metric, iconIndex }: { metric: ReportMetric; iconIndex: number }) {
   const icons = [IndianRupee, BarChart3, ReceiptText, Users, Utensils, CalendarDays];
   const Icon = icons[iconIndex] ?? BarChart3;
@@ -483,6 +575,36 @@ function ItemsTable({ rows, emptyLabel }: { rows: ReportRow[]; emptyLabel: strin
   );
 }
 
+function OrdersTable({ rows, emptyLabel }: { rows: AdminReportsSnapshot["orders"]["recent"]; emptyLabel: string }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[760px] text-left text-sm">
+        <thead className="bg-cream text-maroon">
+          <tr>
+            {["Order", "Customer", "Status", "Items", "Amount", "Created"].map((head) => <th key={head} className="p-3">{head}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((order) => (
+            <tr key={order.orderNumber} className="border-t border-border">
+              <td className="p-3 font-black text-maroon">{order.orderNumber}</td>
+              <td className="p-3 font-black">{order.customerName}</td>
+              <td className="p-3 text-muted">{order.status}</td>
+              <td className="p-3">
+                <p className="font-black">{order.items}</p>
+                <p className="mt-1 line-clamp-2 text-xs font-bold text-muted">{order.itemSummary}</p>
+              </td>
+              <td className="p-3 font-black">{formatRupees(order.amount)}</td>
+              <td className="p-3 text-muted">{formatIstDateTime(order.createdAt)}</td>
+            </tr>
+          ))}
+          {!rows.length ? <EmptyTableRow colSpan={6} label={emptyLabel} /> : null}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function EmptyTableRow({ colSpan, label }: { colSpan: number; label: string }) {
   return (
     <tr>
@@ -498,7 +620,43 @@ type PdfSection = {
 };
 
 function buildPdfSections(snapshot: AdminReportsSnapshot): PdfSection[] {
+  const dishSearchSections: PdfSection[] = snapshot.dishSearch.active ? [
+    {
+      kind: "items",
+      heading: `Dish Search Summary - ${snapshot.dishSearch.query}`,
+      rows: [
+        ["Metric", "Value"],
+        ["Matched dishes", String(snapshot.dishSearch.matchedDishes)],
+        ["Total dish orders", String(snapshot.dishSearch.orders)],
+        ["Items sold", String(snapshot.dishSearch.quantity)],
+        ["Item sales", money(snapshot.dishSearch.itemSales)],
+        ["Customers", String(snapshot.dishSearch.customers)],
+        ["Repeat customers", String(snapshot.dishSearch.repeatCustomers)],
+        ["Average dish order", money(snapshot.dishSearch.averageOrderValue)],
+      ],
+    },
+    {
+      kind: "items",
+      heading: "Searched Dish Items",
+      rows: [["Item", "Orders", "Qty", "Gross", "Net"], ...snapshot.dishSearch.topDishes.map((row) => reportRowToPdf(row))],
+    },
+    {
+      kind: "customers",
+      heading: "Searched Dish Customer Favourites",
+      rows: [
+        ["Customer", "Mobile", "Orders", "Qty", "Sales", "Favourite dish"],
+        ...snapshot.dishSearch.customerFavourites.map((row) => [row.name, row.mobile, String(row.orders), String(row.quantity), money(row.spend), row.favouriteItem]),
+      ],
+    },
+    {
+      kind: "orders",
+      heading: "Searched Dish Recent Orders",
+      rows: [["Order", "Customer", "Status", "Items", "Amount"], ...snapshot.dishSearch.recentOrders.map((row) => [row.orderNumber, row.customerName, row.status, row.itemSummary || String(row.items), money(row.amount)])],
+    },
+  ] : [];
+
   return [
+    ...dishSearchSections,
     {
       kind: "sales",
       heading: "Sales Report",

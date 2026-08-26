@@ -3,6 +3,8 @@ import { SimpleCustomerPage } from "@/components/simple-customer-page";
 export default function PrivacySecurityPage() {
   return (
     <SimpleCustomerPage
+      backHref="/account"
+      backLabel="Back to Profile"
       title="Privacy and Security"
       intro="Manage sign-in, profile privacy, notifications, and data controls for your Wah Thali account."
       sections={[

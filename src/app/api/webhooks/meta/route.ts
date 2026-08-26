@@ -1,9 +1,10 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
-export async function GET(request: NextRequest) {
+async function getHandler(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const mode = searchParams.get("hub.mode");
   const token = searchParams.get("hub.verify_token");
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ error: "Invalid verification token" }, { status: 403 });
 }
 
-export async function POST(request: NextRequest) {
+async function postHandler(request: NextRequest) {
   const payload = await request.json();
   const eventId = payload.entry?.[0]?.id ?? randomUUID();
 
@@ -59,3 +60,6 @@ export async function POST(request: NextRequest) {
     eventId,
   });
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/webhooks/meta");
+export const POST = withApiErrorHandling(postHandler, "POST /api/webhooks/meta");

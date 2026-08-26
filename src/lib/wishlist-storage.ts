@@ -6,7 +6,8 @@ const snapshots = new Map<string, string>();
 const loadedOwners = new Set<string>();
 
 function ownerKey(ownerId?: string | null) {
-  return ownerId || "guest";
+  const key = ownerId?.trim();
+  return key || "guest";
 }
 
 function storageKey(ownerId?: string | null) {
@@ -47,6 +48,18 @@ export function loadStoredWishlist(ownerId?: string | null) {
   loadedOwners.add(key);
 
   const productIds = parseWishlistSnapshot(readStorageSnapshot(ownerId));
+  if (ownerId) {
+    const guestProductIds = parseWishlistSnapshot(readStorageSnapshot());
+    const mergedProductIds = uniqueProductIds([...productIds, ...guestProductIds]);
+    setSnapshot(ownerId, mergedProductIds);
+    try {
+      window.localStorage.setItem(storageKey(ownerId), JSON.stringify(mergedProductIds));
+    } catch {
+      // Wishlist still updates in memory when storage is unavailable.
+    }
+    return mergedProductIds;
+  }
+
   setSnapshot(ownerId, productIds);
   return productIds;
 }
@@ -80,9 +93,11 @@ export function getServerWishlistSnapshot(): string {
 
 export function subscribeToWishlist(callback: () => void) {
   window.addEventListener(wishlistChangeEvent, callback);
+  window.addEventListener("storage", callback);
 
   return () => {
     window.removeEventListener(wishlistChangeEvent, callback);
+    window.removeEventListener("storage", callback);
   };
 }
 

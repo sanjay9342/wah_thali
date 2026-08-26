@@ -128,18 +128,19 @@ export function OffersClient({ coupons }: { coupons: Coupon[] }) {
   }
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-[430px] bg-[#f6f7fb] px-5 pb-28 pt-4 text-charcoal sm:my-6 sm:rounded-[28px] lg:max-w-5xl lg:px-6">
+    <main className="mx-auto min-h-screen w-full max-w-[430px] bg-white px-5 pb-28 pt-4 text-charcoal sm:my-6 sm:rounded-[28px] lg:my-0 lg:max-w-none lg:rounded-none lg:px-0 lg:pb-14 lg:pt-8">
+      <div className="mx-auto w-full lg:max-w-[1248px] lg:px-8">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.18em] text-muted">Wah Thali</p>
-          <h1 className="mt-1 text-[24px] font-black leading-tight text-maroon">Offers</h1>
+          <h1 className="mt-1 text-[24px] font-black leading-tight text-maroon lg:text-[34px]">Offers</h1>
         </div>
         <span className="grid h-11 w-11 place-items-center rounded-full bg-white text-maroon shadow-sm ring-1 ring-border">
           <Gift size={22} />
         </span>
       </div>
 
-      <section className="mt-4 grid gap-3 lg:grid-cols-2">
+      <section className="mt-4 grid gap-3 lg:mt-6 lg:grid-cols-2 lg:gap-5 xl:grid-cols-3">
         {coupons.length ? coupons.map((coupon) => (
           <CouponTicket
             key={coupon.code}
@@ -161,6 +162,7 @@ export function OffersClient({ coupons }: { coupons: Coupon[] }) {
           </section>
         )}
       </section>
+      </div>
     </main>
   );
 }

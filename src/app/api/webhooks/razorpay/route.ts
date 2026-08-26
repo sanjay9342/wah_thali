@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
@@ -55,7 +56,7 @@ function getPaymentStatus(event: string | undefined) {
   return null;
 }
 
-export async function POST(request: NextRequest) {
+async function postHandler(request: NextRequest) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -254,3 +255,5 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withApiErrorHandling(postHandler, "POST /api/webhooks/razorpay");

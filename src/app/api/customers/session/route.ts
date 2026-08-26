@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeMobile } from "@/lib/customer-auth";
@@ -16,7 +17,7 @@ const customerSelect = {
   email: true,
 };
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ customer: null, configured: false }, { status: 503 });
   }
@@ -42,7 +43,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ customer, configured: true });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -74,7 +75,7 @@ export async function POST(request: Request) {
   return response;
 }
 
-export async function DELETE() {
+async function deleteHandler() {
   const response = NextResponse.json({ ok: true });
   response.cookies.set(sessionCookie, "", {
     httpOnly: true,
@@ -86,3 +87,7 @@ export async function DELETE() {
 
   return response;
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/customers/session");
+export const POST = withApiErrorHandling(postHandler, "POST /api/customers/session");
+export const DELETE = withApiErrorHandling(deleteHandler, "DELETE /api/customers/session");

@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
@@ -9,7 +10,7 @@ const uploadSchema = z.object({
   path: z.string().min(1),
 });
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const access = await requireAdminPermission(request, "settings");
   if (!access.ok) return access.response;
 
@@ -44,3 +45,5 @@ export async function POST(request: Request) {
 
   return NextResponse.json(data);
 }
+
+export const POST = withApiErrorHandling(postHandler, "POST /api/storage/signed-upload");

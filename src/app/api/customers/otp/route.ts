@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeMobile } from "@/lib/customer-auth";
@@ -29,7 +30,7 @@ function getWhatsAppFailureCode(message: string, status?: number) {
   return "WHATSAPP_SEND_FAILED";
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return otpServiceUnavailable("Login and registration are temporarily offline because the live server is missing its database connection.", "DATABASE_NOT_CONFIGURED");
   }
@@ -110,3 +111,5 @@ export async function POST(request: Request) {
     message: "WhatsApp OTP sent. It expires in 5 minutes.",
   });
 }
+
+export const POST = withApiErrorHandling(postHandler, "POST /api/customers/otp");

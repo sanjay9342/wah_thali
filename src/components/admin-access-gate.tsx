@@ -111,29 +111,19 @@ export function AdminAccessGate({ children }: { children: ReactNode }) {
 
   if (loading) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#f7f8fb] px-4 py-8 text-charcoal">
-        <section className="w-full max-w-md rounded-2xl border border-[#e6e9ef] bg-white px-6 py-8 text-center shadow-[0_18px_54px_rgba(17,24,39,0.08)]">
+      <main className="grid min-h-screen place-items-center bg-white px-4 py-8 text-charcoal">
+        <section className="w-full max-w-sm rounded-2xl border border-[#e6e9ef] bg-white px-6 py-8 text-center shadow-[0_18px_54px_rgba(17,24,39,0.08)]">
           <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-[#fff4f5] text-maroon ring-1 ring-[#efd8de]">
             <ShieldCheck size={30} strokeWidth={2.7} />
           </div>
-          <h1 className="mt-5 text-2xl font-black leading-tight text-maroon">Checking admin access</h1>
-          <p className="mx-auto mt-2 max-w-[300px] text-sm font-semibold leading-6 text-muted">
+          <h1 className="mt-5 text-xl font-black leading-tight text-maroon">Checking admin access</h1>
+          <p className="mx-auto mt-2 max-w-[280px] text-sm font-semibold leading-6 text-muted">
             Verifying your account before opening the admin dashboard.
           </p>
 
-          <div className="mx-auto mt-7 grid h-14 w-14 place-items-center rounded-full bg-[#fff8f9] text-maroon ring-1 ring-[#efd8de]">
-            <LoaderCircle size={28} className="motion-safe:animate-spin" strokeWidth={2.7} />
-          </div>
-
-          <div className="mx-auto mt-7 h-2 max-w-[280px] overflow-hidden rounded-full bg-[#eef1f6]">
-            <div className="h-full rounded-full bg-maroon wt-order-progress" />
-          </div>
-
-          <div className="mt-6 flex items-center justify-center gap-2 text-xs font-black uppercase tracking-wide text-muted">
-            <span className="h-2 w-2 rounded-full bg-maroon motion-safe:animate-pulse" />
-            <span className="h-2 w-2 rounded-full bg-maroon motion-safe:animate-pulse [animation-delay:160ms]" />
-            <span className="h-2 w-2 rounded-full bg-maroon motion-safe:animate-pulse [animation-delay:320ms]" />
-            <span>Loading</span>
+          <div className="mt-7 flex items-center justify-center gap-2 text-sm font-black text-muted">
+            <LoaderCircle size={22} className="text-maroon motion-safe:animate-spin" strokeWidth={2.7} />
+            <span>Loading...</span>
           </div>
         </section>
       </main>

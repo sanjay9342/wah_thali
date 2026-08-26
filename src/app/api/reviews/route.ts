@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { logActivity } from "@/lib/db";
@@ -10,7 +11,7 @@ const reviewSchema = z.object({
   comment: z.string().trim().max(400).optional(),
 });
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -104,3 +105,5 @@ function isMissingReviewOrderColumn(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes("Review.orderId") || (message.includes("Review") && message.includes("orderId"));
 }
+
+export const POST = withApiErrorHandling(postHandler, "POST /api/reviews");

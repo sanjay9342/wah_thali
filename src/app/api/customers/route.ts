@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
@@ -46,7 +47,7 @@ const publicCustomerSelect = {
   orders: { orderBy: { createdAt: "desc" as const }, take: 5 },
 };
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ customers: [], configured: false });
   }
@@ -61,7 +62,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ customers: customers.map(toPublicCustomer), configured: true });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -152,3 +153,6 @@ export async function POST(request: Request) {
 function normalizeTagNames(tags: string[]) {
   return Array.from(new Set(tags.map((tag) => tag.trim()).filter(Boolean))).slice(0, 12);
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/customers");
+export const POST = withApiErrorHandling(postHandler, "POST /api/customers");

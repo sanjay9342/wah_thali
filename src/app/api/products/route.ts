@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -41,12 +42,12 @@ const productSchema = z.object({
   })).default([{ name: "Regular", price: 0, available: true }]),
 });
 
-export async function GET() {
+async function getHandler() {
   const products = await getAdminProductsFromDb();
   return NextResponse.json({ products });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -143,3 +144,6 @@ function isUniqueReportCodeError(error: unknown) {
     Array.isArray(error.meta?.target) &&
     error.meta.target.includes("reportCode");
 }
+
+export const GET = withApiErrorHandling(getHandler, "GET /api/products");
+export const POST = withApiErrorHandling(postHandler, "POST /api/products");

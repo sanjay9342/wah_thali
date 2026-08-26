@@ -1,3 +1,4 @@
+import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
@@ -9,7 +10,7 @@ const customerUpdateSchema = z.object({
   tagNames: z.array(z.string().min(1)).optional(),
 });
 
-export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function patchHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
   }
@@ -71,3 +72,5 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 function normalizeTagNames(tags: string[]) {
   return Array.from(new Set(tags.map((tag) => tag.trim()).filter(Boolean))).slice(0, 12);
 }
+
+export const PATCH = withApiErrorHandling(patchHandler, "PATCH /api/customers/[id]");
