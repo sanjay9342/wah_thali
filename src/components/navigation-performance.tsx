@@ -11,6 +11,7 @@ export function NavigationPerformance({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [isNavigating, setIsNavigating] = useState(false);
   const startedAt = useRef(0);
+  const hasOwnMobileDock = pathname === "/cart";
 
   useEffect(() => {
     if (!isNavigating) return;
@@ -38,7 +39,7 @@ export function NavigationPerformance({ children }: { children: ReactNode }) {
         share="wt-page-share"
         default="none"
       >
-        <div className="min-h-dvh pb-24 lg:pb-0">{children}</div>
+        <div className={`min-h-dvh ${hasOwnMobileDock ? "pb-0" : "pb-24"} lg:pb-0`}>{children}</div>
       </ViewTransition>
     </>
   );

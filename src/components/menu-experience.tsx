@@ -1037,6 +1037,24 @@ export function MenuExperience({
   }, []);
 
   useEffect(() => {
+    function syncCategoryFromUrl() {
+      const category = new URLSearchParams(window.location.search).get("category");
+      if (!category || category === "All") {
+        setActiveCategory("All");
+        setMobileCategory("All");
+        return;
+      }
+      if (!categories.includes(category)) return;
+      setActiveCategory(category);
+      setMobileCategory(category);
+    }
+
+    syncCategoryFromUrl();
+    window.addEventListener("popstate", syncCategoryFromUrl);
+    return () => window.removeEventListener("popstate", syncCategoryFromUrl);
+  }, [categories]);
+
+  useEffect(() => {
     if (promoSlides.length <= 1) return;
     const timer = window.setInterval(() => {
       setActiveSlide((current) => (current + 1) % promoSlides.length);

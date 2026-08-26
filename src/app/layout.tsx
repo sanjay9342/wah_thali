@@ -8,7 +8,7 @@ import "./globals.css";
 const foodieSans = Nunito_Sans({
   variable: "--font-foodie-sans",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800", "900"],
+  weight: ["400", "600", "700", "800"],
   display: "swap",
 });
 

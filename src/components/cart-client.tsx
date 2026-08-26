@@ -101,7 +101,6 @@ export function CartClient({
   const router = useRouter();
   const [coupon, setCoupon] = useState<string | undefined>();
   const [cookingRequest, setCookingRequest] = useState("");
-  const [cutleryNeeded, setCutleryNeeded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [placingStage, setPlacingStage] = useState<string | null>(null);
   const [showBillSummary, setShowBillSummary] = useState(false);
@@ -208,7 +207,8 @@ export function CartClient({
       return;
     }
 
-    if (!addProductId) {
+    const urlAddProductId = addProductId ?? new URLSearchParams(window.location.search).get("add") ?? undefined;
+    if (!urlAddProductId) {
       return;
     }
 
@@ -219,7 +219,7 @@ export function CartClient({
     if (appliedAddRef.current) return;
     appliedAddRef.current = true;
 
-    const next = buildInitialCart(validLines, addProductId);
+    const next = buildInitialCart(validLines, urlAddProductId);
     writeStoredCart(next, cartOwnerId);
   }, [addProductId, cartOwnerId, lines, storeOrderingDisabled, validLines]);
 
@@ -702,7 +702,7 @@ export function CartClient({
   }
 
   return (
-    <section className="relative mx-auto min-h-screen max-w-[430px] bg-white pb-32 text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-6 sm:min-h-0 sm:overflow-hidden sm:rounded-[28px] lg:max-w-none lg:overflow-visible lg:rounded-none lg:pb-0 lg:shadow-none">
+    <section className="relative mx-auto min-h-0 max-w-[430px] bg-white pb-24 text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-6 sm:overflow-hidden sm:rounded-[28px] lg:max-w-none lg:overflow-visible lg:rounded-none lg:pb-0 lg:shadow-none">
       {placingStage ? <OrderPlacingOverlay message={placingStage} /> : null}
       <div className="mx-auto hidden max-w-[1248px] grid-cols-[210px_minmax(0,1fr)_330px] gap-6 px-6 pb-9 pt-14 lg:grid">
         <aside className="sticky top-[88px] h-[calc(100vh-108px)] overflow-hidden rounded-[22px] border border-[#f1e7e4] bg-white shadow-[0_18px_44px_rgba(34,31,32,0.06)]">
@@ -748,10 +748,10 @@ export function CartClient({
         <div className="min-w-0">
           <div className="mb-5 flex items-end justify-between gap-4">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-maroon">Wah Thali Cart</p>
-              <h1 className="mt-1.5 text-[28px] font-black leading-none text-charcoal">Your Basket</h1>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-maroon">Cart</p>
+              <h1 className="mt-1.5 text-[24px] font-black leading-none text-charcoal">My Cart</h1>
             </div>
-            <span className="rounded-full bg-[#fff4f5] px-3.5 py-1.5 text-[13px] font-black text-maroon">
+            <span className="rounded-full bg-[#fff4f5] px-3 py-1.5 text-[12px] font-black text-maroon">
               {cartItemCount} {cartItemCount === 1 ? "Item" : "Items"}
             </span>
           </div>
@@ -773,7 +773,7 @@ export function CartClient({
               const originalTotal = pricing.discountPerUnit > 0 ? pricing.originalUnitPrice * line.quantity : undefined;
 
               return (
-                <article key={`${line.productId}-${index}`} className="grid grid-cols-[118px_minmax(0,1fr)_130px] items-center gap-5 rounded-[16px] border border-[#f1e7e4] bg-white p-4 shadow-[0_12px_28px_rgba(34,31,32,0.045)]">
+                <article key={`${line.productId}-${index}`} className="grid grid-cols-[112px_minmax(0,1fr)_122px] items-center gap-4 rounded-[16px] border border-[#f1e7e4] bg-white p-4 shadow-[0_12px_28px_rgba(34,31,32,0.045)]">
                   <div className="relative h-[96px] overflow-hidden rounded-[13px] bg-cream">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -795,14 +795,14 @@ export function CartClient({
                       >
                         <span className={`h-2 w-2 rounded-full ${product.dietaryType === "NON_VEG" ? "bg-red" : "bg-maroon"}`} />
                       </span>
-                      <p className="truncate text-[11px] font-black uppercase tracking-[0.14em] text-muted">{product.category}</p>
+                      <p className="truncate text-[10px] font-black uppercase tracking-[0.12em] text-muted">{product.category}</p>
                     </div>
-                    <h2 className="mt-1.5 line-clamp-1 text-[19px] font-black text-charcoal">{product.name}</h2>
-                    <p className="mt-0.5 text-[13px] font-black text-muted">{variant?.name || "Regular"}</p>
+                    <h2 className="mt-1.5 line-clamp-1 text-[17px] font-black text-charcoal">{product.name}</h2>
+                    <p className="mt-0.5 text-[12px] font-black text-muted">{variant?.name || "Regular"}</p>
                     {addons.length ? <p className="mt-1 line-clamp-1 text-[11px] font-bold text-muted">With {addons.join(", ")}</p> : null}
                     <div className="mt-4 flex items-center gap-2">
                       {originalTotal ? <span className="text-[13px] font-bold text-muted line-through">{formatRupees(originalTotal)}</span> : null}
-                      <span className="text-[17px] font-black text-maroon">{formatRupees(lineTotal)}</span>
+                      <span className="text-[16px] font-black text-maroon">{formatRupees(lineTotal)}</span>
                     </div>
                   </div>
                   <div className="grid justify-items-end gap-4">
@@ -826,7 +826,7 @@ export function CartClient({
 
           {suggestions.length ? (
             <section className="mt-7">
-              <h2 className="text-[22px] font-black text-charcoal">Before you checkout</h2>
+              <h2 className="text-[20px] font-black text-charcoal">Complete your meal</h2>
               <div className="mt-4 grid grid-cols-3 gap-4">
                 {suggestions.slice(0, 3).map((product) => (
                   <article key={product.id} className="rounded-[16px] border border-[#f1e7e4] bg-[#fff8f9] p-3.5 shadow-sm">
@@ -842,8 +842,8 @@ export function CartClient({
                         }}
                       />
                     </div>
-                    <h3 className="mt-3 line-clamp-1 text-[15px] font-black text-charcoal">{product.name}</h3>
-                    <p className="mt-2 text-[17px] font-black text-maroon">{formatRupees(getProductUnitPricing(product, initialCategoryOffers).unitPrice)}</p>
+                    <h3 className="mt-3 line-clamp-1 text-[14px] font-black text-charcoal">{product.name}</h3>
+                    <p className="mt-2 text-[16px] font-black text-maroon">{formatRupees(getProductUnitPricing(product, initialCategoryOffers).unitPrice)}</p>
                     <button
                       onClick={() => addSuggestedProduct(product)}
                       className="mt-4 h-9 w-full rounded-xl bg-maroon text-[13px] font-black text-white shadow-[0_10px_22px_rgba(141,0,33,0.16)]"
@@ -859,8 +859,8 @@ export function CartClient({
 
         <aside className="sticky top-[88px] h-max">
           <div className="rounded-[20px] bg-[#f5f6fb] p-5 shadow-[0_16px_38px_rgba(34,31,32,0.07)] ring-1 ring-[#edf0f5]">
-            <h2 className="text-[22px] font-black text-charcoal">Bill Summary</h2>
-            <dl className="mt-5 space-y-4 text-[15px]">
+            <h2 className="text-[20px] font-black text-charcoal">Bill Summary</h2>
+            <dl className="mt-5 space-y-4 text-[14px]">
               <div className="flex items-center justify-between gap-4">
                 <dt className="font-bold text-[#1f2937]">Item Total</dt>
                 <dd className="font-black text-charcoal">{formatRupees(totals.subtotal)}</dd>
@@ -880,8 +880,8 @@ export function CartClient({
                 </div>
               ) : null}
               <div className="flex items-center justify-between gap-4 border-t border-[#dfe3ea] pt-5">
-                <dt className="text-[18px] font-black text-charcoal">To Pay</dt>
-                <dd className="text-[26px] font-black text-charcoal">{formatRupees(totals.grandTotal)}</dd>
+                <dt className="text-[16px] font-black text-charcoal">To Pay</dt>
+                <dd className="text-[22px] font-black text-charcoal">{formatRupees(totals.grandTotal)}</dd>
               </div>
             </dl>
             {totalSavings > 0 ? (
@@ -916,8 +916,8 @@ export function CartClient({
 
           <div className="mt-4 rounded-[20px] bg-white p-5 shadow-[0_16px_38px_rgba(34,31,32,0.07)] ring-1 ring-[#edf0f5]">
             <div className="flex items-center justify-between">
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-muted">Total Payable</p>
-              <p className="text-[26px] font-black text-maroon">{formatRupees(totals.grandTotal)}</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted">Total Payable</p>
+              <p className="text-[22px] font-black text-maroon">{formatRupees(totals.grandTotal)}</p>
             </div>
             {storeOrderingDisabled ? (
               <button disabled className="mt-5 h-12 w-full cursor-not-allowed rounded-2xl bg-muted/30 text-base font-black text-muted">
@@ -946,36 +946,36 @@ export function CartClient({
       </div>
 
       <div className="lg:hidden">
-      <div className="flex items-center gap-3 px-4 pb-1 pt-4 lg:px-6">
-        <Link href="/menu" className="grid h-10 w-10 place-items-center rounded-full bg-white text-maroon shadow-sm ring-1 ring-border" aria-label="Back to menu">
-          <ChevronLeft size={25} strokeWidth={2.7} />
+      <div className="flex items-center gap-2.5 px-3 pb-1 pt-3 lg:px-6">
+        <Link href="/menu" className="grid h-9 w-9 place-items-center rounded-full bg-white text-maroon shadow-sm ring-1 ring-border" aria-label="Back to menu">
+          <ChevronLeft size={22} strokeWidth={2.7} />
         </Link>
-        <h1 className="text-[22px] font-black leading-tight text-maroon">My Cart</h1>
+        <h1 className="text-[19px] font-black leading-tight text-maroon">My Cart</h1>
       </div>
 
       {totalSavings > 0 ? (
-      <div className="mx-4 mt-3 flex items-center gap-2 rounded-[14px] bg-[#e9f2ff] px-3 py-2 text-[13px] font-black text-[#1769c2]">
+      <div className="mx-3 mt-3 flex items-center gap-2 rounded-[14px] bg-[#e9f2ff] px-3 py-2 text-[12px] font-black text-[#1769c2]">
         <BadgeCheck size={16} className="shrink-0" />
         <span>You saved {formatRupees(totalSavings)} on this order</span>
       </div>
       ) : null}
 
       {showStoreStatus ? (
-        <div className="mx-4 mt-4 rounded-2xl border border-red/20 bg-white p-4 text-sm text-maroon">
+        <div className="mx-3 mt-4 rounded-2xl border border-red/20 bg-white p-3.5 text-[13px] text-maroon">
           <p className="flex items-center gap-2 font-black">
             <Store size={17} className="text-red" />
             {orderingStatus.title}
           </p>
-          <p className="mt-1 text-xs font-bold text-muted">{statusMessage}</p>
+          <p className="mt-1 text-[11px] font-bold text-muted">{statusMessage}</p>
         </div>
       ) : null}
       {!serviceable ? (
-        <div className="mx-4 mt-4 rounded-2xl border border-maroon/15 bg-white p-4 text-sm text-maroon">
+        <div className="mx-3 mt-4 rounded-2xl border border-maroon/15 bg-white p-3.5 text-[13px] text-maroon">
           <p className="flex items-center gap-2 font-black">
             <MapPin size={17} />
             {deliveryCoverage.needsLocation ? "Current location required" : "Service not available"}
           </p>
-          <p className="mt-1 text-xs font-bold text-muted">
+          <p className="mt-1 text-[11px] font-bold text-muted">
             {deliveryCoverage.message}
           </p>
           <button onClick={openLocationSheet} className="mt-3 h-10 rounded-xl bg-maroon px-4 text-xs font-black text-white">
@@ -984,8 +984,8 @@ export function CartClient({
         </div>
       ) : null}
 
-      <div className="mx-4 mt-4 rounded-[18px] bg-white p-3 shadow-[0_8px_24px_rgba(17,24,39,0.05)] ring-1 ring-[#eef1f6]">
-        <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-5 lg:space-y-0">
+      <div className="mx-3 mt-4 rounded-[16px] bg-white p-2.5 shadow-[0_8px_24px_rgba(17,24,39,0.05)] ring-1 ring-[#eef1f6]">
+        <div className="space-y-3 lg:grid lg:grid-cols-2 lg:gap-5 lg:space-y-0">
         {validLines.map((line, index) => {
           const product = initialProducts.find((item) => item.id === line.productId);
           if (!product) return null;
@@ -1002,7 +1002,7 @@ export function CartClient({
           const originalTotal = pricing.discountPerUnit > 0 ? pricing.originalUnitPrice * line.quantity : undefined;
 
           return (
-            <article key={`${line.productId}-${index}`} className="grid grid-cols-[1fr_auto_auto] items-start gap-3">
+            <article key={`${line.productId}-${index}`} className="grid grid-cols-[minmax(0,1fr)_76px_42px] items-start gap-2">
               <div className="min-w-0">
                 <div className="flex items-start gap-2">
                   <span
@@ -1013,49 +1013,39 @@ export function CartClient({
                     <span className={`h-2.5 w-2.5 rounded-full ${product.dietaryType === "NON_VEG" ? "bg-red" : "bg-maroon"}`} />
                   </span>
                   <div className="min-w-0">
-                    <h2 className="line-clamp-2 text-[15px] font-black leading-5 text-charcoal">{product.name}</h2>
-                    <p className="mt-1 line-clamp-1 text-[11px] font-bold text-muted">{variant?.name}</p>
-                    <button className="mt-1 text-[11px] font-black text-maroon">Edit</button>
-                    {addons.length ? <p className="mt-1 line-clamp-1 text-[11px] font-semibold text-muted">With {addons.join(", ")}</p> : null}
+                    <h2 className="line-clamp-2 text-[13px] font-black leading-4 text-charcoal">{product.name}</h2>
+                    <p className="mt-0.5 line-clamp-1 text-[10px] font-bold text-muted">{variant?.name || "Regular"}</p>
+                    {addons.length ? <p className="mt-0.5 line-clamp-1 text-[10px] font-semibold text-muted">With {addons.join(", ")}</p> : null}
                   </div>
                 </div>
               </div>
-              <div className="grid h-9 w-[82px] grid-cols-3 overflow-hidden rounded-[10px] bg-white text-maroon shadow-sm ring-1 ring-maroon/25">
+              <div className="grid h-8 w-[76px] grid-cols-3 overflow-hidden rounded-[10px] bg-white text-maroon shadow-sm ring-1 ring-maroon/25">
                   <button onClick={() => updateQuantity(index, line.quantity - 1)} className="grid place-items-center" aria-label={`Decrease ${product.name}`}>
                     <Minus size={13} />
                   </button>
-                  <span className="grid place-items-center text-[13px] font-black">{line.quantity}</span>
+                  <span className="grid place-items-center text-[12px] font-black">{line.quantity}</span>
                   <button onClick={() => updateQuantity(index, line.quantity + 1)} className="grid place-items-center" aria-label={`Increase ${product.name}`}>
                     <Plus size={13} />
                   </button>
               </div>
-              <div className="min-w-12 text-right">
-                {originalTotal ? <p className="text-[12px] font-bold text-muted line-through">{formatRupees(originalTotal)}</p> : null}
-                <p className="text-[15px] font-black text-charcoal">{formatRupees(lineTotal)}</p>
+              <div className="min-w-0 text-right">
+                {originalTotal ? <p className="text-[11px] font-bold text-muted line-through">{formatRupees(originalTotal)}</p> : null}
+                <p className="text-[13px] font-black text-charcoal">{formatRupees(lineTotal)}</p>
               </div>
             </article>
           );
         })}
         </div>
 
-        <div className="mt-4 grid grid-cols-3 gap-2 border-t border-[#eef1f6] pt-3">
-          <Link href="/menu" className="inline-flex h-10 items-center justify-center gap-1 rounded-xl border border-border bg-white px-2 text-[12px] font-black text-maroon">
-            <Plus size={17} /> Add more
+        <div className="mt-4 grid grid-cols-2 gap-2 border-t border-[#eef1f6] pt-3">
+          <Link href="/menu" className="inline-flex h-9 items-center justify-center gap-1 rounded-xl border border-border bg-white px-1.5 text-[11px] font-black text-maroon">
+            <Plus size={15} /> Add more
           </Link>
           <button
             onClick={() => setShowCookingSheet(true)}
-            className="inline-flex h-10 items-center justify-center gap-1 rounded-xl border border-border bg-white px-2 text-[12px] font-black text-muted"
+            className="inline-flex h-9 items-center justify-center gap-1 rounded-xl border border-border bg-white px-1.5 text-[11px] font-black text-muted"
           >
             <PenLine size={15} /> Cooking
-          </button>
-          <button
-            onClick={() => setCutleryNeeded((current) => !current)}
-            className="inline-flex h-10 items-center justify-center gap-1 rounded-xl border border-border bg-white px-2 text-[12px] font-black text-muted"
-          >
-            <span className={`grid h-5 w-5 place-items-center rounded border ${cutleryNeeded ? "border-maroon bg-maroon" : "border-muted/40 bg-white"}`}>
-              {cutleryNeeded ? <span className="h-2 w-2 rounded-full bg-white" /> : null}
-            </span>
-            Cutlery
           </button>
         </div>
         {cookingRequest ? (
@@ -1070,20 +1060,20 @@ export function CartClient({
       </div>
 
       {suggestions.length ? (
-        <div className="mx-4 mt-5 rounded-[24px] bg-white p-4 shadow-sm">
-          <h2 className="text-[15px] font-black uppercase tracking-[0.22em] text-muted">Complete your meal</h2>
-          <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
+      <div className="mx-3 mt-4 rounded-[18px] bg-white p-3 shadow-sm">
+          <h2 className="text-[12px] font-black uppercase tracking-[0.18em] text-muted">Complete your meal</h2>
+          <div className="mt-3 flex gap-2.5 overflow-x-auto pb-1">
             {suggestions.map((product) => (
-              <article key={product.id} className="w-24 shrink-0">
-                <div className="relative h-20 w-24 overflow-hidden rounded-xl bg-cream ring-1 ring-border">
+              <article key={product.id} className="w-[86px] shrink-0">
+                <div className="relative h-[72px] w-[86px] overflow-hidden rounded-xl bg-cream ring-1 ring-border">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="lazy" />
                   <button
                     onClick={() => addSuggestedProduct(product)}
-                    className="absolute right-1 top-1 grid h-7 w-7 place-items-center rounded-lg bg-white text-maroon shadow ring-1 ring-border"
+                    className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-lg bg-white text-maroon shadow ring-1 ring-border"
                     aria-label={`Add ${product.name}`}
                   >
-                    <Plus size={19} strokeWidth={3} />
+                    <Plus size={17} strokeWidth={3} />
                   </button>
                 </div>
                 <div className="mt-2 flex items-start gap-1">
@@ -1094,41 +1084,41 @@ export function CartClient({
                   >
                     <span className={`h-2 w-2 rounded-full ${product.dietaryType === "NON_VEG" ? "bg-red" : "bg-maroon"}`} />
                   </span>
-                  <p className="line-clamp-2 text-[13px] font-semibold leading-4 text-charcoal">{product.name}</p>
+                  <p className="line-clamp-2 text-[11px] font-semibold leading-3.5 text-charcoal">{product.name}</p>
                 </div>
-                <p className="mt-2 text-[15px] font-bold text-charcoal">{formatRupees(getProductUnitPricing(product, initialCategoryOffers).unitPrice)}</p>
+                <p className="mt-1.5 text-[13px] font-bold text-charcoal">{formatRupees(getProductUnitPricing(product, initialCategoryOffers).unitPrice)}</p>
               </article>
             ))}
           </div>
         </div>
       ) : null}
 
-      <div className="mx-4 mt-5 overflow-hidden rounded-[24px] bg-white shadow-sm">
-        <h2 className="px-4 pb-3 pt-5 text-[15px] font-black uppercase tracking-[0.22em] text-muted">Savings corner</h2>
+      <div className="mx-3 mt-4 overflow-hidden rounded-[18px] bg-white shadow-sm">
+        <h2 className="px-3.5 pb-2.5 pt-4 text-[12px] font-black uppercase tracking-[0.18em] text-muted">Savings corner</h2>
         <div className="divide-y divide-border">
           <button
             onClick={() => initialCoupons.length ? setShowCouponSheet(true) : setCheckoutMessage("No coupons are available right now.")}
-            className="grid w-full grid-cols-[32px_1fr_auto] items-center gap-3 px-4 py-4 text-left"
+            className="grid w-full grid-cols-[30px_1fr_auto] items-center gap-2.5 px-3.5 py-3.5 text-left"
           >
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-maroon text-white">
               <Tag size={17} />
             </span>
-            <span className="text-[16px] font-bold text-charcoal">Apply Coupon</span>
+            <span className="text-[14px] font-bold text-charcoal">Apply Coupon</span>
             <ChevronRight size={24} />
           </button>
           {appliedCoupon ? (
-            <div className="grid grid-cols-[32px_1fr_auto] items-center gap-3 px-4 py-4">
+            <div className="grid grid-cols-[30px_1fr_auto] items-center gap-2.5 px-3.5 py-3.5">
               <span className="grid h-8 w-8 place-items-center rounded-lg bg-maroon text-white">
                 <Tag size={17} />
               </span>
-              <span className="text-[15px] font-bold text-charcoal">
+              <span className="text-[13px] font-bold text-charcoal">
                 {formatRupees(totals.discount)} saved with {appliedCoupon.code}
               </span>
               <button
                 onClick={() => {
                   setCoupon(undefined);
                 }}
-                className="text-[14px] font-black text-maroon"
+                className="text-[12px] font-black text-maroon"
               >
                 Remove
               </button>
@@ -1138,15 +1128,15 @@ export function CartClient({
       </div>
 
       {featuredCoupon ? (
-      <div className="mx-4 mt-5">
+      <div className="mx-3 mt-4">
         <button
           type="button"
           onClick={() => selectCoupon(featuredCoupon.code)}
-          className="block w-full rounded-[18px] bg-[#fff5ef] p-4 text-left shadow-sm ring-1 ring-[#ffe1d1]"
+          className="block w-full rounded-[16px] bg-[#fff5ef] p-3.5 text-left shadow-sm ring-1 ring-[#ffe1d1]"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[13px] font-black text-charcoal">Special offer from Wah Thali</p>
+              <p className="text-[12px] font-black text-charcoal">Special offer from Wah Thali</p>
               <p className="mt-2 text-[12px] font-bold text-muted">
                 Use {featuredCoupon.code} to save {featuredCouponValue}
               </p>
@@ -1159,7 +1149,7 @@ export function CartClient({
       </div>
       ) : null}
 
-      <div className="mx-4 mt-5 overflow-hidden rounded-[18px] bg-white shadow-sm ring-1 ring-[#eef1f6]">
+      <div className="mx-3 mt-4 overflow-hidden rounded-[16px] bg-white shadow-sm ring-1 ring-[#eef1f6]">
         <div className="divide-y divide-[#eef1f6]">
           <CartInfoRow
             icon={<Clock3 size={18} />}
@@ -1187,20 +1177,20 @@ export function CartClient({
         </div>
       </div>
 
-      <div className="mx-4 mt-5 rounded-[18px] bg-[#f6f7fb] px-1 pb-1">
-        <h2 className="text-[13px] font-black uppercase tracking-[0.28em] text-muted">Cancellation Policy</h2>
-        <p className="mt-2 text-[12px] font-semibold leading-5 text-muted">
+      <div className="mx-3 mt-4 rounded-[16px] bg-[#f6f7fb] px-1 pb-1">
+        <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-muted">Cancellation Policy</h2>
+        <p className="mt-1.5 text-[11px] font-semibold leading-4 text-muted">
           A 100% cancellation charge will apply. This helps us compensate the restaurant partner for food preparation.
         </p>
       </div>
       {paymentOptions.length > 1 ? (
-        <div className="mx-4 mt-5 grid grid-cols-2 gap-2 rounded-[18px] bg-white p-2 shadow-sm ring-1 ring-[#eef1f6]">
+        <div className="mx-3 mt-4 grid grid-cols-2 gap-2 rounded-[16px] bg-white p-2 shadow-sm ring-1 ring-[#eef1f6]">
           {paymentOptions.map((option) => (
             <button
               key={option}
               type="button"
               onClick={() => setPaymentMethod(option)}
-              className={`h-11 rounded-xl text-[14px] font-black ${
+              className={`h-10 rounded-xl text-[12px] font-black ${
                 selectedPaymentMethod === option ? "bg-maroon text-white" : "bg-[#f6f7fb] text-charcoal"
               }`}
             >
@@ -1210,7 +1200,7 @@ export function CartClient({
         </div>
       ) : null}
       {checkoutMessage ? (
-        <p className="mx-4 mt-4 rounded-2xl bg-white p-3 text-center text-xs font-black leading-5 text-muted shadow-sm ring-1 ring-border" aria-live="polite">
+        <p className="mx-3 mt-4 rounded-2xl bg-white p-3 text-center text-[11px] font-black leading-4 text-muted shadow-sm ring-1 ring-border" aria-live="polite">
           {checkoutMessage}
         </p>
       ) : null}
@@ -1439,21 +1429,21 @@ export function CartClient({
         />
       ) : null}
 
-      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-white px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 shadow-[0_-12px_30px_rgba(34,31,32,0.12)] sm:absolute sm:left-1/2 sm:max-w-[430px] sm:-translate-x-1/2 sm:rounded-t-2xl lg:hidden">
-        <div className="mx-auto grid max-w-[430px] grid-cols-[1fr_1.45fr] gap-3 lg:max-w-4xl">
+      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-white px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2.5 shadow-[0_-12px_30px_rgba(34,31,32,0.12)] sm:absolute sm:left-1/2 sm:max-w-[430px] sm:-translate-x-1/2 sm:rounded-t-2xl lg:hidden">
+        <div className="mx-auto grid max-w-[430px] grid-cols-[1fr_1.45fr] gap-2.5 lg:max-w-4xl">
           <div className="min-w-0">
-            <p className="text-[12px] font-black uppercase tracking-[0.18em] text-muted">Pay using</p>
-            <p className="mt-1 truncate text-[17px] font-bold text-charcoal">{paymentLabel}</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-muted">Pay using</p>
+            <p className="mt-1 truncate text-[14px] font-bold text-charcoal">{paymentLabel}</p>
           </div>
           {storeOrderingDisabled ? (
-            <button disabled className="h-16 cursor-not-allowed rounded-2xl bg-muted/30 text-[18px] font-black text-muted">
+            <button disabled className="h-13 cursor-not-allowed rounded-2xl bg-muted/30 text-[15px] font-black text-muted">
               Closed
             </button>
           ) : !serviceable ? (
             <button
               type="button"
               onClick={openLocationSheet}
-              className="flex h-16 items-center justify-center rounded-2xl bg-maroon text-[18px] font-black text-white shadow-[0_10px_24px_rgba(141,0,33,0.28)]"
+              className="flex h-13 items-center justify-center rounded-2xl bg-maroon text-[15px] font-black text-white shadow-[0_10px_24px_rgba(141,0,33,0.28)]"
             >
               Choose Location
             </button>
@@ -1461,7 +1451,7 @@ export function CartClient({
             <button
               type="button"
               onClick={() => router.push("/login?next=/cart")}
-              className="flex h-16 items-center justify-center rounded-2xl bg-maroon text-[18px] font-black text-white shadow-[0_10px_24px_rgba(141,0,33,0.28)]"
+              className="flex h-13 items-center justify-center rounded-2xl bg-maroon text-[15px] font-black text-white shadow-[0_10px_24px_rgba(141,0,33,0.28)]"
             >
               Login to Pay
             </button>
@@ -1470,12 +1460,12 @@ export function CartClient({
               type="button"
               onClick={requestPlaceOrderConfirmation}
               disabled={submitting}
-              className="flex h-16 items-center justify-center rounded-2xl bg-maroon text-[20px] font-black text-white shadow-[0_10px_24px_rgba(141,0,33,0.28)] disabled:opacity-60"
+              className="flex h-13 items-center justify-center rounded-2xl bg-maroon text-[16px] font-black text-white shadow-[0_10px_24px_rgba(141,0,33,0.28)] disabled:opacity-60"
             >
               {submitting ? "Placing..." : `Place Order ${formatRupees(totals.grandTotal)}`}
             </button>
           ) : (
-            <button disabled className="h-16 cursor-not-allowed rounded-2xl bg-muted/30 text-[16px] font-black text-muted">
+            <button disabled className="h-13 cursor-not-allowed rounded-2xl bg-muted/30 text-[14px] font-black text-muted">
               Payment unavailable
             </button>
           )}

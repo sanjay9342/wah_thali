@@ -1,24 +1,10 @@
 import { MenuExperience } from "@/components/menu-experience";
-import { getCategoriesFromDb, getCategoryImagesFromDb, getCategoryOffersFromDb, getCouponsFromDb, getHomeDishCategoriesFromDb, getHomeSlidesFromDb, getProductsFromDb, getRestaurantSettingsFromDb } from "@/lib/db";
+import { getPublicHomePageDataFromDb } from "@/lib/db";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
-export default async function Home({
-  searchParams,
-}: {
-  searchParams?: Promise<{ category?: string }>;
-}) {
-  const params = await searchParams;
-  const [categories, products, slides, categoryImages, categoryOffers, restaurantSettings, coupons, homeDishCategories] = await Promise.all([
-    getCategoriesFromDb(),
-    getProductsFromDb(),
-    getHomeSlidesFromDb(),
-    getCategoryImagesFromDb(),
-    getCategoryOffersFromDb(),
-    getRestaurantSettingsFromDb(),
-    getCouponsFromDb(),
-    getHomeDishCategoriesFromDb(),
-  ]);
+export default async function Home() {
+  const { categories, products, slides, categoryImages, categoryOffers, restaurantSettings, coupons, homeDishCategories } = await getPublicHomePageDataFromDb();
 
-  return <MenuExperience initialCategories={categories} initialProducts={products} initialSlides={slides} initialCategoryImages={categoryImages} initialCategoryOffers={categoryOffers} initialCoupons={coupons} restaurantSettings={restaurantSettings} initialActiveCategory={params?.category} initialHomeDishCategories={homeDishCategories} />;
+  return <MenuExperience initialCategories={categories} initialProducts={products} initialSlides={slides} initialCategoryImages={categoryImages} initialCategoryOffers={categoryOffers} initialCoupons={coupons} restaurantSettings={restaurantSettings} initialHomeDishCategories={homeDishCategories} />;
 }

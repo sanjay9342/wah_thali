@@ -1,5 +1,6 @@
 import "server-only";
 
+import { unstable_cache } from "next/cache";
 import { Prisma, type PaymentStatus } from "@prisma/client";
 import { coupons as fallbackCoupons, products as fallbackProducts, settings as fallbackSettings } from "@/lib/data";
 import { prisma, isDatabaseConfigured } from "@/lib/prisma";
@@ -10,6 +11,7 @@ import { getIstDayRangeUtc } from "@/lib/time";
 import type { AdvancedSettings, AdminCustomer, AdminOrder, AdminProduct, BusinessSettings, CategoryImageMap, CategoryOfferMap, Coupon, HomeSlide, Product, RestaurantSettings, StoreMode } from "@/lib/types";
 
 const paidOnlineStatuses: PaymentStatus[] = ["PAID", "AUTHORIZED"];
+const storefrontCacheSeconds = 60;
 
 type ProductWithRelations = Prisma.ProductGetPayload<{
   include: {
@@ -512,6 +514,75 @@ export async function getHomeSlidesFromDb(): Promise<HomeSlide[]> {
     return defaultHomeSlides;
   }
 }
+
+export const getPublicHomePageDataFromDb = unstable_cache(
+  async () => {
+    const [categories, products, slides, categoryImages, categoryOffers, restaurantSettings, coupons, homeDishCategories] = await Promise.all([
+      getCategoriesFromDb(),
+      getProductsFromDb(),
+      getHomeSlidesFromDb(),
+      getCategoryImagesFromDb(),
+      getCategoryOffersFromDb(),
+      getRestaurantSettingsFromDb(),
+      getCouponsFromDb(),
+      getHomeDishCategoriesFromDb(),
+    ]);
+
+    return { categories, products, slides, categoryImages, categoryOffers, restaurantSettings, coupons, homeDishCategories };
+  },
+  ["public-home-page-data"],
+  { revalidate: storefrontCacheSeconds, tags: ["storefront", "storefront-home"] },
+);
+
+export const getPublicMenuPageDataFromDb = unstable_cache(
+  async () => {
+    const [categories, products, slides, categoryImages, categoryOffers, restaurantSettings] = await Promise.all([
+      getCategoriesFromDb(),
+      getProductsFromDb(),
+      getHomeSlidesFromDb(),
+      getCategoryImagesFromDb(),
+      getCategoryOffersFromDb(),
+      getRestaurantSettingsFromDb(),
+    ]);
+
+    return { categories, products, slides, categoryImages, categoryOffers, restaurantSettings };
+  },
+  ["public-menu-page-data"],
+  { revalidate: storefrontCacheSeconds, tags: ["storefront", "storefront-menu"] },
+);
+
+export const getPublicCartPageDataFromDb = unstable_cache(
+  async () => {
+    const [products, coupons, restaurantSettings, categoryOffers] = await Promise.all([
+      getProductsFromDb(),
+      getCouponsFromDb(),
+      getRestaurantSettingsFromDb(),
+      getCategoryOffersFromDb(),
+    ]);
+
+    return { products, coupons, restaurantSettings, categoryOffers };
+  },
+  ["public-cart-page-data"],
+  { revalidate: storefrontCacheSeconds, tags: ["storefront", "storefront-cart"] },
+);
+
+export const getPublicOffersPageDataFromDb = unstable_cache(
+  async () => {
+    const coupons = await getCouponsFromDb();
+    return { coupons };
+  },
+  ["public-offers-page-data"],
+  { revalidate: storefrontCacheSeconds, tags: ["storefront", "storefront-offers"] },
+);
+
+export const getPublicWishlistPageDataFromDb = unstable_cache(
+  async () => {
+    const products = await getProductsFromDb();
+    return { products };
+  },
+  ["public-wishlist-page-data"],
+  { revalidate: storefrontCacheSeconds, tags: ["storefront", "storefront-wishlist"] },
+);
 
 export async function getAdminOrdersFromDb(): Promise<AdminOrder[]> {
   if (!isDatabaseConfigured()) return [];

@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { Header } from "@/components/header";
 import { MobileNav } from "@/components/mobile-nav";
 import { OffersClient } from "@/components/offers-client";
-import { getCouponsFromDb } from "@/lib/db";
+import { getPublicOffersPageDataFromDb } from "@/lib/db";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export const metadata: Metadata = {
   title: "Offers",
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 };
 
 export default async function OffersPage() {
-  const coupons = await getCouponsFromDb();
+  const { coupons } = await getPublicOffersPageDataFromDb();
 
   return (
     <>

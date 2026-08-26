@@ -1,10 +1,10 @@
 import { WishlistClient } from "@/components/wishlist-client";
-import { getProductsFromDb } from "@/lib/db";
+import { getPublicWishlistPageDataFromDb } from "@/lib/db";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export default async function WishlistPage() {
-  const products = await getProductsFromDb();
+  const { products } = await getPublicWishlistPageDataFromDb();
 
   return <WishlistClient products={products} />;
 }
