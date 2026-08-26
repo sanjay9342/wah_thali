@@ -17,6 +17,7 @@ type ApiOrder = {
 
 const incomingStatuses: OrderStatus[] = ["NEW", "PENDING_PAYMENT"];
 const settingsUpdateEvent = "wah-thali-admin-alert-settings-updated";
+const ordersUpdatedEvent = "wah-thali-admin-orders-updated";
 
 export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: NewOrderSound }) {
   const [alertEnabled, setAlertEnabled] = useState(enabled);
@@ -27,6 +28,11 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
   const knownOrders = useRef<Set<string>>(new Set());
   const hasLoadedOrders = useRef(false);
   const audioContext = useRef<AudioContext | null>(null);
+  const alarmActive = useRef(false);
+  const alarmSound = useRef<NewOrderSound | null>(null);
+  const alarmAudio = useRef<HTMLAudioElement | null>(null);
+  const alarmTimer = useRef<number | null>(null);
+  const alarmOscillators = useRef<OscillatorNode[]>([]);
   const adminAccess = useAdminAccess();
 
   const getAudioContext = useCallback(() => {
@@ -37,28 +43,34 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
     return audioContext.current;
   }, []);
 
-  const playAlarmSound = useCallback(async () => {
-    if (!alertEnabled) return;
+  const stopAlarmSound = useCallback(() => {
+    alarmActive.current = false;
+    alarmSound.current = null;
 
-    const audioSrc = getNewOrderSoundAudioSrc(alertSound);
-    if (audioSrc) {
-      const audio = new Audio(audioSrc);
-      audio.loop = false;
-      audio.currentTime = 0;
-      const played = await audio.play().then(() => true).catch(() => false);
-      if (played) {
-        window.setTimeout(() => {
-          audio.pause();
-          audio.currentTime = 0;
-        }, getNewOrderSoundDurationMs(alertSound));
-      }
-      setAudioBlocked(!played);
-      setAudioReady(played);
-      return;
+    if (alarmTimer.current !== null) {
+      window.clearTimeout(alarmTimer.current);
+      alarmTimer.current = null;
     }
 
+    if (alarmAudio.current) {
+      alarmAudio.current.pause();
+      alarmAudio.current.currentTime = 0;
+      alarmAudio.current = null;
+    }
+
+    alarmOscillators.current.forEach((oscillator) => {
+      try {
+        oscillator.stop();
+      } catch {
+        // The oscillator may have already stopped naturally.
+      }
+    });
+    alarmOscillators.current = [];
+  }, []);
+
+  const playGeneratedAlarmOnce = useCallback(async () => {
     const audio = getAudioContext();
-    if (!audio) return;
+    if (!audio) return false;
 
     if (audio.state === "suspended") {
       await audio.resume().catch(() => undefined);
@@ -67,7 +79,7 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
     if (audio.state === "suspended") {
       setAudioBlocked(true);
       setAudioReady(false);
-      return;
+      return false;
     }
 
     setAudioBlocked(false);
@@ -86,12 +98,69 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
       gain.gain.setValueAtTime(0.0001, start);
       gain.gain.exponentialRampToValueAtTime(step.gain, start + 0.018);
       gain.gain.exponentialRampToValueAtTime(0.0001, end);
+      oscillator.onended = () => {
+        alarmOscillators.current = alarmOscillators.current.filter((item) => item !== oscillator);
+      };
+      alarmOscillators.current.push(oscillator);
       oscillator.start(start);
       oscillator.stop(end + 0.02);
     });
-  }, [alertEnabled, alertSound, getAudioContext]);
+
+    return true;
+  }, [alertSound, getAudioContext]);
+
+  const startAlarmSound = useCallback(async () => {
+    if (!alertEnabled || alarmActive.current) return;
+
+    alarmActive.current = true;
+    alarmSound.current = alertSound;
+
+    const audioSrc = getNewOrderSoundAudioSrc(alertSound);
+    if (audioSrc) {
+      const audio = new Audio(audioSrc);
+      audio.loop = true;
+      audio.currentTime = 0;
+      alarmAudio.current = audio;
+      const played = await audio.play().then(() => true).catch(() => false);
+
+      if (!alarmActive.current || alarmAudio.current !== audio) {
+        audio.pause();
+        audio.currentTime = 0;
+        return;
+      }
+
+      if (!played) {
+        alarmActive.current = false;
+        alarmSound.current = null;
+        alarmAudio.current = null;
+      }
+
+      setAudioBlocked(!played);
+      setAudioReady(played);
+      return;
+    }
+
+    const playLoop = async () => {
+      if (!alarmActive.current) return;
+      const played = await playGeneratedAlarmOnce();
+      if (!played) {
+        alarmActive.current = false;
+        alarmSound.current = null;
+        return;
+      }
+      if (!alarmActive.current) return;
+      alarmTimer.current = window.setTimeout(playLoop, getNewOrderSoundDurationMs(alertSound) + 550);
+    };
+
+    await playLoop();
+  }, [alertEnabled, alertSound, playGeneratedAlarmOnce]);
 
   const unlockAudio = useCallback(async () => {
+    if (incomingCount > 0) {
+      await startAlarmSound();
+      return;
+    }
+
     const audioSrc = getNewOrderSoundAudioSrc(alertSound);
     if (audioSrc) {
       const audio = new Audio(audioSrc);
@@ -115,14 +184,12 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
     const blocked = audio.state === "suspended";
     setAudioBlocked(blocked);
     setAudioReady(!blocked);
-    if (incomingCount > 0) {
-      await playAlarmSound();
-    }
-  }, [alertSound, getAudioContext, incomingCount, playAlarmSound]);
+  }, [alertSound, getAudioContext, incomingCount, startAlarmSound]);
 
   const refreshOrders = useCallback(async () => {
     if (!alertEnabled) {
       setIncomingCount(0);
+      stopAlarmSound();
       return;
     }
 
@@ -143,9 +210,8 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
 
     if (newIncoming) {
       document.title = `New order ${newIncoming.orderNumber} - Wah Thali Admin`;
-      await playAlarmSound();
     }
-  }, [adminAccess?.session, alertEnabled, playAlarmSound]);
+  }, [adminAccess?.session, alertEnabled, stopAlarmSound]);
 
   const refreshAlertSettings = useCallback(async () => {
     const response = await fetch("/api/settings", { cache: "no-store" });
@@ -163,11 +229,34 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
       if (!detail) return;
       setAlertEnabled(detail.enabled === true);
       setAlertSound(getNewOrderSound(detail.sound));
+      if (detail.enabled !== true) stopAlarmSound();
     }
 
     window.addEventListener(settingsUpdateEvent, handleSettingsUpdate);
     return () => window.removeEventListener(settingsUpdateEvent, handleSettingsUpdate);
-  }, []);
+  }, [stopAlarmSound]);
+
+  useEffect(() => {
+    function handleOrdersUpdated() {
+      void refreshOrders();
+    }
+
+    window.addEventListener(ordersUpdatedEvent, handleOrdersUpdated);
+    return () => window.removeEventListener(ordersUpdatedEvent, handleOrdersUpdated);
+  }, [refreshOrders]);
+
+  useEffect(() => {
+    if (!alertEnabled || incomingCount === 0) {
+      stopAlarmSound();
+      return;
+    }
+
+    if (alarmSound.current && alarmSound.current !== alertSound) {
+      stopAlarmSound();
+    }
+
+    void startAlarmSound();
+  }, [alertEnabled, alertSound, incomingCount, startAlarmSound, stopAlarmSound]);
 
   useEffect(() => {
     const firstRun = window.setTimeout(() => {
@@ -191,9 +280,10 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
 
   useEffect(() => {
     return () => {
+      stopAlarmSound();
       void audioContext.current?.close();
     };
-  }, []);
+  }, [stopAlarmSound]);
 
   if (!alertEnabled || audioReady) return null;
 

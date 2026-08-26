@@ -49,6 +49,7 @@ const incomingStatuses = new Set<OrderStatus>(["NEW", "PENDING_PAYMENT"]);
 const activeStatuses = new Set<OrderStatus>(["CONFIRMED", "PREPARING", "PACKED", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"]);
 const progressStatuses: OrderStatus[] = ["NEW", "CONFIRMED", "PREPARING", "PACKED", "OUT_FOR_DELIVERY", "DELIVERED"];
 const RESET_CONFIRMATION_TEXT = "RESET ORDERS";
+const orderAlertsUpdatedEvent = "wah-thali-admin-orders-updated";
 
 export function AdminOrdersClient({
   initialOrders,
@@ -241,6 +242,9 @@ export function AdminOrdersClient({
         status,
         timeline: data.order?.timeline ?? item.timeline,
       } : item));
+      window.dispatchEvent(new CustomEvent(orderAlertsUpdatedEvent, {
+        detail: { orderNumber: order.orderNumber, status },
+      }));
       await refresh(true);
       setDeclineOrder(null);
       setReason("");
@@ -321,6 +325,9 @@ export function AdminOrdersClient({
       setStatusFilter("all");
       setNewOrderAlert(null);
       setCancelledOrderAlert(null);
+      window.dispatchEvent(new CustomEvent(orderAlertsUpdatedEvent, {
+        detail: { reset: true },
+      }));
       closeResetDialog();
       setMessage(`Reset complete. Deleted ${data.deleted?.orders ?? 0} orders, customer order history is clear, and customer accounts were kept.`);
     });
