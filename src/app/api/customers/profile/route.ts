@@ -39,7 +39,10 @@ const publicCustomerSelect = {
     },
     orderBy: { createdAt: "desc" as const },
     take: 20,
-    include: { items: true },
+    include: {
+      items: true,
+      timeline: { orderBy: { createdAt: "asc" as const } },
+    },
   },
 };
 

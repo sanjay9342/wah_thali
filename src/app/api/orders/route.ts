@@ -65,10 +65,6 @@ async function calculateServerOrder(lines: CartLine[], couponCode: string | unde
     const product = products.find((item) => item.id === line.productId);
     if (!product) throw new Error(`Product ${line.productId} was not found.`);
     if (!product.available) throw new Error(`${product.name} is currently unavailable.`);
-    if (product.inventory && product.inventory.stock < line.quantity) {
-      throw new Error(`${product.name} has only ${product.inventory.stock} portions left.`);
-    }
-
     const variant =
       product.variants.find((item) => item.id === `${product.id}-${line.variantId}` || item.id === line.variantId) ??
       product.variants.find((item) => item.name.toLowerCase() === "regular") ??
@@ -243,14 +239,20 @@ async function postHandler(request: Request) {
     }
   }
 
-  const calculated = await calculateServerOrder(data.items, data.couponCode, settings, couponCustomer, deliveryCoverage.distanceKm, data.fulfillmentMethod).catch((error) => {
+  const calculatedResult = await calculateServerOrder(data.items, data.couponCode, settings, couponCustomer, deliveryCoverage.distanceKm, data.fulfillmentMethod)
+    .then((order) => ({ order, error: null as string | null }))
+    .catch((error) => {
     console.error("Server order validation failed.", error);
-    return null;
+    return {
+      order: null,
+      error: error instanceof Error ? error.message : null,
+    };
   });
 
-  if (!calculated) {
-    return NextResponse.json({ error: "Some cart items are no longer available. Please refresh your cart." }, { status: 409 });
+  if (!calculatedResult.order) {
+    return NextResponse.json({ error: calculatedResult.error || "Some cart items are no longer available. Please refresh your cart." }, { status: 409 });
   }
+  const calculated = calculatedResult.order;
 
   if (data.couponCode && !calculated.couponCode) {
     return NextResponse.json({ error: "This coupon is not eligible for this customer or order." }, { status: 409 });
@@ -313,16 +315,6 @@ async function postHandler(request: Request) {
       },
       select: { id: true },
     });
-
-    for (const item of calculated.items) {
-      const updated = await tx.inventoryItem.updateMany({
-        where: { productId: item.productId, stock: { gte: item.quantity } },
-        data: { stock: { decrement: item.quantity } },
-      });
-      if (updated.count === 0) {
-        throw new Error(`Stock reservation failed for ${item.name}.`);
-      }
-    }
 
     return tx.order.create({
       data: {
@@ -388,7 +380,7 @@ async function postHandler(request: Request) {
   });
 
   if (!order) {
-    return NextResponse.json({ error: "Order could not be created because stock changed. Please review your cart." }, { status: 409 });
+    return NextResponse.json({ error: "Order could not be created. Please review your cart and try again." }, { status: 409 });
   }
 
   await logActivity({

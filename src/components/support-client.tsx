@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, ChevronRight, CreditCard, MessageCircle, PackageCheck, Phone, RefreshCcw, Search, UserRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronRight, CreditCard, MapPin, MessageCircle, PackageCheck, Phone, RefreshCcw, Search, UserRound } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -12,6 +12,7 @@ const topicIcons = {
   "order-issues": PackageCheck,
   "returns-refunds": RefreshCcw,
   payments: CreditCard,
+  "delivery-pickup": MapPin,
   account: UserRound,
 };
 

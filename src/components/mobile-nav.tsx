@@ -2,7 +2,7 @@
 
 import { Gift, Home, PackageCheck, Search, User } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 
@@ -16,6 +16,7 @@ const items = [
 
 export function MobileNav() {
   const pathname = usePathname();
+  const router = useRouter();
   const [session, setSession] = useState<CustomerSession | null>(null);
 
   useEffect(() => {
@@ -26,6 +27,12 @@ export function MobileNav() {
     refreshSession();
     return subscribeCustomerSession(refreshSession);
   }, []);
+
+  useEffect(() => {
+    ["/", "/menu", "/orders", "/offers", "/account"].forEach((href) => {
+      router.prefetch(href);
+    });
+  }, [router]);
 
   return (
     <nav
@@ -42,6 +49,8 @@ export function MobileNav() {
             <Link
               key={href}
               href={resolvedHref}
+              onMouseEnter={() => router.prefetch(resolvedHref)}
+              onTouchStart={() => router.prefetch(resolvedHref)}
               className={`grid min-w-0 place-items-center gap-1.5 text-[10px] font-semibold ${active ? "text-red" : "text-muted"}`}
               aria-current={active ? "page" : undefined}
             >

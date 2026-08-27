@@ -5,6 +5,7 @@ import { ChevronRight, LogIn, PackageCheck, Search } from "lucide-react";
 import Link from "next/link";
 import { OrderReorderButton } from "@/components/order-reorder-button";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
+import { getOrderFulfillmentDetails } from "@/lib/order-fulfillment";
 import { formatRupees } from "@/lib/pricing";
 import { formatIstDateTimeShort } from "@/lib/time";
 
@@ -15,6 +16,7 @@ type CustomerOrder = {
   grandTotal: number;
   createdAt: string;
   items: { id: string; productId: string; name: string; quantity: number; price: number }[];
+  timeline?: { note?: string | null }[];
 };
 
 type CustomerProfile = {
@@ -23,16 +25,29 @@ type CustomerProfile = {
   orders: CustomerOrder[];
 };
 
+const ordersCachePrefix = "wah-thali-orders-profile:";
+
 export function OrdersClient() {
   const [session, setSession] = useState<CustomerSession | null>(null);
   const [profile, setProfile] = useState<CustomerProfile | null>(null);
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
     function refreshSession() {
-      setSession(readCustomerSession());
+      const nextSession = readCustomerSession();
+      setSession(nextSession);
+      setSessionReady(true);
+      if (nextSession?.mobile) {
+        const cachedProfile = readCachedProfile(nextSession.mobile);
+        if (cachedProfile) setProfile(cachedProfile);
+        setLoading(!cachedProfile);
+      } else {
+        setProfile(null);
+        setLoading(false);
+      }
     }
 
     refreshSession();
@@ -49,7 +64,10 @@ export function OrdersClient() {
         return;
       }
 
-      if (showLoading) setLoading(true);
+      const cachedProfile = readCachedProfile(session.mobile);
+      if (cachedProfile) setProfile(cachedProfile);
+      if (showLoading && !cachedProfile) setLoading(true);
+      setMessage("");
       try {
         const response = await fetch(`/api/customers/profile?mobile=${encodeURIComponent(session.mobile)}`, { cache: "no-store" });
         const data = await response.json();
@@ -57,7 +75,10 @@ export function OrdersClient() {
           if (!cancelled) setMessage(data.error || "Could not load your orders.");
           return;
         }
-        if (!cancelled) setProfile(data.customer);
+        if (!cancelled) {
+          setProfile(data.customer);
+          writeCachedProfile(session.mobile, data.customer);
+        }
       } catch {
         if (!cancelled) setMessage("Could not load your orders. Please check your connection.");
       } finally {
@@ -91,6 +112,16 @@ export function OrdersClient() {
       `${order.orderNumber} ${order.items.map((item) => item.name).join(" ")}`.toLowerCase().includes(needle),
     );
   }, [profile?.orders, query]);
+
+  if (!sessionReady) {
+    return (
+      <main className="mx-auto min-h-screen w-full max-w-[430px] bg-white px-4 pb-32 pt-4 text-charcoal sm:max-w-5xl sm:px-6 lg:max-w-none lg:px-0 lg:pb-14 lg:pt-8">
+        <div className="mx-auto w-full lg:max-w-[1248px] lg:px-8">
+          <SmallLoadingStatus text="Opening orders" />
+        </div>
+      </main>
+    );
+  }
 
   if (!session) {
     return (
@@ -135,9 +166,12 @@ export function OrdersClient() {
       {message ? <p className="mt-4 rounded-2xl bg-cream p-3 text-center text-xs font-black text-muted">{message}</p> : null}
 
       <section className="mt-4 grid gap-3 lg:mt-5 lg:grid-cols-2 lg:gap-5 xl:grid-cols-3">
-        {loading ? (
-          <div className="rounded-[18px] bg-white p-4 text-center text-xs font-black text-muted shadow-sm ring-1 ring-border lg:col-span-2 xl:col-span-3">Loading orders...</div>
-        ) : orders.length ? orders.map((order) => (
+        {loading && !profile ? (
+          <SmallLoadingStatus text="Checking orders" className="lg:col-span-2 xl:col-span-3" />
+        ) : orders.length ? orders.map((order) => {
+          const fulfillmentDetails = getOrderFulfillmentDetails(order.timeline);
+
+          return (
           <article key={order.orderNumber} className="overflow-hidden rounded-[18px] bg-white shadow-[0_10px_26px_rgba(34,31,32,0.05)] ring-1 ring-border">
             <div className="grid grid-cols-[42px_1fr] gap-3 p-3">
               <div className="grid h-[42px] w-[42px] place-items-center rounded-lg bg-cream text-maroon">
@@ -149,6 +183,11 @@ export function OrdersClient() {
                 <span className={`mt-1.5 inline-flex rounded-md px-2 py-0.5 text-[10px] font-black ${getOrderStatusTone(order.status)}`}>
                   {formatStatus(order.status)}
                 </span>
+                {fulfillmentDetails.isPickup ? (
+                  <span className="ml-2 mt-1.5 inline-flex rounded-md bg-[#effaf4] px-2 py-0.5 text-[10px] font-black text-[#0f7a45]">
+                    Self pickup
+                  </span>
+                ) : null}
                 <Link href={`/order/${order.orderNumber}/track`} className="mt-1 inline-flex text-xs font-black text-maroon">
                   Track order
                   <ChevronRight size={13} />
@@ -169,9 +208,11 @@ export function OrdersClient() {
                 <span className="text-sm font-black text-charcoal">{formatRupees(order.grandTotal)}</span>
                 <OrderReorderButton items={order.items} />
               </div>
+              {fulfillmentDetails.isPickup ? <p className="mt-2 text-[11px] font-black text-[#0f7a45]">No delivery charge on this pickup order.</p> : null}
             </div>
           </article>
-        )) : (
+          );
+        }) : (
           <section className="rounded-[24px] bg-white p-6 text-center shadow-sm ring-1 ring-border lg:col-span-2 xl:col-span-3">
             <PackageCheck className="mx-auto text-maroon" size={34} />
             <h2 className="mt-3 text-[20px] font-black text-charcoal">No orders yet</h2>
@@ -185,6 +226,45 @@ export function OrdersClient() {
       </div>
     </main>
   );
+}
+
+function SmallLoadingStatus({ text, className = "" }: { text: string; className?: string }) {
+  return (
+    <div className={`flex justify-center py-2 ${className}`}>
+      <span className="inline-flex h-8 items-center gap-2 rounded-full bg-[#fff4f5] px-3 text-[11px] font-black text-maroon ring-1 ring-[#f1dce1]">
+        <span className="h-1.5 w-1.5 rounded-full bg-maroon" />
+        {text}
+      </span>
+    </div>
+  );
+}
+
+function readCachedProfile(mobile: string): CustomerProfile | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.sessionStorage.getItem(`${ordersCachePrefix}${mobile}`);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return isCustomerProfile(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedProfile(mobile: string, profile: CustomerProfile) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.setItem(`${ordersCachePrefix}${mobile}`, JSON.stringify(profile));
+  } catch {
+    // If storage is unavailable, the live fetch still keeps the page accurate.
+  }
+}
+
+function isCustomerProfile(value: unknown): value is CustomerProfile {
+  if (!value || typeof value !== "object") return false;
+  const profile = value as Partial<CustomerProfile>;
+  return typeof profile.name === "string" && typeof profile.mobile === "string" && Array.isArray(profile.orders);
 }
 
 function formatOrderDate(value: string) {

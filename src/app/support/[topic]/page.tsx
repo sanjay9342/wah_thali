@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { CreditCard, MessageCircle, PackageCheck, Phone, RefreshCcw, UserRound } from "lucide-react";
+import { CreditCard, MapPin, MessageCircle, PackageCheck, Phone, RefreshCcw, UserRound } from "lucide-react";
 import Link from "next/link";
 import { Header } from "@/components/header";
 import { MobileNav } from "@/components/mobile-nav";
@@ -12,6 +12,7 @@ const topicIcons = {
   "order-issues": PackageCheck,
   "returns-refunds": RefreshCcw,
   payments: CreditCard,
+  "delivery-pickup": MapPin,
   account: UserRound,
 };
 

@@ -66,6 +66,7 @@ export function getPricableCartLines(lines: CartLine[], productCatalog: Product[
   return lines.filter((line) => {
     const product = productCatalog.find((item) => item.id === line.productId);
     if (!product) return false;
+    if (!product.available) return false;
     const variant = getCartLineVariant(product, line.variantId);
     if (!variant) return false;
     return line.addonIds.every((addonId) => product.addons.some((item) => item.id === addonId));

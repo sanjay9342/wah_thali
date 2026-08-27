@@ -163,6 +163,7 @@ export function CartClient({
   const fulfillmentTimeLabel = isPickup
     ? `Pickup in about ${restaurantSettings.defaultPrepMinutes} min`
     : "Delivery in 30-35 mins";
+  const fulfillmentChargeNote = isPickup ? "Self pickup: no delivery charge" : "Incl. taxes and charges";
 
   const totals = useMemo(
     () => calculateCartTotals(validLines, couponEligible ? coupon : undefined, initialProducts, initialCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm),
@@ -171,12 +172,14 @@ export function CartClient({
   const suggestions = useMemo(() => {
     const cartProductIds = new Set(validLines.map((line) => line.productId));
     const selectedCategories = new Set(cartSuggestionCategories);
-    const availableSuggestions = initialProducts.filter((product) =>
+    const availableProducts = initialProducts.filter((product) =>
       product.available &&
-      !cartProductIds.has(product.id) &&
-      (!selectedCategories.size || selectedCategories.has(product.category)),
+      !cartProductIds.has(product.id),
     );
-    return availableSuggestions.slice(0, 10);
+
+    if (!selectedCategories.size) return availableProducts.slice(0, 10);
+
+    return availableProducts.filter((product) => selectedCategories.has(product.category)).slice(0, 10);
   }, [cartSuggestionCategories, initialProducts, validLines]);
   const orderingStatus = getStoreOrderingStatus(restaurantSettings);
   const storeOrderingDisabled = orderingStatus.unavailable;
@@ -199,7 +202,7 @@ export function CartClient({
     ...(restaurantSettings.codEnabled ? ["COD" as const] : []),
   ];
   const selectedPaymentMethod = paymentOptions.includes(paymentMethod) ? paymentMethod : paymentOptions[0];
-  const paymentLabel = getPaymentLabel(selectedPaymentMethod);
+  const paymentLabel = getPaymentLabel(selectedPaymentMethod, fulfillmentMethod);
   const itemSavings = validLines.reduce((total, line) => {
     const product = initialProducts.find((item) => item.id === line.productId);
     if (!product) return total;
@@ -688,10 +691,6 @@ export function CartClient({
       router.push("/login?next=/cart");
       return;
     }
-    if (!isPickup && (!hasDeliveryAddress || !serviceable)) {
-      openLocationSheet();
-      return;
-    }
     if (!selectedPaymentMethod) {
       setCheckoutMessage("No payment method is available right now.");
       return;
@@ -791,14 +790,6 @@ export function CartClient({
             </span>
           </div>
 
-          <FulfillmentSelector
-            value={fulfillmentMethod}
-            onChange={setFulfillmentMethod}
-            deliveryAddress={deliveryLocation.address}
-            pickupAddress={restaurantSettings.kitchenAddress}
-            pickupMinutes={restaurantSettings.defaultPrepMinutes}
-          />
-
           <div className="space-y-3">
             {validLines.map((line, index) => {
               const product = initialProducts.find((item) => item.id === line.productId);
@@ -874,6 +865,7 @@ export function CartClient({
             <CompactMealSuggestions
               products={suggestions}
               categoryOffers={initialCategoryOffers}
+              categoryLabel={cartSuggestionCategories[0]}
               onAdd={addSuggestedProduct}
               className="mt-5"
             />
@@ -888,10 +880,16 @@ export function CartClient({
                 <dt className="font-bold text-[#1f2937]">Item Total</dt>
                 <dd className="font-black text-charcoal">{formatRupees(totals.subtotal)}</dd>
               </div>
-              <div className="flex items-center justify-between gap-4">
-                <dt className="font-bold text-[#1f2937]">{isPickup ? "Pickup Fee" : "Delivery Fee"}</dt>
-                <dd className="font-black text-charcoal">{formatRupees(totals.delivery)}</dd>
-              </div>
+              {!isPickup ? (
+                <div className="flex items-center justify-between gap-4">
+                  <dt className="font-bold text-[#1f2937]">Delivery Fee</dt>
+                  <dd className="font-black text-charcoal">{formatRupees(totals.delivery)}</dd>
+                </div>
+              ) : (
+                <div className="rounded-xl bg-white px-3 py-2 text-[12px] font-black text-[#0f7a45] ring-1 ring-[#dcefe4]">
+                  Self pickup selected - no delivery charge
+                </div>
+              )}
               <div className="flex items-center justify-between gap-4">
                 <dt className="font-bold text-[#1f2937]">GST</dt>
                 <dd className="font-black text-charcoal">{formatRupees(totals.gst)}</dd>
@@ -925,7 +923,7 @@ export function CartClient({
                         : "bg-white text-charcoal ring-border"
                     }`}
                   >
-                    {getPaymentLabel(option)}
+                    {getPaymentLabel(option, fulfillmentMethod)}
                   </button>
                 ))}
               </div>
@@ -945,10 +943,6 @@ export function CartClient({
             {storeOrderingDisabled ? (
               <button disabled className="mt-5 h-12 w-full cursor-not-allowed rounded-2xl bg-muted/30 text-base font-black text-muted">
                 Orders closed
-              </button>
-            ) : !serviceable ? (
-              <button type="button" onClick={openLocationSheet} className="mt-5 h-12 w-full rounded-2xl bg-maroon text-base font-black text-white">
-                Choose Location
               </button>
             ) : paymentOptions.length ? (
               <button
@@ -992,16 +986,6 @@ export function CartClient({
           <p className="mt-1 text-[11px] font-bold text-muted">{statusMessage}</p>
         </div>
       ) : null}
-      <div className="mx-3 mt-4">
-        <FulfillmentSelector
-          value={fulfillmentMethod}
-          onChange={setFulfillmentMethod}
-          deliveryAddress={deliveryLocation.address}
-          pickupAddress={restaurantSettings.kitchenAddress}
-          pickupMinutes={restaurantSettings.defaultPrepMinutes}
-        />
-      </div>
-
       {!isPickup && !serviceable ? (
         <div className="mx-3 mt-4 rounded-2xl border border-maroon/15 bg-white p-3.5 text-[13px] text-maroon">
           <p className="flex items-center gap-2 font-black">
@@ -1096,12 +1080,13 @@ export function CartClient({
       </div>
 
       {suggestions.length ? (
-        <CompactMealSuggestions
-          products={suggestions}
-          categoryOffers={initialCategoryOffers}
-          onAdd={addSuggestedProduct}
-          className="mx-3 mt-4"
-        />
+          <CompactMealSuggestions
+            products={suggestions}
+            categoryOffers={initialCategoryOffers}
+            categoryLabel={cartSuggestionCategories[0]}
+            onAdd={addSuggestedProduct}
+            className="mx-3 mt-4"
+          />
       ) : null}
 
       <div className="mx-3 mt-4 overflow-hidden rounded-[18px] bg-white shadow-sm">
@@ -1181,7 +1166,7 @@ export function CartClient({
           <CartInfoRow
             icon={<ReceiptText size={18} />}
             title={`Total Bill ${formatRupees(totals.grandTotal)}`}
-            body="Incl. taxes and charges"
+            body={fulfillmentChargeNote}
             badge={totalSavings > 0 ? `You saved ${formatRupees(totalSavings)}` : undefined}
             onClick={() => setShowBillSummary(true)}
           />
@@ -1205,7 +1190,7 @@ export function CartClient({
                 selectedPaymentMethod === option ? "bg-maroon text-white" : "bg-[#f6f7fb] text-charcoal"
               }`}
             >
-              {getPaymentLabel(option)}
+              {getPaymentLabel(option, fulfillmentMethod)}
             </button>
           ))}
         </div>
@@ -1246,13 +1231,19 @@ export function CartClient({
                     {formatRupees(totals.subtotal)}
                   </dd>
                 </div>
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="border-b border-dashed border-charcoal font-extrabold text-charcoal">{isPickup ? "Pickup fee" : "Delivery partner fee"}</dt>
-                  <dd className="font-extrabold text-charcoal">
-                    {!isPickup && totals.delivery === 0 ? <span className="mr-2 text-muted line-through">{formatRupees(restaurantSettings.deliveryFee)}</span> : null}
-                    {formatRupees(totals.delivery)}
-                  </dd>
-                </div>
+                {!isPickup ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="border-b border-dashed border-charcoal font-extrabold text-charcoal">Delivery partner fee</dt>
+                    <dd className="font-extrabold text-charcoal">
+                      {totals.delivery === 0 ? <span className="mr-2 text-muted line-through">{formatRupees(restaurantSettings.deliveryFee)}</span> : null}
+                      {formatRupees(totals.delivery)}
+                    </dd>
+                  </div>
+                ) : (
+                  <div className="rounded-xl bg-[#effaf4] px-3 py-2 text-[12px] font-black text-[#0f7a45]">
+                    Self pickup selected - no delivery charge
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-3">
                   <dt className="border-b border-dashed border-charcoal font-extrabold text-charcoal">Platform fee</dt>
                   <dd className="font-extrabold text-charcoal">{formatRupees(totals.packaging)}</dd>
@@ -1289,7 +1280,7 @@ export function CartClient({
       {showReceiverSheet ? (
         <BottomSheet onClose={() => setShowReceiverSheet(false)} title="Update receiver details">
           <p className="mt-1 text-[13px] font-bold leading-5 text-muted">
-            {deliveryLocation.label} - {deliveryLocation.address}
+            {isPickup ? `Self pickup - ${fulfillmentAddress}` : `${deliveryLocation.label} - ${deliveryLocation.address}`}
           </p>
           <div className="mt-5 rounded-[18px] bg-white p-4 shadow-sm">
             <label className="block rounded-xl border border-border bg-white px-3 py-2">
@@ -1420,6 +1411,7 @@ export function CartClient({
           paymentLabel={paymentLabel}
           total={totals.grandTotal}
           submitting={submitting}
+          onFulfillmentChange={setFulfillmentMethod}
           onClose={() => setShowOrderConfirmSheet(false)}
           onEditLocation={isPickup ? undefined : () => {
             setShowOrderConfirmSheet(false);
@@ -1450,14 +1442,6 @@ export function CartClient({
           {storeOrderingDisabled ? (
             <button disabled className="h-13 cursor-not-allowed rounded-2xl bg-muted/30 text-[15px] font-black text-muted">
               Orders closed
-            </button>
-          ) : !serviceable ? (
-            <button
-              type="button"
-              onClick={openLocationSheet}
-              className="flex h-13 items-center justify-center rounded-2xl bg-maroon text-[15px] font-black text-white shadow-[0_10px_24px_rgba(141,0,33,0.28)]"
-            >
-              Choose Location
             </button>
           ) : !customerSession?.mobile ? (
             <button
@@ -1499,12 +1483,12 @@ function BottomSheet({
   return (
     <div className="fixed inset-0 z-[72] flex items-end bg-charcoal/60" onClick={onClose}>
       <section
-        className="max-h-[72vh] w-full overflow-y-auto rounded-t-[26px] bg-[#f6f7fb] px-4 pb-[calc(env(safe-area-inset-bottom)+22px)] pt-5 shadow-[0_-18px_48px_rgba(17,24,39,0.25)]"
+        className="grid max-h-[72vh] w-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-t-[26px] bg-[#f6f7fb] shadow-[0_-18px_48px_rgba(17,24,39,0.25)]"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
-        <div className="grid grid-cols-[minmax(0,1fr)_40px] items-start gap-3">
+        <div className="grid grid-cols-[minmax(0,1fr)_40px] items-start gap-3 bg-[#f6f7fb] px-4 pb-3 pt-5">
           <h2 className="min-w-0 text-[22px] font-black leading-tight text-charcoal">{title}</h2>
           <button
             type="button"
@@ -1515,7 +1499,9 @@ function BottomSheet({
             <X size={22} strokeWidth={3} />
           </button>
         </div>
-        {children}
+        <div className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-[calc(env(safe-area-inset-bottom)+22px)]">
+          {children}
+        </div>
       </section>
     </div>
   );
@@ -1524,39 +1510,30 @@ function BottomSheet({
 function FulfillmentSelector({
   value,
   onChange,
-  deliveryAddress,
-  pickupAddress,
-  pickupMinutes,
 }: {
   value: FulfillmentMethod;
   onChange: (value: FulfillmentMethod) => void;
-  deliveryAddress: string;
-  pickupAddress: string;
-  pickupMinutes: number;
 }) {
   const options: {
     value: FulfillmentMethod;
     title: string;
-    body: string;
     icon: ReactNode;
   }[] = [
     {
       value: "DELIVERY",
       title: "Delivery",
-      body: deliveryAddress && deliveryAddress !== "Select delivery location" ? deliveryAddress : "Choose delivery location",
       icon: <MapPin size={18} />,
     },
     {
       value: "PICKUP",
       title: "Self pickup",
-      body: `${pickupAddress || "Wah Thali kitchen"} | About ${pickupMinutes} min`,
       icon: <Store size={18} />,
     },
   ];
 
   return (
-    <section className="mb-5 rounded-[16px] bg-white p-2 shadow-sm ring-1 ring-[#eef1f6]">
-      <div className="grid gap-2 sm:grid-cols-2">
+    <section className="mb-4 rounded-[16px] bg-white p-1.5 shadow-sm ring-1 ring-[#eef1f6]">
+      <div className="grid grid-cols-2 gap-1.5">
         {options.map((option) => {
           const active = value === option.value;
 
@@ -1565,19 +1542,16 @@ function FulfillmentSelector({
               key={option.value}
               type="button"
               onClick={() => onChange(option.value)}
-              className={`grid min-h-[78px] grid-cols-[34px_minmax(0,1fr)] items-center gap-3 rounded-[13px] px-3 py-3 text-left ring-1 ${
+              className={`flex min-h-12 items-center justify-center gap-2 rounded-[13px] px-2.5 py-2 text-center ring-1 ${
                 active
                   ? "bg-[#fff4f5] text-maroon ring-maroon"
                   : "bg-[#f6f7fb] text-charcoal ring-transparent hover:bg-white hover:ring-border"
               }`}
             >
-              <span className={`grid h-9 w-9 place-items-center rounded-xl ${active ? "bg-maroon text-white" : "bg-white text-maroon"}`}>
+              <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl ${active ? "bg-maroon text-white" : "bg-white text-maroon"}`}>
                 {option.icon}
               </span>
-              <span className="min-w-0">
-                <span className="block text-[14px] font-black">{option.title}</span>
-                <span className="mt-1 block line-clamp-2 text-[12px] font-bold leading-4 text-muted">{option.body}</span>
-              </span>
+              <span className="min-w-0 truncate text-[13px] font-black leading-tight sm:text-[14px]">{option.title}</span>
             </button>
           );
         })}
@@ -1595,6 +1569,7 @@ function OrderConfirmationSheet({
   paymentLabel,
   total,
   submitting,
+  onFulfillmentChange,
   onClose,
   onEditLocation,
   onEditReceiver,
@@ -1608,6 +1583,7 @@ function OrderConfirmationSheet({
   paymentLabel: string;
   total: number;
   submitting: boolean;
+  onFulfillmentChange: (value: FulfillmentMethod) => void;
   onClose: () => void;
   onEditLocation?: () => void;
   onEditReceiver: () => void;
@@ -1616,8 +1592,15 @@ function OrderConfirmationSheet({
   return (
     <BottomSheet title="Confirm order details" onClose={onClose}>
       <p className="mt-2 text-[14px] font-bold leading-5 text-muted">
-        Please check your {fulfillmentMethod === "PICKUP" ? "pickup" : "delivery"} details and receiver phone before we place your order.
+        Please confirm {fulfillmentMethod === "PICKUP" ? "self pickup" : "delivery"} and receiver phone before we place your order.
       </p>
+
+      <div className="mt-5">
+        <FulfillmentSelector
+          value={fulfillmentMethod}
+          onChange={onFulfillmentChange}
+        />
+      </div>
 
       <div className="mt-6 overflow-hidden rounded-[20px] bg-white shadow-sm ring-1 ring-border">
         <ConfirmDetailRow
@@ -1836,26 +1819,32 @@ function CookingNoteSheet({
 function CompactMealSuggestions({
   products,
   categoryOffers,
+  categoryLabel,
   onAdd,
   className = "",
 }: {
   products: Product[];
   categoryOffers: CategoryOfferMap;
+  categoryLabel?: string;
   onAdd: (product: Product) => void;
   className?: string;
 }) {
   return (
-    <section className={`rounded-[16px] bg-white p-3 shadow-sm ring-1 ring-[#eef1f6] ${className}`}>
-      <div className="mb-2.5 flex items-center gap-2">
-        <span className="grid h-7 w-7 place-items-center rounded-full bg-[#f5f6fb] text-charcoal">
-          <Grid2X2 size={14} />
+    <section className={`overflow-hidden rounded-[18px] bg-white px-3.5 py-4 shadow-sm ring-1 ring-[#eef1f6] ${className}`}>
+      <div className="flex items-center gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#f6f7fb] text-charcoal">
+          <Grid2X2 size={18} strokeWidth={2.6} />
         </span>
-        <h2 className="text-[13px] font-semibold text-charcoal">Complete your meal with</h2>
+        <span className="min-w-0">
+          <h2 className="text-[16px] font-black leading-5 text-charcoal">Complete your meal with</h2>
+          {categoryLabel ? <span className="mt-1 inline-flex max-w-full rounded-full bg-[#fff4f5] px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-maroon">{categoryLabel}</span> : null}
+        </span>
       </div>
-      <div className="flex gap-2.5 overflow-x-auto pb-1">
+
+      <div className="-mx-3.5 mt-4 flex snap-x gap-3 overflow-x-auto px-3.5 pb-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {products.map((product) => (
-          <article key={product.id} className="w-[88px] shrink-0">
-            <div className="relative h-[70px] w-[88px] overflow-hidden rounded-[11px] bg-cream ring-1 ring-border">
+          <article key={product.id} className="w-[116px] shrink-0 snap-start sm:w-[128px]">
+            <div className="relative h-[98px] w-full overflow-hidden rounded-[12px] bg-cream ring-1 ring-[#e8edf4] sm:h-[108px]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={product.image || "/wah-thali-meal-cutout-v2.png"}
@@ -1866,19 +1855,20 @@ function CompactMealSuggestions({
                   event.currentTarget.src = "/wah-thali-meal-cutout-v2.png";
                 }}
               />
+              <span className="absolute bottom-1.5 left-1.5">
+                <DietaryMark type={product.dietaryType} />
+              </span>
               <button
+                type="button"
                 onClick={() => onAdd(product)}
-                className="absolute bottom-1 right-1 grid h-7 w-7 place-items-center rounded-lg bg-white text-maroon shadow ring-1 ring-border"
+                className="absolute bottom-1.5 right-1.5 grid h-8 w-8 place-items-center rounded-[10px] bg-white text-red shadow-[0_6px_14px_rgba(34,31,32,0.14)] ring-1 ring-[#f0b4c1]"
                 aria-label={`Add ${product.name}`}
               >
-                <Plus size={17} strokeWidth={3} />
+                <Plus size={20} strokeWidth={2.8} />
               </button>
             </div>
-            <div className="mt-2 flex items-start gap-1">
-              <DietaryMark type={product.dietaryType} />
-              <p className="line-clamp-2 text-[11px] font-medium leading-3.5 text-charcoal">{product.name}</p>
-            </div>
-            <p className="mt-1 text-[12px] font-semibold text-charcoal">{formatRupees(getProductUnitPricing(product, categoryOffers).unitPrice)}</p>
+            <h3 className="mt-2 line-clamp-2 min-h-[32px] text-left text-[13px] font-black leading-4 text-charcoal">{product.name}</h3>
+            <p className="mt-0.5 text-left text-[13px] font-bold leading-4 text-charcoal">{formatRupees(getProductUnitPricing(product, categoryOffers).unitPrice)}</p>
           </article>
         ))}
       </div>
@@ -1975,8 +1965,8 @@ function getCustomerTagNames(tags: unknown): string[] {
     .filter(Boolean);
 }
 
-function getPaymentLabel(method?: PaymentMethod) {
+function getPaymentLabel(method?: PaymentMethod, fulfillmentMethod: FulfillmentMethod = "DELIVERY") {
   if (method === "RAZORPAY") return "Online Pay";
-  if (method === "COD") return "Cash on Delivery";
+  if (method === "COD") return fulfillmentMethod === "PICKUP" ? "Cash at pickup" : "Cash on Delivery";
   return "Payment unavailable";
 }

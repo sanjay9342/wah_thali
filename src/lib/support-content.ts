@@ -57,6 +57,25 @@ export const supportTopics = [
     ],
   },
   {
+    slug: "delivery-pickup",
+    title: "Delivery & Pickup",
+    body: "Delivery area, location checks, delivery fee, and self-pickup help.",
+    questions: [
+      {
+        title: "How does self pickup work?",
+        body: "Choose Self pickup in the final order confirmation. No delivery charge is added, and you can collect the order from the Wah Thali kitchen address shown before payment.",
+      },
+      {
+        title: "Can I choose pickup if delivery is not available?",
+        body: "Yes. If your location is outside the delivery area, choose Self pickup before confirming the order and collect it directly from the kitchen.",
+      },
+      {
+        title: "When should I collect a pickup order?",
+        body: "Follow the live order tracker. Please collect once it shows Ready for pickup so the food stays fresh and hot.",
+      },
+    ],
+  },
+  {
     slug: "account",
     title: "Account",
     body: "Login, profile, saved address, and account data help.",

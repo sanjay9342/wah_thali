@@ -3,7 +3,7 @@ import { LegalPage } from "@/components/legal-page";
 import { getPolicy } from "@/lib/business";
 
 export const metadata: Metadata = {
-  title: "Delivery Policy | Wah Thali",
+  title: "Delivery and Self Pickup Policy | Wah Thali",
 };
 
 export default function DeliveryPolicyPage() {

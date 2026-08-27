@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Header } from "@/components/header";
 import { MobileNav } from "@/components/mobile-nav";
 import { getRestaurantSettingsFromDb } from "@/lib/db";
+import { getOrderFulfillmentDetails } from "@/lib/order-fulfillment";
 import { formatRupees } from "@/lib/pricing";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
@@ -25,12 +26,14 @@ export default async function ConfirmedPage({
       customer: { select: { id: true, name: true, mobile: true, email: true } },
       items: true,
       payments: true,
+      timeline: { orderBy: { createdAt: "asc" } },
     },
   });
 
   if (!order) notFound();
 
-  const paymentSummary = getPaymentSummary(order.payments[0]);
+  const fulfillmentDetails = getOrderFulfillmentDetails(order.timeline);
+  const paymentSummary = getPaymentSummary(order.payments[0], fulfillmentDetails.isPickup);
 
   return (
     <>
@@ -44,8 +47,8 @@ export default async function ConfirmedPage({
           </p>
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl bg-cream p-4">
-              <p className="text-sm text-muted">ETA</p>
-              <p className="text-xl font-black">{restaurantSettings.defaultPrepMinutes} min</p>
+              <p className="text-sm text-muted">{fulfillmentDetails.isPickup ? "Pickup" : "ETA"}</p>
+              <p className="text-xl font-black">{fulfillmentDetails.isPickup ? "Self pickup" : `${restaurantSettings.defaultPrepMinutes} min`}</p>
             </div>
             <div className="rounded-xl bg-cream p-4">
               <p className="text-sm text-muted">Payment</p>
@@ -56,6 +59,11 @@ export default async function ConfirmedPage({
               <p className="text-xl font-black">{formatRupees(order.grandTotal)}</p>
             </div>
           </div>
+          {fulfillmentDetails.isPickup ? (
+            <p className="mx-auto mt-4 max-w-md rounded-xl bg-[#effaf4] px-4 py-3 text-sm font-black text-[#0f7a45]">
+              Self pickup selected - no delivery charge added.
+            </p>
+          ) : null}
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Link href={`/order/${order.orderNumber}/track`} className="inline-flex h-12 items-center gap-2 rounded-lg bg-red px-5 font-black text-white">
               <ReceiptText size={18} /> Track order
@@ -77,9 +85,9 @@ export default async function ConfirmedPage({
   );
 }
 
-function getPaymentSummary(payment?: { provider: string; status: string }) {
-  if (!payment) return "Cash on Delivery";
-  if (payment.provider === "COD") return "Cash on Delivery";
+function getPaymentSummary(payment?: { provider: string; status: string }, isPickup = false) {
+  if (!payment) return isPickup ? "Cash at pickup" : "Cash on Delivery";
+  if (payment.provider === "COD") return isPickup ? "Cash at pickup" : "Cash on Delivery";
   if (payment.status === "REFUND_PENDING") return "Refund pending";
   if (payment.status === "PARTIALLY_REFUNDED") return "Partially refunded";
   if (payment.status === "REFUNDED") return "Refunded";

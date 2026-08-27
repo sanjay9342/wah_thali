@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BellRing, Volume2 } from "lucide-react";
+import { BellRing } from "lucide-react";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { adminFetch } from "@/lib/admin-client-auth";
 import { getNewOrderSound, getNewOrderSoundAudioSrc, getNewOrderSoundDurationMs, getNewOrderSoundSteps } from "@/lib/order-sounds";
@@ -291,11 +291,11 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
     <button
       type="button"
       onClick={unlockAudio}
-      className="fixed bottom-5 left-5 z-[70] inline-flex min-h-12 items-center gap-2 rounded-xl bg-maroon px-4 py-3 text-sm font-black text-white shadow-2xl"
+      className="fixed bottom-5 left-5 z-[70] grid h-12 w-12 place-items-center rounded-xl bg-maroon text-white shadow-2xl"
+      aria-label={audioBlocked || incomingCount > 0 ? "Enable order sound" : "Prepare order sound"}
+      title={audioBlocked || incomingCount > 0 ? "Enable order sound" : "Prepare order sound"}
     >
       <BellRing size={18} />
-      {audioBlocked || incomingCount > 0 ? "Enable order sound" : "Prepare order sound"}
-      <Volume2 size={18} />
     </button>
   );
 }

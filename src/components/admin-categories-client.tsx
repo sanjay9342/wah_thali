@@ -167,8 +167,8 @@ export function AdminCategoriesClient({
   function toggleCartSuggestionCategory(categoryName: string) {
     setCartSuggestionCategories((current) =>
       current.includes(categoryName)
-        ? current.filter((item) => item !== categoryName)
-        : [...current, categoryName],
+        ? []
+        : [categoryName],
     );
   }
 
@@ -184,7 +184,7 @@ export function AdminCategoriesClient({
       const data = await response.json();
       if (!response.ok) throw new Error(getApiErrorMessage(data, "Cart recommendation categories save failed."));
       await refreshCategories();
-      showSuccess("Cart complete-your-meal categories saved.");
+      showSuccess(cartSuggestionCategories.length ? "Cart showcase category saved." : "Cart showcase category cleared.");
     });
   }
 
@@ -296,7 +296,7 @@ export function AdminCategoriesClient({
             <div className="mt-4 grid gap-3 rounded-xl border border-border bg-white p-4">
               <div>
                 <h2 className="text-base font-black text-maroon">Complete your meal with</h2>
-                <p className="mt-1 text-xs font-bold leading-5 text-muted">Choose categories that appear as the small cart add-on strip.</p>
+                <p className="mt-1 text-xs font-bold leading-5 text-muted">Choose one category to showcase in the cart add-on strip. Only online dishes from this category appear there, and items already in the cart are skipped.</p>
               </div>
               <div className="grid max-h-56 gap-2 overflow-y-auto pr-1">
                 {categories.map((category) => {
@@ -316,10 +316,10 @@ export function AdminCategoriesClient({
                 })}
               </div>
               <p className="text-xs font-bold text-muted">
-                {cartSuggestionCategories.length ? `${cartSuggestionCategories.length} selected` : "No category selected. Cart will use available menu items."}
+                {cartSuggestionCategories.length ? `Showcasing ${cartSuggestionCategories[0]}` : "No category selected. Cart will use available menu items."}
               </p>
               <button disabled={isPending} onClick={saveCartSuggestionCategories} className="h-10 rounded-lg bg-maroon px-4 text-sm font-black text-white disabled:opacity-60">
-                Save cart section
+                Save showcase category
               </button>
             </div>
           </aside>

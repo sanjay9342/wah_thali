@@ -81,7 +81,7 @@ export const policies: Policy[] = [
     title: "Terms and Conditions",
     effectiveDate: "01-08-2026",
     summary:
-      "The terms for using the Wah Thali website, placing orders, payments, delivery, cancellations, refunds, offers, and acceptable use.",
+      "The terms for using the Wah Thali website, placing orders, payments, delivery, self pickup, cancellations, refunds, offers, and acceptable use.",
     sections: [
       {
         heading: "Acceptance and services",
@@ -94,15 +94,16 @@ export const policies: Policy[] = [
         heading: "Orders, pricing, and payments",
         body: [
           "Orders are confirmed only after payment or operational confirmation, where applicable. Once accepted, preparation may begin immediately.",
-          "Prices are shown in Indian Rupees. Taxes, delivery fees, convenience fees, and discounts are displayed before payment. Prices may change without prior notice.",
+          "Prices are shown in Indian Rupees. Taxes, delivery fees, pickup charges where applicable, convenience fees, and discounts are displayed before payment. Prices may change without prior notice.",
           "We accept secure online payments and approved payment methods. Wah Thali does not store card details, banking credentials, or UPI PINs.",
         ],
       },
       {
-        heading: "Delivery and food quality",
+        heading: "Delivery, self pickup, and food quality",
         body: [
           "Delivery times are estimates and may vary because of traffic, weather, festivals, high order volumes, or other operational factors.",
           "Customers must provide accurate delivery details and be available to receive the order. Food should be consumed promptly after delivery and stored or reheated responsibly.",
+          "When self pickup is selected, no delivery charge is added. Customers must collect the order from the Wah Thali kitchen address shown at checkout and keep the registered phone reachable for order updates.",
         ],
       },
       {
@@ -154,6 +155,7 @@ export const policies: Policy[] = [
         body: [
           "Refunds generally do not apply where cancellation is requested after preparation begins, address or contact details are incorrect, the customer is unavailable, delays are beyond our reasonable control, or the concern is based only on personal taste preference.",
           "Failed deliveries due to customer-related reasons may not be eligible for refund.",
+          "Self-pickup orders may not be eligible for refund if the food is prepared and the customer does not collect it within a reasonable time after pickup notification.",
         ],
       },
       {
@@ -167,10 +169,10 @@ export const policies: Policy[] = [
   },
   {
     slug: "delivery-policy",
-    title: "Delivery Policy",
+    title: "Delivery and Self Pickup Policy",
     effectiveDate: "01-08-2026",
     summary:
-      "Delivery is available in selected serviceable areas during operating hours, with distance-based delivery charges and estimated delivery timing.",
+      "Delivery is available in selected serviceable areas during operating hours, and customers may also choose self pickup from the Wah Thali kitchen.",
     sections: [
       {
         heading: "Delivery area and hours",
@@ -180,10 +182,18 @@ export const policies: Policy[] = [
         ],
       },
       {
+        heading: "Self pickup option",
+        body: [
+          `Customers may choose self pickup at checkout and collect the order from ${business.address}.`,
+          "Self pickup is useful when delivery is not available for the customer's location or when the customer prefers to collect directly from the kitchen.",
+          "No delivery charge is added to self-pickup orders. The order total shown before payment will reflect pickup without delivery partner charges.",
+        ],
+      },
+      {
         heading: "Preparation and estimated delivery",
         body: [
           "All meals are freshly prepared after the order is confirmed. Average preparation time is about 30 minutes.",
-          "Typical delivery time is 30 to 60 minutes depending on location, traffic, weather, order volume, peak meal hours, and road conditions. Delivery times are estimates only.",
+          "Typical delivery time is 30 to 60 minutes depending on location, traffic, weather, order volume, peak meal hours, and road conditions. Pickup readiness and delivery times are estimates only.",
         ],
       },
       {
@@ -195,10 +205,11 @@ export const policies: Policy[] = [
         ],
       },
       {
-        heading: "Delivery attempts and failed delivery",
+        heading: "Delivery attempts and pickup collection",
         body: [
           "The delivery partner will make reasonable attempts to contact the customer before marking delivery as failed.",
           "Orders may be considered undeliverable if the address is incorrect or incomplete, the customer cannot be contacted, access is restricted, or the customer refuses delivery. Such orders may not be eligible for refund.",
+          "For self pickup, the customer should collect the order after the order tracker shows it is ready for pickup. Food quality may be affected if collection is delayed.",
         ],
       },
       {

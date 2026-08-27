@@ -3,7 +3,7 @@
 import { Bell, BellOff, ChevronDown, MapPin, ShoppingCart, UserRound, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useStoredCart } from "@/lib/use-stored-cart";
 import { useDeliveryLocation } from "@/lib/delivery-location";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 
 export function Header({ showContact = true, showLocation = false }: { showContact?: boolean; showLocation?: boolean; whatsappNumber?: string }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const cart = useStoredCart(customerSession?.mobile);
@@ -26,6 +27,10 @@ export function Header({ showContact = true, showLocation = false }: { showConta
     refreshSession();
     return subscribeCustomerSession(refreshSession);
   }, []);
+
+  useEffect(() => {
+    prefetchPrimaryRoutes((href) => router.prefetch(href));
+  }, [router]);
 
   return (
     <header
@@ -58,6 +63,7 @@ export function Header({ showContact = true, showLocation = false }: { showConta
               <Link
                 key={href}
                 href={href}
+                onMouseEnter={() => router.prefetch(href)}
                 className={`rounded-full px-3 py-2 transition-colors ${active ? "bg-[#fff4f5] text-red" : "text-charcoal hover:bg-[#fff8f9] hover:text-red"}`}
                 aria-current={active ? "page" : undefined}
               >
@@ -81,13 +87,14 @@ export function Header({ showContact = true, showLocation = false }: { showConta
           {preferences.appMuted ? <BellOff size={24} /> : <Bell size={24} />}
           {unreadCount ? <span className="absolute -right-1 top-0 rounded-full bg-red px-1.5 text-[10px] font-black text-white">{unreadCount}</span> : null}
         </button>
-        <Link href="/cart" className="relative grid h-9 w-9 place-items-center text-charcoal" aria-label="Cart">
+        <Link href="/cart" onMouseEnter={() => router.prefetch("/cart")} className="relative grid h-9 w-9 place-items-center text-charcoal" aria-label="Cart">
           <ShoppingCart size={26} />
           {cartCount ? <span className="absolute -right-1 top-0 rounded-full bg-red px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
         </Link>
         {showContact ? (
           <Link
             href={customerSession ? "/account" : `/login?next=${encodeURIComponent(pathname || "/account")}`}
+            onMouseEnter={() => router.prefetch(customerSession ? "/account" : "/login?next=/account")}
             className={`inline-flex h-10 items-center gap-2 rounded-[10px] px-5 text-[12px] font-semibold shadow-[0_8px_18px_rgba(141,0,33,0.16)] ${
               customerSession ? "bg-[#fff4f5] text-red ring-1 ring-[#f1dce1]" : "bg-red text-white"
             }`}
@@ -126,7 +133,7 @@ export function Header({ showContact = true, showLocation = false }: { showConta
               </span>
             ) : null}
           </button>
-          <Link href="/cart" className="relative grid h-10 w-10 place-items-center rounded-full bg-white text-[#374151] shadow-[0_8px_18px_rgba(34,31,32,0.06)] ring-1 ring-[#f1e7e4]" aria-label="Cart">
+          <Link href="/cart" onMouseEnter={() => router.prefetch("/cart")} className="relative grid h-10 w-10 place-items-center rounded-full bg-white text-[#374151] shadow-[0_8px_18px_rgba(34,31,32,0.06)] ring-1 ring-[#f1e7e4]" aria-label="Cart">
             <ShoppingCart size={22} strokeWidth={2.4} />
             {cartCount ? <span className="absolute -right-0.5 top-0 grid h-4 min-w-4 place-items-center rounded-full bg-maroon px-1 text-[8px] font-black text-white ring-2 ring-white">{cartCount}</span> : null}
           </Link>
@@ -192,6 +199,12 @@ export function Header({ showContact = true, showLocation = false }: { showConta
       ) : null}
     </header>
   );
+}
+
+function prefetchPrimaryRoutes(prefetch: (href: string) => void) {
+  ["/", "/menu", "/cart", "/orders", "/offers", "/support", "/account"].forEach((href) => {
+    prefetch(href);
+  });
 }
 
 function DesktopLocationLink() {

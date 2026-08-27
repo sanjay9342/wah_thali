@@ -571,7 +571,7 @@ function DesktopTrustFooter({ categories }: { categories: string[] }) {
               ["About Us", "/about"],
               ["Terms and Conditions", "/terms-and-conditions"],
               ["Refund Policy", "/refund-cancellation-policy"],
-              ["Delivery Policy", "/delivery-policy"],
+              ["Delivery & Pickup Policy", "/delivery-policy"],
             ].map(([label, href]) => (
               <Link key={href} href={href} className="text-sm font-bold text-muted hover:text-maroon">
                 {label}

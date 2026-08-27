@@ -403,18 +403,6 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
               <LocateFixed size={17} /> {locating ? "Detecting..." : "Use current location"}
             </button>
           </div>
-          <div className="mt-3 rounded-2xl bg-cream p-3 text-sm text-muted">
-            <p className="font-bold text-charcoal">Delivery rules</p>
-            <p className="mt-1">Delivery charges are auto calculated by distance. Packaging charge is Nil.</p>
-            <div className="mt-2 grid gap-1 text-xs font-bold sm:grid-cols-2">
-              {business.deliveryCharges.map((charge) => (
-                <span key={charge.label}>
-                  {charge.label}: Rs {charge.amount}
-                </span>
-              ))}
-            </div>
-            <p className="mt-2">{deliveryCoverage.message}</p>
-          </div>
         </div>
 
         {restaurantSettings.storeMode !== "OPEN" ? (
@@ -502,7 +490,7 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
           <div className="flex flex-wrap gap-2 text-red">
             <Link href="/terms-and-conditions">Terms</Link>
             <Link href="/refund-cancellation-policy">Refunds</Link>
-            <Link href="/delivery-policy">Delivery</Link>
+            <Link href="/delivery-policy">Delivery & Pickup</Link>
             <Link href="/privacy-policy">Privacy</Link>
           </div>
         </div>

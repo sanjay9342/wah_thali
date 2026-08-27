@@ -10,6 +10,7 @@ import type { AdminOrder, OrderStatus } from "@/lib/types";
 import { formatRupees } from "@/lib/pricing";
 import { canTransitionOrder } from "@/lib/state-machines";
 import { formatIstDateTime, formatIstTime, getIstDateInputValue } from "@/lib/time";
+import { getOrderFulfillmentDetails, getStoredOrderChargeAmount, getStoredOrderChargeLabel } from "@/lib/order-fulfillment";
 
 type DateFilter = "all" | "today" | "yesterday" | "week";
 type PriceFilter = "all" | "under500" | "500to1000" | "above1000";
@@ -47,7 +48,8 @@ const actionCopy: Partial<Record<OrderStatus, string>> = {
 
 const incomingStatuses = new Set<OrderStatus>(["NEW", "PENDING_PAYMENT"]);
 const activeStatuses = new Set<OrderStatus>(["CONFIRMED", "PREPARING", "PACKED", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"]);
-const progressStatuses: OrderStatus[] = ["NEW", "CONFIRMED", "PREPARING", "PACKED", "OUT_FOR_DELIVERY", "DELIVERED"];
+const deliveryProgressStatuses: OrderStatus[] = ["NEW", "CONFIRMED", "PREPARING", "PACKED", "OUT_FOR_DELIVERY", "DELIVERED"];
+const pickupProgressStatuses: OrderStatus[] = ["NEW", "CONFIRMED", "PREPARING", "PACKED", "READY_FOR_PICKUP", "DELIVERED"];
 const RESET_CONFIRMATION_TEXT = "RESET ORDERS";
 const orderAlertsUpdatedEvent = "wah-thali-admin-orders-updated";
 
@@ -95,10 +97,13 @@ export function AdminOrdersClient({
   }, [dateFilter, dateRange, orders, priceFilter, statusFilter]);
 
   const notifyAdmin = useCallback((order: AdminOrder) => {
+    const details = getOrderDetails(order);
+    const fulfillmentLabel = details.isPickup ? "Self pickup" : "Delivery";
+
     document.title = `New order ${order.orderNumber} - Wah Thali Admin`;
     if ("Notification" in window && Notification.permission === "granted") {
       const notification = new Notification(`New order ${order.orderNumber}`, {
-        body: `${order.customerName} - ${formatRupees(order.amount)} - ${order.itemSummary}`,
+        body: `${fulfillmentLabel} - ${order.customerName} - ${formatRupees(order.amount)} - ${order.itemSummary}`,
         tag: `wah-thali-${order.orderNumber}`,
       });
       notification.onclick = () => {
@@ -345,6 +350,13 @@ export function AdminOrdersClient({
 
   function printBill(order: AdminOrder) {
     const details = getOrderDetails(order);
+    const additionalCharges = getStoredOrderChargeAmount({
+      subtotal: order.subtotal,
+      discount: order.discount,
+      gst: order.gst,
+      grandTotal: order.amount,
+    });
+    const chargesLabel = getStoredOrderChargeLabel(details.isPickup);
     const rows = order.items.map((item) => `
       <tr>
         <td>${escapeHtml(item.name)}</td>
@@ -390,7 +402,7 @@ export function AdminOrdersClient({
           <p><strong>Customer:</strong> ${escapeHtml(order.customerName)} (${order.customerMobile})</p>
           <p><strong>Date:</strong> ${formatIstDateTime(order.createdAt)}</p>
           <p><strong>Payment:</strong> ${escapeHtml(order.paymentSummary)}</p>
-          ${details.address ? `<div class="box"><strong>Delivery:</strong><br>${escapeHtml(details.address)}${details.gps ? `<br>GPS: ${escapeHtml(details.gps)}` : ""}</div>` : ""}
+          ${details.address || details.pickupAddress ? `<div class="box"><strong>${details.isPickup ? "Pickup" : "Delivery"}:</strong><br>${escapeHtml(details.pickupAddress || details.address)}${details.gps ? `<br>GPS: ${escapeHtml(details.gps)}` : ""}</div>` : ""}
           ${details.customerNote ? `<div class="box"><strong>Restaurant note:</strong><br>${escapeHtml(details.customerNote)}</div>` : ""}
           <div class="rule"></div>
           <table>
@@ -401,6 +413,8 @@ export function AdminOrdersClient({
           <table>
             <tr><td>Subtotal</td><td class="num">${formatRupees(order.subtotal)}</td></tr>
             <tr><td>Discount${details.coupon ? ` (${escapeHtml(details.coupon)})` : ""}</td><td class="num">-${formatRupees(order.discount)}</td></tr>
+            ${additionalCharges > 0 ? `<tr><td>${chargesLabel}</td><td class="num">${formatRupees(additionalCharges)}</td></tr>` : ""}
+            ${details.isPickup ? `<tr><td>Delivery charge</td><td class="num">No charge</td></tr>` : ""}
             <tr><td>GST</td><td class="num">${formatRupees(order.gst)}</td></tr>
             <tr class="total"><td>Total payable</td><td class="num">${formatRupees(order.amount)}</td></tr>
           </table>
@@ -568,6 +582,12 @@ export function AdminOrdersClient({
                 const details = getOrderDetails(order);
                 const tone = getOrderCardTone(order.status);
                 const refundInfo = getRefundInfo(order);
+                const additionalCharges = getStoredOrderChargeAmount({
+                  subtotal: order.subtotal,
+                  discount: order.discount,
+                  gst: order.gst,
+                  grandTotal: order.amount,
+                });
                 return (
                   <>
               <div className={`mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-4 py-2 text-xs font-black uppercase tracking-wide ${tone.banner}`}>
@@ -575,7 +595,7 @@ export function AdminOrdersClient({
                   {incomingStatuses.has(order.status) ? <BellRing size={15} className="wt-order-pulse" /> : null}
                   {tone.label}
                 </span>
-                {incomingStatuses.has(order.status) ? <span className="wt-new-order-text">Needs attention now</span> : null}
+                {incomingStatuses.has(order.status) ? <span className="wt-new-order-text">{details.isPickup ? "Self pickup order" : "Needs attention now"}</span> : null}
               </div>
               <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
                 <div>
@@ -595,6 +615,7 @@ export function AdminOrdersClient({
                         <Mail size={14} /> {details.email || order.customerEmail}
                       </span>
                     ) : null}
+                    {details.isPickup ? <span className={`rounded-lg px-3 py-2 ${tone.chip}`}>Self pickup</span> : null}
                     {details.customerNote ? <span className={`rounded-lg px-3 py-2 ${tone.chip}`}>Customer note: {details.customerNote}</span> : null}
                   </div>
                 </div>
@@ -628,9 +649,9 @@ export function AdminOrdersClient({
                   <p className="mt-2 text-sm font-black text-charcoal">{details.receiver || `${order.customerName}, ${order.customerMobile}`}</p>
                 </div>
                 <div className={`rounded-xl border p-3 lg:col-span-2 ${tone.panel}`}>
-                  <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-muted"><MapPin size={15} /> Delivery location</p>
-                  <p className="mt-2 text-sm font-black leading-5 text-charcoal">{details.address || details.location || (details.gps ? `Map pin: ${details.gps}` : "Location not provided")}</p>
-                  {details.gps ? (
+                  <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-muted"><MapPin size={15} /> {details.isPickup ? "Pickup location" : "Delivery location"}</p>
+                  <p className="mt-2 text-sm font-black leading-5 text-charcoal">{details.pickupAddress || details.address || details.location || (details.gps ? `Map pin: ${details.gps}` : "Location not provided")}</p>
+                  {!details.isPickup && details.gps ? (
                     <a href={`https://www.google.com/maps?q=${encodeURIComponent(details.gps)}`} target="_blank" rel="noreferrer" className="mt-1 inline-flex text-xs font-black text-red">
                       Open GPS: {details.gps}
                     </a>
@@ -640,6 +661,10 @@ export function AdminOrdersClient({
                   <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-muted"><ReceiptText size={15} /> Bill</p>
                   <p className="mt-2 text-sm font-black text-charcoal">Subtotal {formatRupees(order.subtotal)}</p>
                   <p className="mt-1 text-xs font-bold text-muted">GST {formatRupees(order.gst)} | Discount {formatRupees(order.discount)}{details.coupon ? ` (${details.coupon})` : ""}</p>
+                  {additionalCharges > 0 ? (
+                    <p className="mt-1 text-xs font-bold text-muted">{getStoredOrderChargeLabel(details.isPickup)} {formatRupees(additionalCharges)}</p>
+                  ) : null}
+                  {details.isPickup ? <p className="mt-1 text-xs font-black text-[#0f7a45]">No delivery charge</p> : null}
                 </div>
               </div>
               <div className={`mt-4 rounded-xl border bg-white p-3 ${tone.box}`}>
@@ -693,6 +718,7 @@ export function AdminOrdersClient({
                 order={order}
                 customEta={etaByOrder[order.orderNumber]?.trim() || details.eta}
                 defaultPrepMinutes={defaultPrepMinutes}
+                isPickup={details.isPickup}
                 isPending={isPending}
                 onDecline={() => setDeclineOrder(order)}
                 onMove={(next) => updateOrder(order, next, next === "CONFIRMED" ? "Restaurant accepted the order." : undefined)}
@@ -874,6 +900,7 @@ function OrderStatusPanel({
   order,
   customEta,
   defaultPrepMinutes,
+  isPickup,
   isPending,
   onDecline,
   onMove,
@@ -881,12 +908,14 @@ function OrderStatusPanel({
   order: AdminOrder;
   customEta?: string;
   defaultPrepMinutes: number;
+  isPickup: boolean;
   isPending: boolean;
   onDecline: () => void;
   onMove: (status: OrderStatus) => void;
 }) {
-  const actions = getNextOrderActions(order.status);
-  const progress = getOrderProgress(order.status);
+  const actions = getNextOrderActions(order.status, isPickup);
+  const progressStatuses = getProgressStatuses(isPickup);
+  const progress = getOrderProgress(order.status, isPickup);
   const [statusDraft, setStatusDraft] = useState<{ orderStatus: OrderStatus; value: OrderStatus }>(() => ({
     orderStatus: order.status,
     value: getDefaultSelectedStatus(actions, order.status),
@@ -1132,9 +1161,14 @@ function getOrderCardTone(status: OrderStatus) {
   };
 }
 
-function getOrderProgress(status: OrderStatus) {
+function getProgressStatuses(isPickup: boolean) {
+  return isPickup ? pickupProgressStatuses : deliveryProgressStatuses;
+}
+
+function getOrderProgress(status: OrderStatus, isPickup: boolean) {
+  const progressStatuses = getProgressStatuses(isPickup);
+
   if (status === "PENDING_PAYMENT") return { index: 0, done: false };
-  if (status === "READY_FOR_PICKUP") return { index: progressStatuses.indexOf("PACKED"), done: false };
   if (status === "CANCELLED") return { index: 0, done: false };
 
   const index = Math.max(progressStatuses.indexOf(status), 0);
@@ -1145,8 +1179,12 @@ function getDefaultSelectedStatus(actions: OrderStatus[], currentStatus: OrderSt
   return actions.find((status) => status !== "CANCELLED") ?? actions[0] ?? currentStatus;
 }
 
-function getNextOrderActions(status: OrderStatus): OrderStatus[] {
-  return (["CONFIRMED", "PREPARING", "PACKED", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"] as OrderStatus[])
+function getNextOrderActions(status: OrderStatus, isPickup: boolean): OrderStatus[] {
+  const fulfillmentActionStatuses: OrderStatus[] = isPickup
+    ? ["CONFIRMED", "PREPARING", "PACKED", "READY_FOR_PICKUP", "DELIVERED", "CANCELLED"]
+    : ["CONFIRMED", "PREPARING", "PACKED", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"];
+
+  return fulfillmentActionStatuses
     .filter((next) => canTransitionOrder(status, next));
 }
 
@@ -1191,37 +1229,7 @@ function getRefundInfo(order: AdminOrder) {
 }
 
 function getOrderDetails(order: AdminOrder) {
-  const notes = order.timeline.map((event) => event.note).filter((note): note is string => Boolean(note));
-  const parts = notes.flatMap((note) => note.split("|").map((part) => part.trim()).filter(Boolean));
-  return {
-    receiver: readPart(parts, "Receiver"),
-    email: readPart(parts, "Email") || extractTimelineValue(notes, "Email"),
-    address: readPart(parts, "Address") || extractTimelineValue(notes, "Address"),
-    addressType: readPart(parts, "Address type") || extractTimelineValue(notes, "Address type"),
-    customerNote: readPart(parts, "Customer note") || extractTimelineValue(notes, "Customer note"),
-    location: readPart(parts, "Location") || extractTimelineValue(notes, "Location"),
-    gps: readPart(parts, "GPS") || extractTimelineValue(notes, "GPS"),
-    distance: readPart(parts, "Distance") || extractTimelineValue(notes, "Distance"),
-    eta: readPart(parts, "ETA") || extractTimelineValue(notes, "ETA"),
-    coupon: readPart(parts, "Coupon") || extractCouponCode(notes),
-  };
-}
-
-function readPart(parts: string[], label: string) {
-  const prefix = `${label}:`;
-  return parts.find((part) => part.toLowerCase().startsWith(prefix.toLowerCase()))?.slice(prefix.length).trim() ?? "";
-}
-
-function extractTimelineValue(notes: string[], label: string) {
-  const joined = notes.join(" | ");
-  const labels = ["Receiver", "Email", "Address", "Address type", "Customer note", "Location", "GPS", "Distance", "ETA", "Coupon"];
-  const nextLabels = labels.filter((item) => item !== label).join("|");
-  const pattern = new RegExp(`${label}:\\s*(.*?)(?=\\s(?:${nextLabels}):|\\sCoupon\\s|\\s\\|\\s|$)`, "i");
-  return joined.match(pattern)?.[1]?.trim().replace(/[.]$/, "") ?? "";
-}
-
-function extractCouponCode(notes: string[]) {
-  return notes.join(" | ").match(/\bCoupon\s+([A-Z0-9_-]+)\s+applied/i)?.[1] ?? "";
+  return getOrderFulfillmentDetails(order.timeline);
 }
 
 function escapeHtml(value: string) {
