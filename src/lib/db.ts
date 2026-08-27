@@ -12,6 +12,7 @@ import type { AdvancedSettings, AdminCustomer, AdminOrder, AdminProduct, Busines
 
 const paidOnlineStatuses: PaymentStatus[] = ["PAID", "AUTHORIZED"];
 const storefrontCacheSeconds = 60;
+const businessSettingKeys = Object.keys(fallbackSettings);
 
 type ProductWithRelations = Prisma.ProductGetPayload<{
   include: {
@@ -313,6 +314,8 @@ export async function getBusinessSettingsFromDb(): Promise<BusinessSettings> {
     if (!rows.length) return fallbackSettings;
 
     const settings = rows.reduce<BusinessSettings>((settings, row) => {
+      if (!businessSettingKeys.includes(row.key)) return settings;
+
       return {
         ...settings,
         [row.key]: row.value,
