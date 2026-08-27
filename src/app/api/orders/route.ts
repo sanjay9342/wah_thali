@@ -12,6 +12,7 @@ import { notifyOrderStatus, notifyOwnerOrderAlert } from "@/lib/customer-messagi
 import { getStoreOrderingStatus } from "@/lib/store-hours";
 import type { CartLine, OrderStatus, RestaurantSettings } from "@/lib/types";
 import { getDeliveryFee, getOfferDiscount, isCouponEligibleForCustomer, normalizeGstRate, type CouponCustomerContext } from "@/lib/pricing";
+import { getModifierOptionLabel, getModifierSelectionIssue, getProductModifierGroups } from "@/lib/product-modifiers";
 import { getRewardTier } from "@/lib/rewards";
 
 const paidOnlineStatuses: PaymentStatus[] = ["PAID", "AUTHORIZED"];
@@ -28,6 +29,7 @@ const orderSchema = z.object({
   customerName: z.string().min(1),
   customerEmail: z.string().email().optional().or(z.literal("")),
   couponCode: z.string().trim().optional(),
+  fulfillmentMethod: z.enum(["DELIVERY", "PICKUP"]).default("DELIVERY"),
   receiverName: z.string().trim().optional(),
   receiverMobile: z.string().trim().optional(),
   deliveryAddress: z.string().trim().optional(),
@@ -52,7 +54,7 @@ function calculateDiscount(subtotal: number, couponCode: string | undefined, cou
   return { coupon, discount };
 }
 
-async function calculateServerOrder(lines: CartLine[], couponCode: string | undefined, settings: RestaurantSettings, customer?: CouponCustomerContext, deliveryDistanceKm?: number | null) {
+async function calculateServerOrder(lines: CartLine[], couponCode: string | undefined, settings: RestaurantSettings, customer?: CouponCustomerContext, deliveryDistanceKm?: number | null, fulfillmentMethod: "DELIVERY" | "PICKUP" = "DELIVERY") {
   const products = await prisma.product.findMany({
     where: { id: { in: lines.map((line) => line.productId) } },
     include: { category: true, variants: true, addons: true, inventory: true },
@@ -69,21 +71,33 @@ async function calculateServerOrder(lines: CartLine[], couponCode: string | unde
 
     const variant =
       product.variants.find((item) => item.id === `${product.id}-${line.variantId}` || item.id === line.variantId) ??
-      product.variants.find((item) => item.name.toLowerCase() === "regular");
+      product.variants.find((item) => item.name.toLowerCase() === "regular") ??
+      (product.variants.length === 0 && line.variantId === "regular"
+        ? { id: "regular", name: "Regular", price: 0, available: true }
+        : null);
     if (!variant || !variant.available) throw new Error(`Selected variant is unavailable for ${product.name}.`);
 
-    const addonTotal = line.addonIds.reduce((total, addonId) => {
+    const selectedAddons = line.addonIds.map((addonId) => {
       const addon = product.addons.find((item) => item.id === `${product.id}-${addonId}` || item.id === addonId);
       if (!addon || !addon.available) throw new Error(`Selected addon is unavailable for ${product.name}.`);
-      return total + addon.price;
-    }, 0);
+      return addon;
+    });
+    const addonQuantities = selectedAddons.reduce<Record<string, number>>((quantities, addon) => {
+      quantities[addon.id] = (quantities[addon.id] ?? 0) + 1;
+      return quantities;
+    }, {});
+    const modifierSelectionIssue = getModifierSelectionIssue(getProductModifierGroups({ addons: product.addons }), addonQuantities);
+    if (modifierSelectionIssue) throw new Error(`${product.name}: ${modifierSelectionIssue}`);
+    const addonTotal = selectedAddons.reduce((total, addon) => total + addon.price, 0);
+    const addonNames = selectedAddons.map((addon) => getModifierOptionLabel(addon.name));
+    const variantName = variant.name.toLowerCase() === "regular" ? "" : variant.name;
 
     const dishPrice = product.price + variant.price;
     const offerText = product.offer?.trim() || categoryOffers[product.category.slug]?.trim();
     const unitPrice = Math.max(dishPrice - getOfferDiscount(dishPrice, offerText), 0) + addonTotal;
     return {
       productId: product.id,
-      name: product.name,
+      name: [product.name, variantName, addonNames.length ? `With ${addonNames.join(", ")}` : ""].filter(Boolean).join(" - "),
       quantity: line.quantity,
       price: unitPrice,
       lineTotal: unitPrice * line.quantity,
@@ -95,7 +109,7 @@ async function calculateServerOrder(lines: CartLine[], couponCode: string | unde
   const { coupon, discount } = calculateDiscount(subtotal, couponCode, coupons, customer);
   const packaging = items.length ? settings.packagingFee : 0;
   const eligibleOrderValue = subtotal - discount;
-  const delivery = getDeliveryFee(settings, eligibleOrderValue, items.length > 0, deliveryDistanceKm);
+  const delivery = fulfillmentMethod === "PICKUP" ? 0 : getDeliveryFee(settings, eligibleOrderValue, items.length > 0, deliveryDistanceKm);
   const taxable = Math.max(subtotal - discount + packaging + delivery, 0);
   const gst = Math.round(taxable * normalizeGstRate(settings.gstRate));
 
@@ -164,6 +178,7 @@ async function postHandler(request: Request) {
   }
 
   const data = parsed.data;
+  const isPickup = data.fulfillmentMethod === "PICKUP";
   const customerEmail = data.customerEmail ? normalizeEmail(data.customerEmail) : "";
   const settings = await getRestaurantSettingsFromDb();
   const orderingStatus = getStoreOrderingStatus(settings);
@@ -193,11 +208,18 @@ async function postHandler(request: Request) {
     );
   }
 
-  const deliveryCoverage = getDeliveryCoverage({
-    pinCode: data.pinCode,
-    latitude: data.latitude,
-    longitude: data.longitude,
-  }, settings);
+  const deliveryCoverage = isPickup
+    ? {
+        serviceable: true,
+        needsLocation: false,
+        distanceKm: null,
+        message: "Self pickup selected.",
+      }
+    : getDeliveryCoverage({
+        pinCode: data.pinCode,
+        latitude: data.latitude,
+        longitude: data.longitude,
+      }, settings);
 
   if (!deliveryCoverage.serviceable) {
     return NextResponse.json(
@@ -221,7 +243,7 @@ async function postHandler(request: Request) {
     }
   }
 
-  const calculated = await calculateServerOrder(data.items, data.couponCode, settings, couponCustomer, deliveryCoverage.distanceKm).catch((error) => {
+  const calculated = await calculateServerOrder(data.items, data.couponCode, settings, couponCustomer, deliveryCoverage.distanceKm, data.fulfillmentMethod).catch((error) => {
     console.error("Server order validation failed.", error);
     return null;
   });
@@ -334,11 +356,13 @@ async function postHandler(request: Request) {
               customerEmail ? `Email: ${customerEmail}` : "",
               data.deliveryAddress ? `Address: ${data.deliveryAddress}` : "",
               data.deliveryLabel ? `Address type: ${data.deliveryLabel}` : "",
+              isPickup ? "Fulfillment: Self pickup" : "Fulfillment: Delivery",
+              isPickup && settings.kitchenAddress ? `Pickup address: ${settings.kitchenAddress}` : "",
               data.restaurantNote ? `Customer note: ${data.restaurantNote}` : "",
               calculated.couponCode ? `Coupon ${calculated.couponCode} applied.` : "",
-              data.pinCode ? `Location: PIN ${data.pinCode}` : "",
-              data.latitude && data.longitude ? `GPS: ${data.latitude}, ${data.longitude}` : "",
-              deliveryCoverage.distanceKm !== null ? `Distance: ${deliveryCoverage.distanceKm.toFixed(2)} km.` : "",
+              !isPickup && data.pinCode ? `Location: PIN ${data.pinCode}` : "",
+              !isPickup && data.latitude && data.longitude ? `GPS: ${data.latitude}, ${data.longitude}` : "",
+              !isPickup && deliveryCoverage.distanceKm !== null ? `Distance: ${deliveryCoverage.distanceKm.toFixed(2)} km.` : "",
             ].filter(Boolean).join(" | "),
           },
         },

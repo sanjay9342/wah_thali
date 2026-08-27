@@ -36,6 +36,7 @@ import { categories as fallbackCategories, products as fallbackProducts } from "
 import { writeStoredCart } from "@/lib/cart-storage";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 import { getDeliveryLocationCoverage, useDeliveryLocation } from "@/lib/delivery-location";
+import { getModifierSelectionIssue, getProductModifierGroups } from "@/lib/product-modifiers";
 import { formatRupees, getPricableCartLines, getProductPrice, getProductUnitPricing } from "@/lib/pricing";
 import { getStoreOrderingStatus } from "@/lib/store-hours";
 import { useStoredCart } from "@/lib/use-stored-cart";
@@ -353,7 +354,7 @@ function ProductCard({
             {pricing.discountPerUnit > 0 ? <span className="block text-[8px] font-bold text-muted line-through sm:text-[11px]">{formatRupees(pricing.originalUnitPrice)}</span> : null}
             <span className="block text-[10px] font-black text-charcoal sm:text-[13px]">{formatRupees(pricing.unitPrice)}</span>
           </span>
-          <QuantityControl quantity={quantity} onAdd={onAdd} onDecrease={onDecrease} disabled={orderingDisabled || unavailable} disabledLabel={unavailable ? "Unavailable" : "Closed"} />
+          <QuantityControl quantity={quantity} onAdd={onAdd} onDecrease={onDecrease} disabled={orderingDisabled || unavailable} disabledLabel={unavailable ? "Unavailable" : "Orders closed"} />
         </div>
       </div>
     </article>
@@ -433,7 +434,7 @@ function FoodieProductCard({
             {pricing.discountPerUnit > 0 ? <span className="block text-[10px] font-bold text-[#98a0ad] line-through">{formatRupees(pricing.originalUnitPrice)}</span> : null}
             <span className="block text-[12px] font-black text-[#111827]">{formatRupees(pricing.unitPrice)}</span>
           </span>
-          <QuantityControl quantity={quantity} onAdd={onAdd} onDecrease={onDecrease} disabled={orderingDisabled || unavailable} disabledLabel={unavailable ? "Unavailable" : "Closed"} />
+          <QuantityControl quantity={quantity} onAdd={onAdd} onDecrease={onDecrease} disabled={orderingDisabled || unavailable} disabledLabel={unavailable ? "Unavailable" : "Orders closed"} />
         </div>
       </div>
     </article>
@@ -638,6 +639,7 @@ function DishDetailSheet({
 }) {
   const defaultVariantId = product.variants[0]?.id ?? "regular";
   const variants = product.variants.length ? product.variants : [{ id: defaultVariantId, name: "Regular", price: 0 }];
+  const modifierGroups = useMemo(() => getProductModifierGroups(product), [product]);
   const [selectedVariantId, setSelectedVariantId] = useState(defaultVariantId);
   const [addonQuantities, setAddonQuantities] = useState<Record<string, number>>({});
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) ?? variants[0];
@@ -653,26 +655,40 @@ function DishDetailSheet({
   const pricing = getProductUnitPricing(product, offer ? { [slugifyCategory(product.category)]: offer } : {}, selectedVariant.price, addonTotal);
   const totalPrice = pricing.unitPrice;
   const unavailable = !product.available;
+  const modifierSelectionIssue = getModifierSelectionIssue(modifierGroups, addonQuantities);
+  const addDisabled = orderingDisabled || unavailable || Boolean(modifierSelectionIssue);
   const discountPercent = pricing.originalUnitPrice > 0
     ? Math.max(Math.round((pricing.discountPerUnit / pricing.originalUnitPrice) * 100), 0)
     : 0;
 
-  function addAddon(addonId: string) {
+  function canSelectMore(groupId: string) {
+    const group = modifierGroups.find((item) => item.id === groupId);
+    if (!group || group.max <= 0) return true;
+    const selectedCount = group.options.reduce((total, option) => total + (addonQuantities[option.id] ?? 0), 0);
+    return selectedCount < group.max;
+  }
+
+  function selectSingleAddon(groupId: string, addonId: string) {
     setAddonQuantities((current) => ({
-      ...current,
-      [addonId]: (current[addonId] ?? 0) + 1,
+      ...Object.fromEntries(
+        Object.entries(current).filter(([currentAddonId]) => {
+          const group = modifierGroups.find((item) => item.id === groupId);
+          return !group?.options.some((option) => option.id === currentAddonId);
+        }),
+      ),
+      [addonId]: 1,
     }));
   }
 
-  function decreaseAddon(addonId: string) {
+  function toggleMultiAddon(groupId: string, addonId: string) {
     setAddonQuantities((current) => {
-      const nextQuantity = Math.max((current[addonId] ?? 0) - 1, 0);
-      if (nextQuantity === 0) {
+      if (current[addonId]) {
         const next = { ...current };
         delete next[addonId];
         return next;
       }
-      return { ...current, [addonId]: nextQuantity };
+      if (!canSelectMore(groupId)) return current;
+      return { ...current, [addonId]: 1 };
     });
   }
 
@@ -743,10 +759,11 @@ function DishDetailSheet({
             </div>
           ) : null}
 
-          <div className="mt-5">
-            <h3 className="text-[12px] font-black text-charcoal">Select Size</h3>
-            <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-3">
-              {variants.map((variant, index) => {
+          {product.variants.length ? (
+          <div className="mt-4">
+            <h3 className="text-[12px] font-semibold text-charcoal">Select Size</h3>
+            <div className="mt-2 grid grid-cols-[repeat(auto-fit,minmax(92px,1fr))] gap-2.5">
+              {variants.map((variant) => {
                 const active = variant.id === selectedVariant.id;
                 const variantPricing = getProductUnitPricing(product, offer ? { [slugifyCategory(product.category)]: offer } : {}, variant.price);
                 return (
@@ -754,64 +771,76 @@ function DishDetailSheet({
                     key={variant.id}
                     type="button"
                     onClick={() => setSelectedVariantId(variant.id)}
-                    className={`min-h-[96px] rounded-[16px] border-2 bg-white p-2.5 text-center shadow-[0_10px_20px_rgba(17,24,39,0.05)] transition-colors ${
+                    className={`min-h-[74px] rounded-[13px] border bg-white p-2 text-center shadow-[0_8px_16px_rgba(17,24,39,0.04)] transition-colors ${
                       active ? "border-maroon text-maroon" : "border-[#eef1f6] text-muted"
                     }`}
                   >
-                    <span className={`mx-auto grid h-5 w-5 place-items-center rounded-full ${active ? "bg-maroon text-white" : "bg-[#f2f4f7] text-transparent"}`}>
-                      <BadgeCheck size={13} strokeWidth={3} />
+                    <span className={`mx-auto grid h-4 w-4 place-items-center rounded-full ${active ? "bg-maroon text-white" : "bg-[#f2f4f7] text-transparent"}`}>
+                      <BadgeCheck size={10} strokeWidth={3} />
                     </span>
-                    <span className="mt-2 block text-[11px] font-black">{variant.name}</span>
-                    <span className="mt-1 block text-[11px] font-black text-muted">{index === 0 ? "1" : index === 1 ? "2" : String(index + 1)}</span>
-                    <span className="mt-1.5 block text-[12px] font-black">{formatRupees(variantPricing.unitPrice)}</span>
-                    {variantPricing.discountPerUnit > 0 ? <span className="mt-1 block text-[10px] font-bold text-muted line-through">{formatRupees(variantPricing.originalUnitPrice)}</span> : null}
+                    <span className="mt-1.5 block text-[10px] font-semibold">{variant.name}</span>
+                    <span className="mt-1 block text-[11px] font-semibold">{formatRupees(variantPricing.unitPrice)}</span>
+                    {variantPricing.discountPerUnit > 0 ? <span className="mt-0.5 block text-[9px] font-medium text-muted line-through">{formatRupees(variantPricing.originalUnitPrice)}</span> : null}
                   </button>
                 );
               })}
             </div>
           </div>
+          ) : null}
 
-          {product.addons.length ? (
-            <div className="mt-5 overflow-hidden rounded-[16px] bg-white shadow-[0_10px_24px_rgba(17,24,39,0.05)] ring-1 ring-[#eef1f6]">
-              <div className="flex items-center gap-2 border-b border-[#eef1f6] px-4 py-3">
-                <Plus size={15} className="text-maroon" strokeWidth={3} />
-                <h3 className="text-[13px] font-black text-charcoal">Add Extras</h3>
-              </div>
-              <div className="divide-y divide-[#eef1f6]">
-                {product.addons.map((addon) => {
-                  const addonQuantity = addonQuantities[addon.id] ?? 0;
-                  return (
-                    <div
-                      key={addon.id}
-                      className="grid min-h-[52px] grid-cols-[1fr_auto] items-center gap-3 px-4 py-2.5"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate text-[13px] font-black text-charcoal">{addon.name}</span>
-                        <span className="mt-0.5 block text-[11px] font-black text-maroon">+{formatRupees(addon.price)}</span>
-                      </span>
-                      {addonQuantity > 0 ? (
-                        <span className="grid h-9 w-[82px] grid-cols-3 overflow-hidden rounded-[10px] bg-red text-white shadow-[0_9px_20px_rgba(141,0,33,0.16)]">
-                          <button type="button" className="grid place-items-center" onClick={() => decreaseAddon(addon.id)} aria-label={`Remove ${addon.name}`}>
-                            <Minus size={11} strokeWidth={3} />
-                          </button>
-                          <span className="grid place-items-center text-[11px] font-black">{addonQuantity}</span>
-                          <button type="button" className="grid place-items-center" onClick={() => addAddon(addon.id)} aria-label={`Add more ${addon.name}`}>
-                            <Plus size={11} strokeWidth={3} />
-                          </button>
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          className="h-9 rounded-[10px] bg-red px-4 text-[11px] font-black text-white shadow-[0_9px_20px_rgba(141,0,33,0.16)]"
-                          onClick={() => addAddon(addon.id)}
-                        >
-                          Add
-                        </button>
-                      )}
+          {modifierGroups.length ? (
+            <div className="mt-4 grid gap-3">
+              {modifierGroups.map((group) => {
+                const selectedCount = group.options.reduce((total, option) => total + (addonQuantities[option.id] ?? 0), 0);
+                const helper = group.required
+                  ? `Required - Select ${group.min <= 1 ? "any 1 option" : `${group.min} options`}`
+                  : group.max > 0
+                    ? `Select up to ${group.max} ${group.max === 1 ? "option" : "options"}`
+                    : "Optional";
+
+                return (
+                  <div key={group.id} className="overflow-hidden rounded-[14px] bg-white shadow-[0_8px_18px_rgba(17,24,39,0.045)] ring-1 ring-[#eef1f6]">
+                    <div className="border-b border-[#eef1f6] px-4 py-2.5">
+                      <h3 className="text-[13px] font-semibold capitalize text-charcoal">{group.title}</h3>
+                      <p className="mt-0.5 text-[10px] font-medium text-muted">{helper}</p>
                     </div>
-                  );
-                })}
-              </div>
+                    <div className="divide-y divide-[#eef1f6]">
+                      {group.options.map((addon) => {
+                        const selected = Boolean(addonQuantities[addon.id]);
+                        const disabled = group.kind === "multi" && !selected && !canSelectMore(group.id);
+
+                        return (
+                          <button
+                            key={addon.id}
+                            type="button"
+                            disabled={disabled}
+                            onClick={() => group.kind === "single" ? selectSingleAddon(group.id, addon.id) : toggleMultiAddon(group.id, addon.id)}
+                            className="grid min-h-[48px] w-full grid-cols-[1fr_auto] items-center gap-3 px-4 py-2 text-left disabled:opacity-45"
+                          >
+                            <span className="flex min-w-0 items-center gap-2.5">
+                              <DietMark type={addon.dietaryType ?? product.dietaryType} compact />
+                              <span className="min-w-0">
+                                <span className="block truncate text-[12px] font-medium text-charcoal">{addon.name}</span>
+                                {addon.price > 0 ? <span className="mt-0.5 block text-[10px] font-semibold text-maroon">+{formatRupees(addon.price)}</span> : null}
+                              </span>
+                            </span>
+                            <span className={`grid h-5 w-5 place-items-center border-2 ${
+                              group.kind === "single" ? "rounded-full" : "rounded-[4px]"
+                            } ${selected ? "border-red" : "border-[#ff5b70]"}`}>
+                              <span className={`${group.kind === "single" ? "h-2.5 w-2.5 rounded-full" : "h-3 w-3 rounded-[2px]"} ${selected ? "bg-red" : "bg-transparent"}`} />
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {group.max > 0 && group.kind === "multi" ? (
+                      <p className="border-t border-[#eef1f6] bg-[#f8fafc] px-4 py-1.5 text-[10px] font-medium text-muted">
+                        {selectedCount}/{group.max} selected
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           ) : null}
 
@@ -878,15 +907,16 @@ function DishDetailSheet({
 
         <div className="shrink-0 border-t border-[#eef1f6] bg-white px-5 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3">
           {unavailable ? <p className="mb-2 rounded-xl bg-[#f2f4f7] px-3 py-2 text-center text-xs font-black uppercase tracking-wide text-[#4b5563]">Currently unavailable</p> : null}
+          {modifierSelectionIssue ? <p className="mb-2 rounded-xl bg-[#fff4f5] px-3 py-2 text-center text-xs font-black text-maroon">{modifierSelectionIssue}</p> : null}
           <div className={`grid items-center gap-3 ${selectedQuantity > 0 ? "grid-cols-[minmax(0,1fr)_112px]" : "grid-cols-[minmax(0,1fr)_58px]"}`}>
             <button
               type="button"
               onClick={() => onAdd(selectedVariant.id, selectedAddonIds)}
-              disabled={orderingDisabled || unavailable}
+              disabled={addDisabled}
               className="grid h-13 min-w-0 grid-cols-[26px_minmax(0,1fr)_auto] items-center gap-2 rounded-[15px] bg-maroon px-4 text-white shadow-[0_12px_28px_rgba(141,0,33,0.25)] disabled:bg-muted/40"
             >
               <ShoppingCart size={20} strokeWidth={3} />
-              <span className="truncate text-left text-[13px] font-black">{selectedQuantity ? "ADD MORE" : "ADD TO CART"}</span>
+              <span className="truncate text-left text-[13px] font-black">{modifierSelectionIssue || (orderingDisabled ? "ORDERS CLOSED" : selectedQuantity ? "ADD MORE" : "ADD TO CART")}</span>
               <span className="text-[13px] font-black">{formatRupees(totalPrice)}</span>
             </button>
             {selectedQuantity > 0 ? (
@@ -1196,37 +1226,6 @@ export function MenuExperience({
   const showCartBar = cartCount > 0 && hiddenCartCount !== cartCount;
   const homeOfferCards = getHomeOfferCards(initialCoupons);
 
-  if (storeClosed) {
-    return (
-      <main className="min-h-screen bg-white pb-24 text-charcoal">
-        <Header showLocation />
-
-        <section className="mx-auto flex min-h-[calc(100vh-170px)] max-w-xl flex-col items-center justify-center px-8 pb-28 text-center lg:min-h-[calc(100vh-74px)]">
-          <div className="grid h-24 w-24 place-items-center rounded-full bg-[#fff4f5] text-maroon">
-            <Store size={48} strokeWidth={2.6} />
-          </div>
-          <p className="mt-7 text-xs font-black uppercase tracking-[0.24em] text-red">Wah Thali is offline</p>
-          <h1 className="mt-2 text-[30px] font-black leading-tight text-charcoal">Store is closed right now</h1>
-          <p className="mt-4 max-w-[420px] text-[17px] font-semibold leading-7 text-muted">
-            Please wait, we will start accepting orders during our opening hours.
-          </p>
-          <div className="mt-6 w-full rounded-[24px] border border-red/15 bg-[#fff8f9] p-5 text-left text-maroon">
-            <p className="text-sm font-black uppercase tracking-wide">Opening hours</p>
-            <p className="mt-2 text-2xl font-black">{restaurantSettings?.openingHours ?? "Opening hours will be updated soon"}</p>
-            <p className="mt-2 text-sm font-bold">
-              {outsideOrderingHours ? `Last orders close ${restaurantSettings?.lastOrderBufferMinutes ?? 30} minutes before closing.` : statusMessage}
-            </p>
-          </div>
-          <Link href="/support" className="mt-7 inline-flex h-13 min-w-[220px] items-center justify-center rounded-2xl bg-maroon px-7 text-[16px] font-black text-white shadow-[0_14px_26px_rgba(141,0,33,0.2)]">
-            Contact support
-          </Link>
-        </section>
-
-        <MobileNav />
-      </main>
-    );
-  }
-
   if (!serviceable) {
     return (
       <main className="min-h-screen bg-white pb-24 text-charcoal">
@@ -1255,6 +1254,16 @@ export function MenuExperience({
       <div className={mobileMenuView === "category" || isSearchPage ? "hidden lg:block" : undefined}>
         <Header showLocation={isHomePage && mobileMenuView === "home"} />
       </div>
+
+      {storeClosed && orderingStatus ? (
+        <ClosedOrderingNotice
+          title={orderingStatus.title}
+          message={statusMessage}
+          openingHours={restaurantSettings?.openingHours}
+          lastOrderBufferMinutes={restaurantSettings?.lastOrderBufferMinutes}
+          outsideOrderingHours={outsideOrderingHours}
+        />
+      ) : null}
 
       {isSearchPage ? (
         <section className="min-h-screen bg-white px-6 pb-24 pt-1 lg:hidden">
@@ -1535,14 +1544,12 @@ export function MenuExperience({
             className="mt-5 lg:mt-6"
           />
 
-          {storeMode !== "OPEN" ? (
+          {storeMode === "BUSY" ? (
             <section className="mt-5 rounded-2xl border border-red/20 bg-[#fff8f9] p-4 text-maroon">
               <div className="flex items-start gap-3">
-                {storeMode === "BUSY" ? <TimerReset className="mt-0.5 shrink-0" size={22} /> : <Store className="mt-0.5 shrink-0 text-red" size={22} />}
+                <TimerReset className="mt-0.5 shrink-0" size={22} />
                 <div>
-                  <p className="text-sm font-black uppercase tracking-wide">
-                    {storeMode === "BUSY" ? "Kitchen busy" : storeMode === "PAUSED" ? "Ordering paused" : "Restaurant closed"}
-                  </p>
+                  <p className="text-sm font-black uppercase tracking-wide">Kitchen busy</p>
                   <p className="mt-1 text-sm font-bold">{statusMessage}</p>
                 </div>
               </div>
@@ -1816,6 +1823,40 @@ function getCategoryImage(category: string, images: Record<string, string>, prod
 function useFallbackImage(event: SyntheticEvent<HTMLImageElement>) {
   event.currentTarget.onerror = null;
   event.currentTarget.src = "/wah-thali-meal-cutout-v2.png";
+}
+
+function ClosedOrderingNotice({
+  title,
+  message,
+  openingHours,
+  lastOrderBufferMinutes,
+  outsideOrderingHours,
+}: {
+  title: string;
+  message: string;
+  openingHours?: string;
+  lastOrderBufferMinutes?: number;
+  outsideOrderingHours: boolean;
+}) {
+  return (
+    <section className="mx-auto mt-3 w-full max-w-[1180px] px-5 sm:px-6 xl:px-0">
+      <div className="rounded-[14px] border border-[#d9dde3] bg-[#f8f9fb] px-3.5 py-3 text-[#111827] shadow-[0_8px_18px_rgba(17,24,39,0.045)] sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3 sm:px-4">
+        <span className="min-w-0">
+          <span className="block text-[9px] font-black uppercase tracking-[0.16em] text-[#4b5563]">Menu open for browsing</span>
+          <span className="mt-1 block text-[12px] font-black leading-4 text-charcoal">{title}</span>
+          <span className="mt-0.5 block text-[11px] font-bold leading-4 text-[#4b5563]">
+            Orders are not being accepted right now. {outsideOrderingHours && openingHours ? "Please check the ordering hours below." : message}
+          </span>
+        </span>
+        {openingHours ? (
+          <span className="mt-2 block rounded-[10px] bg-white px-3 py-2 text-[11px] font-black leading-4 text-[#111827] ring-1 ring-[#d9dde3] sm:mt-0">
+            {openingHours}
+            {outsideOrderingHours ? <span className="ml-1 text-[10px] text-muted sm:block sm:ml-0">Last order {lastOrderBufferMinutes ?? 30} min before close</span> : null}
+          </span>
+        ) : null}
+      </div>
+    </section>
+  );
 }
 
 function getProductOffer(product: Product, categoryOffers: CategoryOfferMap) {

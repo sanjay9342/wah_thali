@@ -32,8 +32,15 @@ const emptyOfferDraft: OfferDraft = {
   amount: "",
 };
 
-export function AdminCategoriesClient({ initialCategories }: { initialCategories: AdminCategory[] }) {
+export function AdminCategoriesClient({
+  initialCategories,
+  initialCartSuggestionCategories = [],
+}: {
+  initialCategories: AdminCategory[];
+  initialCartSuggestionCategories?: string[];
+}) {
   const [categories, setCategories] = useState(initialCategories);
+  const [cartSuggestionCategories, setCartSuggestionCategories] = useState(initialCartSuggestionCategories);
   const [newCategory, setNewCategory] = useState("");
   const [newCategoryImage, setNewCategoryImage] = useState("");
   const [newCategoryOffer, setNewCategoryOffer] = useState<OfferDraft>(emptyOfferDraft);
@@ -57,6 +64,9 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? "Could not reload categories.");
     setCategories(data.categories);
+    if (Array.isArray(data.cartSuggestionCategories)) {
+      setCartSuggestionCategories(data.cartSuggestionCategories);
+    }
   }
 
   function run(task: () => Promise<void>) {
@@ -110,7 +120,7 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
         }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Category save failed.");
+      if (!response.ok) throw new Error(getApiErrorMessage(data, "Category save failed."));
       setNewCategory("");
       setNewCategoryImage("");
       setNewCategoryOffer(emptyOfferDraft);
@@ -127,7 +137,7 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
         body: JSON.stringify(patch),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Category update failed.");
+      if (!response.ok) throw new Error(getApiErrorMessage(data, "Category update failed."));
       await refreshCategories();
       showSuccess("Category updated successfully.");
     });
@@ -148,9 +158,33 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
         }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Category order save failed.");
+      if (!response.ok) throw new Error(getApiErrorMessage(data, "Category order save failed."));
       await refreshCategories();
       showSuccess("Category order saved successfully.");
+    });
+  }
+
+  function toggleCartSuggestionCategory(categoryName: string) {
+    setCartSuggestionCategories((current) =>
+      current.includes(categoryName)
+        ? current.filter((item) => item !== categoryName)
+        : [...current, categoryName],
+    );
+  }
+
+  function saveCartSuggestionCategories() {
+    run(async () => {
+      const response = await adminFetch(adminAccess?.session, "/api/categories", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cartSuggestionCategories,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(getApiErrorMessage(data, "Cart recommendation categories save failed."));
+      await refreshCategories();
+      showSuccess("Cart complete-your-meal categories saved.");
     });
   }
 
@@ -256,6 +290,36 @@ export function AdminCategoriesClient({ initialCategories }: { initialCategories
               </label>
               <button disabled={isPending || uploading || !newCategory.trim()} onClick={addCategory} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-red px-4 font-black text-white disabled:opacity-60">
                 <Plus size={18} /> Add category
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 rounded-xl border border-border bg-white p-4">
+              <div>
+                <h2 className="text-base font-black text-maroon">Complete your meal with</h2>
+                <p className="mt-1 text-xs font-bold leading-5 text-muted">Choose categories that appear as the small cart add-on strip.</p>
+              </div>
+              <div className="grid max-h-56 gap-2 overflow-y-auto pr-1">
+                {categories.map((category) => {
+                  const selected = cartSuggestionCategories.includes(category.name);
+                  return (
+                    <label key={category.id} className={`flex min-h-10 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-black ${selected ? "border-maroon bg-[#fff4f5] text-maroon" : "border-border bg-cream text-charcoal"}`}>
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleCartSuggestionCategory(category.name)}
+                        className="h-4 w-4 accent-maroon"
+                      />
+                      <span className="min-w-0 flex-1 truncate">{category.name}</span>
+                      <span className="shrink-0 text-[10px] text-muted">{category._count?.products ?? 0}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-xs font-bold text-muted">
+                {cartSuggestionCategories.length ? `${cartSuggestionCategories.length} selected` : "No category selected. Cart will use available menu items."}
+              </p>
+              <button disabled={isPending} onClick={saveCartSuggestionCategories} className="h-10 rounded-lg bg-maroon px-4 text-sm font-black text-white disabled:opacity-60">
+                Save cart section
               </button>
             </div>
           </aside>
@@ -431,6 +495,18 @@ function withPositionNumbers(categories: AdminCategory[]) {
   return categories.map((category, index) => ({ ...category, sortOrder: index + 1 }));
 }
 
+function getApiErrorMessage(data: unknown, fallback: string) {
+  if (!data || typeof data !== "object") return fallback;
+  const payload = data as { error?: unknown; issues?: { fieldErrors?: Record<string, string[]>; formErrors?: string[] } };
+  const fieldMessages = payload.issues?.fieldErrors
+    ? Object.entries(payload.issues.fieldErrors).flatMap(([field, messages]) =>
+        messages.map((message) => `${field}: ${message}`),
+      )
+    : [];
+  const formMessages = payload.issues?.formErrors ?? [];
+  return [...fieldMessages, ...formMessages, typeof payload.error === "string" ? payload.error : fallback][0] ?? fallback;
+}
+
 function CategoryEditModal({
   category,
   isPending,
@@ -465,15 +541,15 @@ function CategoryEditModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-charcoal/45 p-4">
-      <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-border p-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/45 p-3 sm:p-4">
+      <div className="grid max-h-[calc(100dvh-24px)] w-full max-w-xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-2xl bg-white shadow-2xl sm:max-h-[92dvh]">
+        <div className="flex items-center justify-between border-b border-border bg-white p-5">
           <h2 className="text-xl font-black text-maroon">Edit category</h2>
           <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-lg border border-border" aria-label="Close">
             <X size={18} />
           </button>
         </div>
-        <div className="grid gap-4 p-5">
+        <div className="grid min-h-0 gap-4 overflow-y-auto overscroll-contain p-5">
           <label className="grid gap-2 text-sm font-black text-maroon">
             Category name
             <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className="h-11 rounded-lg border border-border bg-cream px-3 text-charcoal" />
@@ -511,7 +587,7 @@ function CategoryEditModal({
           </div>
           {error ? <p className="text-sm font-black text-red">{error}</p> : null}
         </div>
-        <div className="flex justify-end gap-2 border-t border-border p-5">
+        <div className="flex justify-end gap-2 border-t border-border bg-white p-5">
           <button type="button" onClick={onClose} className="h-11 rounded-lg border border-border px-4 font-black">Cancel</button>
           <button
             type="button"

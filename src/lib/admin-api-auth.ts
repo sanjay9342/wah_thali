@@ -30,3 +30,26 @@ export async function requireAdminPermission(request: Request, permission: Admin
 
   return { ok: true as const, access };
 }
+
+export async function requireAnyAdminPermission(request: Request, permissions: AdminPermission[]) {
+  const identity = {
+    id: readHeader(request, "x-wah-admin-id"),
+    name: readHeader(request, "x-wah-admin-name"),
+    mobile: readHeader(request, "x-wah-admin-mobile"),
+    email: readHeader(request, "x-wah-admin-email"),
+  };
+  const access = await getAdminAccessForIdentity(identity);
+
+  if (!access.allowed || !permissions.some((permission) => hasAdminPermission(access.permissions, permission))) {
+    return {
+      ok: false as const,
+      access,
+      response: NextResponse.json(
+        { error: "You do not have permission for this admin action.", access },
+        { status: 403 },
+      ),
+    };
+  }
+
+  return { ok: true as const, access };
+}

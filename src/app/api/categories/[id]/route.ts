@@ -1,5 +1,6 @@
 import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
@@ -77,6 +78,7 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ id
     entityId: category.id,
     summary: `Updated category ${category.name}`,
   });
+  revalidateTag("storefront", { expire: 0 });
 
   return NextResponse.json({ category });
 }
@@ -101,10 +103,12 @@ async function deleteHandler(request: Request, { params }: { params: Promise<{ i
 
   if (products > 0) {
     const category = await prisma.category.update({ where: { id }, data: { visible: false } });
+    revalidateTag("storefront", { expire: 0 });
     return NextResponse.json({ deleted: false, archived: true, category });
   }
 
   const category = await prisma.category.delete({ where: { id } });
+  revalidateTag("storefront", { expire: 0 });
   return NextResponse.json({ deleted: true, category });
 }
 

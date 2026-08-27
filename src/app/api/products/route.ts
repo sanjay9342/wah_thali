@@ -1,5 +1,6 @@
 import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
@@ -17,7 +18,7 @@ const productSchema = z.object({
   kitchenName: nullableTrimmedText(120),
   reportCode: nullableReportCode(),
   slug: z.string().min(1).optional(),
-  description: z.string().min(1),
+  description: z.string().trim().optional().default(""),
   price: z.coerce.number().int().nonnegative(),
   originalPrice: z.coerce.number().int().nonnegative().nullable().optional(),
   image: imagePathSchema.optional(),
@@ -39,7 +40,7 @@ const productSchema = z.object({
     name: z.string().min(1),
     price: z.coerce.number().int().nonnegative(),
     available: z.boolean().default(true),
-  })).default([{ name: "Regular", price: 0, available: true }]),
+  })).default([]),
 });
 
 async function getHandler() {
@@ -61,7 +62,6 @@ async function postHandler(request: Request) {
 
   const { category, image, prepTimeMinutes, stock, reorderAt, margin, addons, variants, ...product } = parsed.data;
   const slug = product.slug ?? slugify(product.name);
-  const variantRows = variants.length ? variants : [{ name: "Regular", price: 0, available: true }];
   if (product.reportCode) {
     const duplicate = await prisma.product.findFirst({
       where: { reportCode: product.reportCode },
@@ -83,7 +83,7 @@ async function postHandler(request: Request) {
         },
       },
       images: image ? { create: { url: image, alt: product.name, sortOrder: 0 } } : undefined,
-      variants: { create: variantRows },
+      variants: variants.length ? { create: variants } : undefined,
       addons: addons.length ? { create: addons } : undefined,
       inventory: { create: { stock, reorderAt, margin } },
     },
@@ -111,6 +111,7 @@ async function postHandler(request: Request) {
     entityId: saved.id,
     summary: `Created product ${saved.name}`,
   });
+  revalidateTag("storefront", { expire: 0 });
 
   return NextResponse.json({ product: saved }, { status: 201 });
 }

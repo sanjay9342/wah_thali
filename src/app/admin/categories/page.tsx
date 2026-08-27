@@ -1,6 +1,6 @@
 import { AdminCategoriesClient } from "@/components/admin-categories-client";
 import { requireAdminPagePermission } from "@/lib/admin-page-auth";
-import { getCategoryImagesFromDb, getCategoryOffersFromDb } from "@/lib/db";
+import { getCartSuggestionCategoriesFromDb, getCategoryImagesFromDb, getCategoryOffersFromDb } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -11,13 +11,14 @@ export default async function AdminCategoriesPage() {
     return <AdminCategoriesClient initialCategories={[]} />;
   }
 
-  const [categories, categoryImages, categoryOffers] = await Promise.all([
+  const [categories, categoryImages, categoryOffers, cartSuggestionCategories] = await Promise.all([
     prisma.category.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: { _count: { select: { products: true } } },
     }),
     getCategoryImagesFromDb(),
     getCategoryOffersFromDb(),
+    getCartSuggestionCategoriesFromDb(),
   ]);
 
   return (
@@ -31,6 +32,7 @@ export default async function AdminCategoriesPage() {
         image: categoryImages[category.slug] ?? "/wah-thali-meal-cutout-v2.png",
         offer: categoryOffers[category.slug] ?? "",
       }))}
+      initialCartSuggestionCategories={cartSuggestionCategories}
     />
   );
 }

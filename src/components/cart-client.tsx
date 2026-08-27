@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { calculateCartTotals, formatRupees, getPricableCartLines, getProductUnitPricing, isCouponEligibleForCustomer } from "@/lib/pricing";
+import { getModifierOptionLabel } from "@/lib/product-modifiers";
 import { writeStoredCart } from "@/lib/cart-storage";
 import { readCustomerSession, saveCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 import { extractPinCode, getDeliveryLocationCoverage, saveDeliveryLocation, useDeliveryLocation } from "@/lib/delivery-location";
@@ -38,6 +39,7 @@ import { OrderPlacingOverlay } from "@/components/order-placing-overlay";
 import type { CartLine, CategoryOfferMap, Coupon, Product, RestaurantSettings } from "@/lib/types";
 
 type PaymentMethod = "COD" | "RAZORPAY";
+type FulfillmentMethod = "DELIVERY" | "PICKUP";
 type CouponCustomer = { isVip: boolean; orderCount: number; points: number; tags: string[] };
 
 declare global {
@@ -91,12 +93,14 @@ export function CartClient({
   initialCoupons,
   restaurantSettings,
   initialCategoryOffers = {},
+  cartSuggestionCategories = [],
 }: {
   addProductId?: string;
   initialProducts: Product[];
   initialCoupons: Coupon[];
   restaurantSettings: RestaurantSettings;
   initialCategoryOffers?: CategoryOfferMap;
+  cartSuggestionCategories?: string[];
 }) {
   const router = useRouter();
   const [coupon, setCoupon] = useState<string | undefined>();
@@ -116,6 +120,7 @@ export function CartClient({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
     restaurantSettings.onlinePaymentsEnabled ? "RAZORPAY" : "COD",
   );
+  const [fulfillmentMethod, setFulfillmentMethod] = useState<FulfillmentMethod>("DELIVERY");
   const supportMobile = restaurantSettings.supportPhone.replace(/\D/g, "").slice(-10);
   const [receiverDraft, setReceiverDraft] = useState(() => ({
     name: "Customer",
@@ -137,13 +142,42 @@ export function CartClient({
   const selectedCoupon = initialCoupons.find((item) => item.code === coupon);
   const couponEligible = selectedCoupon ? isCouponEligibleForCustomer(selectedCoupon, couponCustomer) : true;
   const deliveryCoverage = getDeliveryLocationCoverage(deliveryLocation, restaurantSettings);
-  const serviceable = deliveryCoverage.serviceable;
+  const isPickup = fulfillmentMethod === "PICKUP";
+  const billingSettings = useMemo<RestaurantSettings>(() => {
+    if (!isPickup) return restaurantSettings;
+
+    return {
+      ...restaurantSettings,
+      deliveryFee: 0,
+      deliveryFeeMode: "FLAT",
+      deliveryFeePercent: 0,
+      deliveryDistanceSlabs: [],
+      freeDeliveryThreshold: 0,
+    };
+  }, [isPickup, restaurantSettings]);
+  const fulfillmentDistanceKm = isPickup ? null : deliveryCoverage.distanceKm;
+  const serviceable = isPickup || deliveryCoverage.serviceable;
+  const fulfillmentAddress = isPickup
+    ? restaurantSettings.kitchenAddress || "Wah Thali kitchen"
+    : deliveryLocation.address;
+  const fulfillmentTimeLabel = isPickup
+    ? `Pickup in about ${restaurantSettings.defaultPrepMinutes} min`
+    : "Delivery in 30-35 mins";
 
   const totals = useMemo(
-    () => calculateCartTotals(validLines, couponEligible ? coupon : undefined, initialProducts, initialCoupons, restaurantSettings, couponCustomer, initialCategoryOffers, deliveryCoverage.distanceKm),
-    [couponCustomer, couponEligible, deliveryCoverage.distanceKm, initialCategoryOffers, initialCoupons, initialProducts, validLines, coupon, restaurantSettings],
+    () => calculateCartTotals(validLines, couponEligible ? coupon : undefined, initialProducts, initialCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm),
+    [couponCustomer, couponEligible, fulfillmentDistanceKm, initialCategoryOffers, initialCoupons, initialProducts, validLines, coupon, billingSettings],
   );
-  const suggestions = initialProducts.filter((product) => !validLines.some((line) => line.productId === product.id)).slice(0, 6);
+  const suggestions = useMemo(() => {
+    const cartProductIds = new Set(validLines.map((line) => line.productId));
+    const selectedCategories = new Set(cartSuggestionCategories);
+    const availableSuggestions = initialProducts.filter((product) =>
+      product.available &&
+      !cartProductIds.has(product.id) &&
+      (!selectedCategories.size || selectedCategories.has(product.category)),
+    );
+    return availableSuggestions.slice(0, 10);
+  }, [cartSuggestionCategories, initialProducts, validLines]);
   const orderingStatus = getStoreOrderingStatus(restaurantSettings);
   const storeOrderingDisabled = orderingStatus.unavailable;
   const statusMessage = orderingStatus.message;
@@ -154,9 +188,9 @@ export function CartClient({
       initialCoupons.filter((item) => (
         totals.subtotal >= item.minOrder &&
         isCouponEligibleForCustomer(item, couponCustomer) &&
-        calculateCartTotals(validLines, item.code, initialProducts, initialCoupons, restaurantSettings, couponCustomer, initialCategoryOffers, deliveryCoverage.distanceKm).discount > 0
+        calculateCartTotals(validLines, item.code, initialProducts, initialCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm).discount > 0
       )),
-    [couponCustomer, deliveryCoverage.distanceKm, initialCategoryOffers, initialCoupons, initialProducts, restaurantSettings, totals.subtotal, validLines],
+    [couponCustomer, fulfillmentDistanceKm, initialCategoryOffers, initialCoupons, initialProducts, billingSettings, totals.subtotal, validLines],
   );
   const featuredCoupon = availableCoupons[0];
   const featuredCouponValue = featuredCoupon ? getCouponBenefitText(featuredCoupon) : "";
@@ -170,12 +204,12 @@ export function CartClient({
     const product = initialProducts.find((item) => item.id === line.productId);
     if (!product) return total;
     const variant = product.variants.find((item) => item.id === line.variantId);
-    if (!variant) return total;
+    if (!variant && product.variants.length > 0) return total;
     const addonTotal = line.addonIds.reduce((addonSum, addonId) => {
       const addon = product.addons.find((item) => item.id === addonId);
       return addonSum + (addon?.price ?? 0);
     }, 0);
-    return total + getProductUnitPricing(product, initialCategoryOffers, variant.price, addonTotal).discountPerUnit * line.quantity;
+    return total + getProductUnitPricing(product, initialCategoryOffers, variant?.price ?? 0, addonTotal).discountPerUnit * line.quantity;
   }, 0);
   const totalSavings = itemSavings + totals.discount;
   const cartItemCount = validLines.reduce((total, line) => total + line.quantity, 0);
@@ -557,11 +591,11 @@ export function CartClient({
       router.push("/login?next=/cart");
       return;
     }
-    if (!hasDeliveryAddress) {
+    if (!isPickup && !hasDeliveryAddress) {
       openLocationSheet();
       return;
     }
-    if (!serviceable) {
+    if (!isPickup && !serviceable) {
       openLocationSheet();
       return;
     }
@@ -587,13 +621,14 @@ export function CartClient({
           customerEmail: customerSession.email,
           receiverName,
           receiverMobile,
-          deliveryAddress: deliveryLocation.address,
-          deliveryLabel: deliveryLocation.label,
-          restaurantNote: cookingRequest,
+          fulfillmentMethod,
+          deliveryAddress: fulfillmentAddress,
+          deliveryLabel: isPickup ? "Self Pickup" : deliveryLocation.label,
+          restaurantNote: [cookingRequest, isPickup ? "Customer will self pickup from the kitchen." : ""].filter(Boolean).join(" "),
           couponCode: appliedCoupon?.code,
-          pinCode: deliveryLocation.pinCode,
-          latitude: deliveryLocation.latitude,
-          longitude: deliveryLocation.longitude,
+          pinCode: isPickup ? "" : deliveryLocation.pinCode,
+          latitude: isPickup ? "" : deliveryLocation.latitude,
+          longitude: isPickup ? "" : deliveryLocation.longitude,
           paymentMethod: selectedPaymentMethod,
           items: validLines,
         }),
@@ -653,7 +688,7 @@ export function CartClient({
       router.push("/login?next=/cart");
       return;
     }
-    if (!hasDeliveryAddress || !serviceable) {
+    if (!isPickup && (!hasDeliveryAddress || !serviceable)) {
       openLocationSheet();
       return;
     }
@@ -756,13 +791,24 @@ export function CartClient({
             </span>
           </div>
 
+          <FulfillmentSelector
+            value={fulfillmentMethod}
+            onChange={setFulfillmentMethod}
+            deliveryAddress={deliveryLocation.address}
+            pickupAddress={restaurantSettings.kitchenAddress}
+            pickupMinutes={restaurantSettings.defaultPrepMinutes}
+          />
+
           <div className="space-y-3">
             {validLines.map((line, index) => {
               const product = initialProducts.find((item) => item.id === line.productId);
               if (!product) return null;
               const variant = product.variants.find((item) => item.id === line.variantId);
               const addons = line.addonIds
-                .map((addonId) => product.addons.find((item) => item.id === addonId)?.name)
+                .map((addonId) => {
+                  const addon = product.addons.find((item) => item.id === addonId);
+                  return addon ? getModifierOptionLabel(addon.name) : undefined;
+                })
                 .filter(Boolean);
               const addonTotal = line.addonIds.reduce((total, addonId) => {
                 const addon = product.addons.find((item) => item.id === addonId);
@@ -825,35 +871,12 @@ export function CartClient({
           </div>
 
           {suggestions.length ? (
-            <section className="mt-7">
-              <h2 className="text-[20px] font-black text-charcoal">Complete your meal</h2>
-              <div className="mt-4 grid grid-cols-3 gap-4">
-                {suggestions.slice(0, 3).map((product) => (
-                  <article key={product.id} className="rounded-[16px] border border-[#f1e7e4] bg-[#fff8f9] p-3.5 shadow-sm">
-                    <div className="h-[104px] overflow-hidden rounded-[13px] bg-cream">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={product.image || "/wah-thali-meal-cutout-v2.png"}
-                        alt={product.name}
-                        className="h-full w-full object-cover"
-                        loading="lazy"
-                        onError={(event) => {
-                          event.currentTarget.src = "/wah-thali-meal-cutout-v2.png";
-                        }}
-                      />
-                    </div>
-                    <h3 className="mt-3 line-clamp-1 text-[14px] font-black text-charcoal">{product.name}</h3>
-                    <p className="mt-2 text-[16px] font-black text-maroon">{formatRupees(getProductUnitPricing(product, initialCategoryOffers).unitPrice)}</p>
-                    <button
-                      onClick={() => addSuggestedProduct(product)}
-                      className="mt-4 h-9 w-full rounded-xl bg-maroon text-[13px] font-black text-white shadow-[0_10px_22px_rgba(141,0,33,0.16)]"
-                    >
-                      Add
-                    </button>
-                  </article>
-                ))}
-              </div>
-            </section>
+            <CompactMealSuggestions
+              products={suggestions}
+              categoryOffers={initialCategoryOffers}
+              onAdd={addSuggestedProduct}
+              className="mt-5"
+            />
           ) : null}
         </div>
 
@@ -866,7 +889,7 @@ export function CartClient({
                 <dd className="font-black text-charcoal">{formatRupees(totals.subtotal)}</dd>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <dt className="font-bold text-[#1f2937]">Delivery Fee</dt>
+                <dt className="font-bold text-[#1f2937]">{isPickup ? "Pickup Fee" : "Delivery Fee"}</dt>
                 <dd className="font-black text-charcoal">{formatRupees(totals.delivery)}</dd>
               </div>
               <div className="flex items-center justify-between gap-4">
@@ -921,7 +944,7 @@ export function CartClient({
             </div>
             {storeOrderingDisabled ? (
               <button disabled className="mt-5 h-12 w-full cursor-not-allowed rounded-2xl bg-muted/30 text-base font-black text-muted">
-                Closed
+                Orders closed
               </button>
             ) : !serviceable ? (
               <button type="button" onClick={openLocationSheet} className="mt-5 h-12 w-full rounded-2xl bg-maroon text-base font-black text-white">
@@ -969,7 +992,17 @@ export function CartClient({
           <p className="mt-1 text-[11px] font-bold text-muted">{statusMessage}</p>
         </div>
       ) : null}
-      {!serviceable ? (
+      <div className="mx-3 mt-4">
+        <FulfillmentSelector
+          value={fulfillmentMethod}
+          onChange={setFulfillmentMethod}
+          deliveryAddress={deliveryLocation.address}
+          pickupAddress={restaurantSettings.kitchenAddress}
+          pickupMinutes={restaurantSettings.defaultPrepMinutes}
+        />
+      </div>
+
+      {!isPickup && !serviceable ? (
         <div className="mx-3 mt-4 rounded-2xl border border-maroon/15 bg-white p-3.5 text-[13px] text-maroon">
           <p className="flex items-center gap-2 font-black">
             <MapPin size={17} />
@@ -991,7 +1024,10 @@ export function CartClient({
           if (!product) return null;
           const variant = product.variants.find((item) => item.id === line.variantId);
           const addons = line.addonIds
-            .map((addonId) => product.addons.find((item) => item.id === addonId)?.name)
+            .map((addonId) => {
+              const addon = product.addons.find((item) => item.id === addonId);
+              return addon ? getModifierOptionLabel(addon.name) : undefined;
+            })
             .filter(Boolean);
           const addonTotal = line.addonIds.reduce((total, addonId) => {
             const addon = product.addons.find((item) => item.id === addonId);
@@ -1060,37 +1096,12 @@ export function CartClient({
       </div>
 
       {suggestions.length ? (
-      <div className="mx-3 mt-4 rounded-[18px] bg-white p-3 shadow-sm">
-          <h2 className="text-[12px] font-black uppercase tracking-[0.18em] text-muted">Complete your meal</h2>
-          <div className="mt-3 flex gap-2.5 overflow-x-auto pb-1">
-            {suggestions.map((product) => (
-              <article key={product.id} className="w-[86px] shrink-0">
-                <div className="relative h-[72px] w-[86px] overflow-hidden rounded-xl bg-cream ring-1 ring-border">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={product.image} alt={product.name} className="h-full w-full object-cover" loading="lazy" />
-                  <button
-                    onClick={() => addSuggestedProduct(product)}
-                    className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-lg bg-white text-maroon shadow ring-1 ring-border"
-                    aria-label={`Add ${product.name}`}
-                  >
-                    <Plus size={17} strokeWidth={3} />
-                  </button>
-                </div>
-                <div className="mt-2 flex items-start gap-1">
-                  <span
-                    className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-[3px] border bg-white ${
-                      product.dietaryType === "NON_VEG" ? "border-red" : "border-maroon"
-                    }`}
-                  >
-                    <span className={`h-2 w-2 rounded-full ${product.dietaryType === "NON_VEG" ? "bg-red" : "bg-maroon"}`} />
-                  </span>
-                  <p className="line-clamp-2 text-[11px] font-semibold leading-3.5 text-charcoal">{product.name}</p>
-                </div>
-                <p className="mt-1.5 text-[13px] font-bold text-charcoal">{formatRupees(getProductUnitPricing(product, initialCategoryOffers).unitPrice)}</p>
-              </article>
-            ))}
-          </div>
-        </div>
+        <CompactMealSuggestions
+          products={suggestions}
+          categoryOffers={initialCategoryOffers}
+          onAdd={addSuggestedProduct}
+          className="mx-3 mt-4"
+        />
       ) : null}
 
       <div className="mx-3 mt-4 overflow-hidden rounded-[18px] bg-white shadow-sm">
@@ -1153,13 +1164,13 @@ export function CartClient({
         <div className="divide-y divide-[#eef1f6]">
           <CartInfoRow
             icon={<Clock3 size={18} />}
-            title="Delivery in 30-35 mins"
+            title={fulfillmentTimeLabel}
           />
           <CartInfoRow
-            icon={<MapPin size={18} />}
-            title={`Delivery at ${deliveryLocation.label}`}
-            body={deliveryLocation.address}
-            onClick={openLocationSheet}
+            icon={isPickup ? <Store size={18} /> : <MapPin size={18} />}
+            title={isPickup ? "Pickup from kitchen" : `Delivery at ${deliveryLocation.label}`}
+            body={fulfillmentAddress}
+            onClick={isPickup ? undefined : openLocationSheet}
           />
           <CartInfoRow
             icon={<Phone size={18} />}
@@ -1236,9 +1247,9 @@ export function CartClient({
                   </dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="border-b border-dashed border-charcoal font-extrabold text-charcoal">Delivery partner fee</dt>
+                  <dt className="border-b border-dashed border-charcoal font-extrabold text-charcoal">{isPickup ? "Pickup fee" : "Delivery partner fee"}</dt>
                   <dd className="font-extrabold text-charcoal">
-                    {totals.delivery === 0 ? <span className="mr-2 text-muted line-through">{formatRupees(restaurantSettings.deliveryFee)}</span> : null}
+                    {!isPickup && totals.delivery === 0 ? <span className="mr-2 text-muted line-through">{formatRupees(restaurantSettings.deliveryFee)}</span> : null}
                     {formatRupees(totals.delivery)}
                   </dd>
                 </div>
@@ -1391,9 +1402,9 @@ export function CartClient({
           customer={couponCustomer}
           products={initialProducts}
           lines={validLines}
-          restaurantSettings={restaurantSettings}
+          restaurantSettings={billingSettings}
           categoryOffers={initialCategoryOffers}
-          deliveryDistanceKm={deliveryCoverage.distanceKm}
+          deliveryDistanceKm={fulfillmentDistanceKm}
           onClose={() => setShowCouponSheet(false)}
           onSelect={selectCoupon}
         />
@@ -1401,15 +1412,16 @@ export function CartClient({
 
       {showOrderConfirmSheet ? (
         <OrderConfirmationSheet
-          addressLabel={deliveryLocation.label}
-          address={deliveryLocation.address}
+          locationTitle={isPickup ? "Self pickup from kitchen" : `Delivery at ${deliveryLocation.label}`}
+          locationBody={fulfillmentAddress}
+          fulfillmentMethod={fulfillmentMethod}
           receiverName={receiverName}
           receiverMobile={receiverMobile}
           paymentLabel={paymentLabel}
           total={totals.grandTotal}
           submitting={submitting}
           onClose={() => setShowOrderConfirmSheet(false)}
-          onEditLocation={() => {
+          onEditLocation={isPickup ? undefined : () => {
             setShowOrderConfirmSheet(false);
             openLocationSheet();
           }}
@@ -1437,7 +1449,7 @@ export function CartClient({
           </div>
           {storeOrderingDisabled ? (
             <button disabled className="h-13 cursor-not-allowed rounded-2xl bg-muted/30 text-[15px] font-black text-muted">
-              Closed
+              Orders closed
             </button>
           ) : !serviceable ? (
             <button
@@ -1509,9 +1521,75 @@ function BottomSheet({
   );
 }
 
+function FulfillmentSelector({
+  value,
+  onChange,
+  deliveryAddress,
+  pickupAddress,
+  pickupMinutes,
+}: {
+  value: FulfillmentMethod;
+  onChange: (value: FulfillmentMethod) => void;
+  deliveryAddress: string;
+  pickupAddress: string;
+  pickupMinutes: number;
+}) {
+  const options: {
+    value: FulfillmentMethod;
+    title: string;
+    body: string;
+    icon: ReactNode;
+  }[] = [
+    {
+      value: "DELIVERY",
+      title: "Delivery",
+      body: deliveryAddress && deliveryAddress !== "Select delivery location" ? deliveryAddress : "Choose delivery location",
+      icon: <MapPin size={18} />,
+    },
+    {
+      value: "PICKUP",
+      title: "Self pickup",
+      body: `${pickupAddress || "Wah Thali kitchen"} | About ${pickupMinutes} min`,
+      icon: <Store size={18} />,
+    },
+  ];
+
+  return (
+    <section className="mb-5 rounded-[16px] bg-white p-2 shadow-sm ring-1 ring-[#eef1f6]">
+      <div className="grid gap-2 sm:grid-cols-2">
+        {options.map((option) => {
+          const active = value === option.value;
+
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              className={`grid min-h-[78px] grid-cols-[34px_minmax(0,1fr)] items-center gap-3 rounded-[13px] px-3 py-3 text-left ring-1 ${
+                active
+                  ? "bg-[#fff4f5] text-maroon ring-maroon"
+                  : "bg-[#f6f7fb] text-charcoal ring-transparent hover:bg-white hover:ring-border"
+              }`}
+            >
+              <span className={`grid h-9 w-9 place-items-center rounded-xl ${active ? "bg-maroon text-white" : "bg-white text-maroon"}`}>
+                {option.icon}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[14px] font-black">{option.title}</span>
+                <span className="mt-1 block line-clamp-2 text-[12px] font-bold leading-4 text-muted">{option.body}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function OrderConfirmationSheet({
-  addressLabel,
-  address,
+  locationTitle,
+  locationBody,
+  fulfillmentMethod,
   receiverName,
   receiverMobile,
   paymentLabel,
@@ -1522,30 +1600,31 @@ function OrderConfirmationSheet({
   onEditReceiver,
   onConfirm,
 }: {
-  addressLabel: string;
-  address: string;
+  locationTitle: string;
+  locationBody: string;
+  fulfillmentMethod: FulfillmentMethod;
   receiverName: string;
   receiverMobile: string;
   paymentLabel: string;
   total: number;
   submitting: boolean;
   onClose: () => void;
-  onEditLocation: () => void;
+  onEditLocation?: () => void;
   onEditReceiver: () => void;
   onConfirm: () => void;
 }) {
   return (
     <BottomSheet title="Confirm order details" onClose={onClose}>
       <p className="mt-2 text-[14px] font-bold leading-5 text-muted">
-        Please check your delivery address and receiver details before we place your order.
+        Please check your {fulfillmentMethod === "PICKUP" ? "pickup" : "delivery"} details and receiver phone before we place your order.
       </p>
 
       <div className="mt-6 overflow-hidden rounded-[20px] bg-white shadow-sm ring-1 ring-border">
         <ConfirmDetailRow
-          icon={<MapPin size={20} />}
-          title={`Delivery at ${addressLabel}`}
-          body={address}
-          action="Change"
+          icon={fulfillmentMethod === "PICKUP" ? <Store size={20} /> : <MapPin size={20} />}
+          title={locationTitle}
+          body={locationBody}
+          action={onEditLocation ? "Change" : undefined}
           onAction={onEditLocation}
         />
         <ConfirmDetailRow
@@ -1751,6 +1830,68 @@ function CookingNoteSheet({
         </button>
       </div>
     </BottomSheet>
+  );
+}
+
+function CompactMealSuggestions({
+  products,
+  categoryOffers,
+  onAdd,
+  className = "",
+}: {
+  products: Product[];
+  categoryOffers: CategoryOfferMap;
+  onAdd: (product: Product) => void;
+  className?: string;
+}) {
+  return (
+    <section className={`rounded-[16px] bg-white p-3 shadow-sm ring-1 ring-[#eef1f6] ${className}`}>
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className="grid h-7 w-7 place-items-center rounded-full bg-[#f5f6fb] text-charcoal">
+          <Grid2X2 size={14} />
+        </span>
+        <h2 className="text-[13px] font-semibold text-charcoal">Complete your meal with</h2>
+      </div>
+      <div className="flex gap-2.5 overflow-x-auto pb-1">
+        {products.map((product) => (
+          <article key={product.id} className="w-[88px] shrink-0">
+            <div className="relative h-[70px] w-[88px] overflow-hidden rounded-[11px] bg-cream ring-1 ring-border">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={product.image || "/wah-thali-meal-cutout-v2.png"}
+                alt={product.name}
+                className="h-full w-full object-cover"
+                loading="lazy"
+                onError={(event) => {
+                  event.currentTarget.src = "/wah-thali-meal-cutout-v2.png";
+                }}
+              />
+              <button
+                onClick={() => onAdd(product)}
+                className="absolute bottom-1 right-1 grid h-7 w-7 place-items-center rounded-lg bg-white text-maroon shadow ring-1 ring-border"
+                aria-label={`Add ${product.name}`}
+              >
+                <Plus size={17} strokeWidth={3} />
+              </button>
+            </div>
+            <div className="mt-2 flex items-start gap-1">
+              <DietaryMark type={product.dietaryType} />
+              <p className="line-clamp-2 text-[11px] font-medium leading-3.5 text-charcoal">{product.name}</p>
+            </div>
+            <p className="mt-1 text-[12px] font-semibold text-charcoal">{formatRupees(getProductUnitPricing(product, categoryOffers).unitPrice)}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DietaryMark({ type }: { type: Product["dietaryType"] }) {
+  const nonVeg = type === "NON_VEG";
+  return (
+    <span className={`mt-0.5 grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[3px] border bg-white ${nonVeg ? "border-red" : "border-[#078b52]"}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${nonVeg ? "bg-red" : "bg-[#078b52]"}`} />
+    </span>
   );
 }
 

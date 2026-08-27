@@ -1,5 +1,6 @@
 import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
@@ -15,7 +16,7 @@ const updateProductSchema = z.object({
   displayName: nullableTrimmedText(120),
   kitchenName: nullableTrimmedText(120),
   reportCode: nullableReportCode(),
-  description: z.string().min(1).optional(),
+  description: z.string().trim().optional(),
   category: z.string().min(1).optional(),
   image: imagePathSchema.nullable().optional(),
   price: z.coerce.number().int().nonnegative().optional(),
@@ -70,16 +71,12 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ id
       summary: `${product.available ? "Enabled" : "Disabled"} product ${product.name}`,
       metadata: { available: product.available },
     });
+    revalidateTag("storefront", { expire: 0 });
 
     return NextResponse.json({ product });
   }
 
   const { category, image, prepTimeMinutes, stock, reorderAt, margin, addons, variants, ...productUpdate } = parsed.data;
-  const variantRows = variants !== undefined
-    ? variants.length
-      ? variants
-      : [{ name: "Regular", price: 0, available: true }]
-    : undefined;
   if (productUpdate.reportCode) {
     const duplicate = await prisma.product.findFirst({
       where: { reportCode: productUpdate.reportCode, id: { not: id } },
@@ -121,10 +118,10 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ id
             }
           : undefined,
       variants:
-        variantRows !== undefined
+        variants !== undefined
           ? {
               deleteMany: {},
-              create: variantRows.map((variant) => ({
+              create: variants.map((variant) => ({
                 name: variant.name,
                 price: variant.price,
                 available: variant.available,
@@ -174,6 +171,7 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ id
     summary: `Updated product ${product.name}`,
     metadata: parsed.data,
   });
+  revalidateTag("storefront", { expire: 0 });
 
   return NextResponse.json({ product });
 }
@@ -206,6 +204,7 @@ async function deleteHandler(request: Request, { params }: { params: Promise<{ i
       entityId: product.id,
       summary: `Deleted product ${product.name}`,
     });
+    revalidateTag("storefront", { expire: 0 });
 
     return NextResponse.json({ deleted: true, product });
   }
@@ -221,6 +220,7 @@ async function deleteHandler(request: Request, { params }: { params: Promise<{ i
     entityId: product.id,
     summary: `Hidden product ${product.name}`,
   });
+  revalidateTag("storefront", { expire: 0 });
 
   return NextResponse.json({ deleted: false, archived: true, product });
 }

@@ -2,14 +2,14 @@ import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
 import { mkdir, writeFile } from "node:fs/promises";
 import pathModule from "node:path";
-import { requireAdminPermission } from "@/lib/admin-api-auth";
+import { requireAnyAdminPermission } from "@/lib/admin-api-auth";
 import { logActivity } from "@/lib/db";
 import { getSupabaseAdminClient, isSupabaseConfigured } from "@/lib/supabase";
 
 const defaultBucket = process.env.SUPABASE_STORAGE_BUCKET ?? "wah-thali-assets";
 
 async function postHandler(request: Request) {
-  const access = await requireAdminPermission(request, "settings");
+  const access = await requireAnyAdminPermission(request, ["settings", "inventory", "categories"]);
   if (!access.ok) return access.response;
 
   const formData = await request.formData();

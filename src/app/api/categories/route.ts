@@ -1,5 +1,6 @@
 import { withApiErrorHandling } from "@/lib/api-error";
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
@@ -18,7 +19,8 @@ const reorderSchema = z.object({
   order: z.array(z.object({
     id: z.string().min(1),
     sortOrder: z.coerce.number().int().min(1),
-  })).min(1),
+  })).min(1).optional(),
+  cartSuggestionCategories: z.array(z.string().trim().min(1)).max(16).optional(),
 });
 
 async function getHandler() {
@@ -26,7 +28,7 @@ async function getHandler() {
     return NextResponse.json({ categories: [], configured: false });
   }
 
-  const [categories, imageSetting, offerSetting] = await Promise.all([
+  const [categories, imageSetting, offerSetting, cartSuggestionSetting] = await Promise.all([
     prisma.category.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: {
@@ -39,9 +41,11 @@ async function getHandler() {
     }),
     prisma.businessSetting.findUnique({ where: { key: "categoryImages" } }),
     prisma.businessSetting.findUnique({ where: { key: "categoryOffers" } }),
+    prisma.businessSetting.findUnique({ where: { key: "cartSuggestionCategories" } }),
   ]);
   const images = getImageMap(imageSetting?.value);
   const offers = getTextMap(offerSetting?.value);
+  const cartSuggestionCategories = getStringArray(cartSuggestionSetting?.value);
 
   return NextResponse.json({
     categories: categories.map((category) => ({
@@ -49,6 +53,7 @@ async function getHandler() {
       image: images[category.slug] ?? category.products[0]?.images[0]?.url ?? "/wah-thali-meal-cutout-v2.png",
       offer: offers[category.slug] ?? "",
     })),
+    cartSuggestionCategories,
     configured: true,
   });
 }
@@ -109,6 +114,7 @@ async function postHandler(request: Request) {
     entityId: category.id,
     summary: `Saved category ${category.name}`,
   });
+  revalidateTag("storefront", { expire: 0 });
 
   return NextResponse.json({ category }, { status: 201 });
 }
@@ -125,19 +131,35 @@ async function patchHandler(request: Request) {
     return NextResponse.json({ error: "Invalid category order", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  const updates = parsed.data.order.map((item, index) =>
+  if (!parsed.data.order && parsed.data.cartSuggestionCategories === undefined) {
+    return NextResponse.json({ error: "No category update supplied." }, { status: 400 });
+  }
+
+  const updates = parsed.data.order?.map((item, index) =>
     prisma.category.update({
       where: { id: item.id },
       data: { sortOrder: index + 1 },
     }),
-  );
-  await prisma.$transaction(updates);
+  ) ?? [];
+  if (updates.length) {
+    await prisma.$transaction(updates);
+  }
+
+  if (parsed.data.cartSuggestionCategories !== undefined) {
+    await prisma.businessSetting.upsert({
+      where: { key: "cartSuggestionCategories" },
+      create: { key: "cartSuggestionCategories", value: parsed.data.cartSuggestionCategories as Prisma.InputJsonValue },
+      update: { value: parsed.data.cartSuggestionCategories as Prisma.InputJsonValue },
+    });
+  }
 
   await logActivity({
     type: "CATEGORY_REORDERED",
     entity: "Category",
-    summary: `Reordered ${updates.length} categories`,
+    summary: updates.length ? `Reordered ${updates.length} categories` : "Updated cart suggestion categories",
+    metadata: parsed.data as Prisma.InputJsonValue,
   });
+  revalidateTag("storefront", { expire: 0 });
 
   return NextResponse.json({ ok: true });
 }
@@ -148,6 +170,10 @@ function getImageMap(value: unknown): Record<string, string> {
 
 function getTextMap(value: unknown): Record<string, string> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, string>) : {};
+}
+
+function getStringArray(value: unknown): string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : [];
 }
 
 function slugify(value: string) {

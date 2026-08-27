@@ -46,7 +46,7 @@ export function getProductPrice(line: CartLine, productCatalog: Product[] = prod
     throw new Error(`Product ${line.productId} not found`);
   }
 
-  const variant = product.variants.find((item) => item.id === line.variantId);
+  const variant = getCartLineVariant(product, line.variantId);
   if (!variant) {
     throw new Error(`Variant ${line.variantId} not allowed for ${product.name}`);
   }
@@ -66,10 +66,19 @@ export function getPricableCartLines(lines: CartLine[], productCatalog: Product[
   return lines.filter((line) => {
     const product = productCatalog.find((item) => item.id === line.productId);
     if (!product) return false;
-    const variant = product.variants.find((item) => item.id === line.variantId);
+    const variant = getCartLineVariant(product, line.variantId);
     if (!variant) return false;
     return line.addonIds.every((addonId) => product.addons.some((item) => item.id === addonId));
   });
+}
+
+function getCartLineVariant(product: Product, variantId: string) {
+  const variant = product.variants.find((item) => item.id === variantId);
+  if (variant) return variant;
+  if (product.variants.length === 0 && variantId === "regular") {
+    return { id: "regular", name: "Regular", price: 0 };
+  }
+  return null;
 }
 
 export function isCouponEligibleForCustomer(coupon: Coupon, customer?: CouponCustomerContext) {

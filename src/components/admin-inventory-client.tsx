@@ -5,6 +5,7 @@ import { CheckCircle2, Download, Edit3, EyeOff, PackagePlus, Plus, Search, Slide
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { adminFetch } from "@/lib/admin-client-auth";
+import { formatModifierOptionName, getProductModifierGroups } from "@/lib/product-modifiers";
 import type { AdminProduct } from "@/lib/types";
 import { formatRupees, getProductUnitPricing } from "@/lib/pricing";
 import { formatIstTime } from "@/lib/time";
@@ -25,7 +26,7 @@ type ProductForm = {
   bestseller: boolean;
   available: boolean;
   variants: { id?: string; name: string; price: string }[];
-  addons: { id?: string; name: string; price: string }[];
+  addonGroups: AddonGroupDraft[];
 };
 
 type OfferDraft = {
@@ -33,6 +34,16 @@ type OfferDraft = {
   percent: string;
   cap: string;
   amount: string;
+};
+
+type AddonGroupDraft = {
+  id: string;
+  title: string;
+  kind: "single" | "multi";
+  required: boolean;
+  min: string;
+  max: string;
+  options: { id?: string; name: string; price: string; dietaryType: AdminProduct["dietaryType"] }[];
 };
 
 type MessageTone = "success" | "error";
@@ -58,9 +69,11 @@ const emptyForm: ProductForm = {
   offer: emptyOfferDraft,
   bestseller: false,
   available: true,
-  variants: [{ name: "Regular", price: "0" }],
-  addons: [],
+  variants: [],
+  addonGroups: [],
 };
+
+const savedAddonGroupsStorageKey = "wah-thali-admin-saved-addon-groups";
 
 export function AdminInventoryClient({
   initialCategories,
@@ -172,13 +185,13 @@ export function AdminInventoryClient({
       }
 
       const payload = {
-        name: form.name,
-        displayName: form.name,
+        name: form.name.trim(),
+        displayName: form.name.trim(),
         kitchenName: form.kitchenName || null,
         reportCode: form.reportCode ? form.reportCode.toUpperCase() : null,
-        category: form.category,
-        description: form.description,
-        image: form.image || undefined,
+        category: form.category.trim(),
+        description: form.description.trim(),
+        image: form.image.trim() || undefined,
         dietaryType: form.dietaryType,
         spiceLevel: form.spiceLevel,
         price,
@@ -189,9 +202,24 @@ export function AdminInventoryClient({
         variants: form.variants
           .filter((variant) => variant.name.trim())
           .map((variant) => ({ id: variant.id, name: variant.name.trim(), price: Number(variant.price || 0), available: true })),
-        addons: form.addons
-          .filter((addon) => addon.name.trim())
-          .map((addon) => ({ id: addon.id, name: addon.name.trim(), price: Number(addon.price || 0), available: true })),
+        addons: form.addonGroups.filter((group) => group.title.trim() && group.options.some((addon) => addon.name.trim())).flatMap((group) =>
+          group.options
+            .filter((addon) => addon.name.trim())
+            .map((addon) => ({
+              id: addon.id,
+              name: formatModifierOptionName({
+                groupTitle: group.title.trim() || "Add Extras",
+                kind: group.kind,
+                required: group.required,
+                min: Number(group.min || (group.required ? 1 : 0)),
+                max: Number(group.max || (group.kind === "single" ? 1 : 0)),
+                optionName: addon.name.trim(),
+                dietaryType: addon.dietaryType,
+              }),
+              price: Number(addon.price || 0),
+              available: true,
+            })),
+        ),
       };
 
       const response = await adminFetch(adminAccess?.session, form.id ? `/api/products/${form.id}` : "/api/products", {
@@ -200,7 +228,7 @@ export function AdminInventoryClient({
         body: JSON.stringify(payload),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Product save failed.");
+      if (!response.ok) throw new Error(getApiErrorMessage(data, "Product save failed."));
 
       await refreshProducts();
       setForm(null);
@@ -380,7 +408,7 @@ export function AdminInventoryClient({
               <table className="w-full min-w-[820px] text-left text-sm">
                 <thead className="bg-cream text-maroon">
                   <tr>
-                    {["Item", "Shortcut", "Price", "Offer", "Variants", "Add-ons", "Availability", "Actions"].map((head) => (
+                    {["Item", "Shortcut", "Price", "Offer", "Variants", "Choice groups", "Availability", "Actions"].map((head) => (
                       <th key={head} className="p-3">{head}</th>
                     ))}
                   </tr>
@@ -390,6 +418,7 @@ export function AdminInventoryClient({
                     const pricing = getProductUnitPricing(product);
                     const offerLabel = product.offer || (pricing.discountPerUnit > 0 ? "Strike price" : "Category/default");
                     const saving = savingProductIds.has(product.id);
+                    const modifierGroups = getProductModifierGroups(product);
 
                     return (
                       <tr key={product.id} className={`border-t border-border align-top ${product.available ? "" : "bg-[#f7f7f7] grayscale"}`}>
@@ -419,7 +448,10 @@ export function AdminInventoryClient({
                           </span>
                         </td>
                         <td className="p-3">{product.variants.length}</td>
-                        <td className="p-3">{product.addons.length}</td>
+                        <td className="p-3">
+                          <span className="font-black">{modifierGroups.length}</span>
+                          <span className="ml-1 text-xs font-bold text-muted">/ {product.addons.length} options</span>
+                        </td>
                         <td className="p-3">
                           <button onClick={() => quickUpdate(product, { available: !product.available })} disabled={saving} aria-busy={saving} className={`inline-flex h-9 min-w-28 items-center justify-center gap-2 rounded-lg px-3 text-xs font-black disabled:opacity-60 ${product.available ? "bg-maroon text-white" : "border border-border bg-white text-charcoal"}`}>
                             {product.available ? <CheckCircle2 size={15} /> : <EyeOff size={15} />}
@@ -478,8 +510,93 @@ function StatusMessage({ message, tone }: { message: string; tone: MessageTone }
   );
 }
 
+function getApiErrorMessage(data: unknown, fallback: string) {
+  if (!data || typeof data !== "object") return fallback;
+  const payload = data as { error?: unknown; issues?: { fieldErrors?: Record<string, string[]>; formErrors?: string[] } };
+  const fieldMessages = payload.issues?.fieldErrors
+    ? Object.entries(payload.issues.fieldErrors).flatMap(([field, messages]) =>
+        messages.map((message) => `${field}: ${message}`),
+      )
+    : [];
+  const formMessages = payload.issues?.formErrors ?? [];
+  return [...fieldMessages, ...formMessages, typeof payload.error === "string" ? payload.error : fallback][0] ?? fallback;
+}
+
 function compareProductsForMenuState(a: AdminProduct, b: AdminProduct) {
   return Number(b.available) - Number(a.available) || a.name.localeCompare(b.name);
+}
+
+function createDraftId() {
+  return `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function cloneAddonGroup(group: AddonGroupDraft, title = group.title): AddonGroupDraft {
+  return {
+    id: createDraftId(),
+    title,
+    kind: group.kind,
+    required: group.required,
+    min: group.min,
+    max: group.max,
+    options: group.options
+      .filter((option) => option.name.trim())
+      .map((option) => ({
+        name: option.name,
+        price: option.price,
+        dietaryType: option.dietaryType,
+      })),
+  };
+}
+
+function readSavedAddonGroups(): AddonGroupDraft[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const rawValue = window.localStorage.getItem(savedAddonGroupsStorageKey);
+    const parsed = rawValue ? JSON.parse(rawValue) : [];
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((group) => normalizeSavedAddonGroup(group))
+      .filter(Boolean)
+      .slice(0, 20) as AddonGroupDraft[];
+  } catch {
+    return [];
+  }
+}
+
+function writeSavedAddonGroups(groups: AddonGroupDraft[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(savedAddonGroupsStorageKey, JSON.stringify(groups.map((group) => cloneAddonGroup(group, group.title))));
+}
+
+function normalizeSavedAddonGroup(value: unknown): AddonGroupDraft | null {
+  if (!value || typeof value !== "object") return null;
+  const group = value as Partial<AddonGroupDraft>;
+  if (!group.title || !Array.isArray(group.options)) return null;
+
+  return {
+    id: createDraftId(),
+    title: String(group.title),
+    kind: group.kind === "single" ? "single" : "multi",
+    required: Boolean(group.required),
+    min: String(group.min ?? "0"),
+    max: String(group.max ?? "0"),
+    options: group.options
+      .map((option) => {
+        const item = option as Partial<AddonGroupDraft["options"][number]>;
+        return {
+          name: String(item.name ?? ""),
+          price: String(item.price ?? "0"),
+          dietaryType: normalizeDietaryType(item.dietaryType),
+        };
+      })
+      .filter((option) => option.name.trim()),
+  };
+}
+
+function normalizeDietaryType(value: unknown): AdminProduct["dietaryType"] {
+  return value === "NON_VEG" || value === "JAIN" ? value : "VEG";
 }
 
 function toProductForm(product: AdminProduct): ProductForm {
@@ -498,17 +615,24 @@ function toProductForm(product: AdminProduct): ProductForm {
     offer: parseOfferText(product.offer),
     bestseller: Boolean(product.bestseller),
     available: product.available,
-    variants: product.variants.length
-      ? product.variants.map((variant) => ({
+    variants: product.variants.map((variant) => ({
           id: variant.id,
           name: variant.name,
           price: String(variant.price),
-        }))
-      : [{ name: "Regular", price: "0" }],
-    addons: product.addons.map((addon) => ({
-      id: addon.id,
-      name: addon.name,
-      price: String(addon.price),
+        })),
+    addonGroups: getProductModifierGroups(product).map((group) => ({
+      id: group.id,
+      title: group.title,
+      kind: group.kind,
+      required: group.required,
+      min: String(group.min),
+      max: String(group.max),
+      options: group.options.map((option) => ({
+        id: option.id,
+        name: option.name,
+        price: String(option.price),
+        dietaryType: option.dietaryType ?? product.dietaryType,
+      })),
     })),
   };
 }
@@ -528,13 +652,30 @@ function ProductModal({
   categories: string[];
   uploadImage: (file: File) => Promise<string>;
 }) {
+  const [savedAddonGroups, setSavedAddonGroups] = useState<AddonGroupDraft[]>(() => readSavedAddonGroups());
+
   function update(patch: Partial<ProductForm>) {
     setForm({ ...form, ...patch });
   }
 
-  function updateAddon(index: number, patch: Partial<ProductForm["addons"][number]>) {
+  function updateAddonGroup(index: number, patch: Partial<AddonGroupDraft>) {
     update({
-      addons: form.addons.map((addon, addonIndex) => (addonIndex === index ? { ...addon, ...patch } : addon)),
+      addonGroups: form.addonGroups.map((group, groupIndex) => (groupIndex === index ? { ...group, ...patch } : group)),
+    });
+  }
+
+  function updateAddonOption(groupIndex: number, optionIndex: number, patch: Partial<AddonGroupDraft["options"][number]>) {
+    update({
+      addonGroups: form.addonGroups.map((group, currentGroupIndex) =>
+        currentGroupIndex === groupIndex
+          ? {
+              ...group,
+              options: group.options.map((option, currentOptionIndex) =>
+                currentOptionIndex === optionIndex ? { ...option, ...patch } : option,
+              ),
+            }
+          : group,
+      ),
     });
   }
 
@@ -544,23 +685,62 @@ function ProductModal({
     });
   }
 
+  function addAddonGroup(template?: Partial<AddonGroupDraft>) {
+    update({
+      addonGroups: [
+        ...form.addonGroups,
+        {
+          id: createDraftId(),
+          title: template?.title ?? "",
+          kind: template?.kind ?? "multi",
+          required: template?.required ?? false,
+          min: template?.min ?? "0",
+          max: template?.max ?? "0",
+          options: template?.options?.length ? template.options : [],
+        },
+      ],
+    });
+  }
+
+  function applySavedGroup(group: AddonGroupDraft) {
+    update({ addonGroups: [...form.addonGroups, cloneAddonGroup(group)] });
+  }
+
+  function saveGroupForReuse(group: AddonGroupDraft) {
+    if (!group.title.trim() || !group.options.some((option) => option.name.trim())) return;
+    const reusableGroup = cloneAddonGroup(group, group.title.trim());
+    const nextGroups = [
+      reusableGroup,
+      ...savedAddonGroups.filter((item) => item.title.trim().toLowerCase() !== group.title.trim().toLowerCase()),
+    ].slice(0, 20);
+    setSavedAddonGroups(nextGroups);
+    writeSavedAddonGroups(nextGroups);
+  }
+
+  function deleteSavedGroup(groupTitle: string) {
+    const nextGroups = savedAddonGroups.filter((group) => group.title !== groupTitle);
+    setSavedAddonGroups(nextGroups);
+    writeSavedAddonGroups(nextGroups);
+  }
+
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-charcoal/45 p-4">
-      <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-border p-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/45 p-3 sm:p-4">
+      <div className="grid max-h-[calc(100dvh-24px)] w-full max-w-5xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-2xl bg-white shadow-2xl sm:max-h-[92dvh]">
+        <div className="flex items-center justify-between border-b border-border bg-white p-5">
           <h2 className="text-xl font-black text-maroon">{form.id ? "Edit product" : "Add product"}</h2>
           <button onClick={() => setForm(null)} className="grid h-10 w-10 place-items-center rounded-lg border border-border" aria-label="Close">
             <X size={18} />
           </button>
         </div>
-        <div className="grid gap-4 p-5 sm:grid-cols-2 sm:items-start">
+        <div className="grid min-h-0 gap-4 overflow-y-auto overscroll-contain p-5 sm:grid-cols-2 sm:items-start">
           <Field label="Display name" value={form.name} onChange={(value) => update({ name: value })} />
           <label className="grid min-w-0 gap-2 text-sm font-black text-maroon">
             Category
-            <select value={form.category} onChange={(event) => update({ category: event.target.value })} className="h-11 w-full min-w-0 rounded-lg border border-border bg-cream px-3 text-charcoal">
-              <option value="" disabled>Select category</option>
-              {categories.map((category) => <option key={category} value={category}>{category}</option>)}
-            </select>
+            <input list="inventory-category-options" value={form.category} onChange={(event) => update({ category: event.target.value })} className="h-11 w-full min-w-0 rounded-lg border border-border bg-cream px-3 text-charcoal" placeholder="Type or choose category" />
+            <datalist id="inventory-category-options">
+              {categories.map((category) => <option key={category} value={category} />)}
+            </datalist>
+            <span className="text-xs font-bold text-muted">New names create categories automatically when saved.</span>
           </label>
           <Field label="Internal dish name" value={form.kitchenName} onChange={(value) => update({ kitchenName: value })} />
           <Field label="Report shortcut code" value={form.reportCode} onChange={(value) => update({ reportCode: value.toUpperCase() })} />
@@ -615,7 +795,7 @@ function ProductModal({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-black text-maroon">Variations</p>
-                <p className="text-xs font-bold text-muted">Shown as size/options after customers click a dish. Price is added to base price.</p>
+                <p className="text-xs font-bold text-muted">Optional. Add sizes/options only for dishes that need customer choices.</p>
               </div>
               <button
                 type="button"
@@ -625,8 +805,9 @@ function ProductModal({
                 Add variation
               </button>
             </div>
-            <div className="grid gap-2">
-              {form.variants.map((variant, index) => (
+            {form.variants.length ? (
+              <div className="grid gap-2">
+                {form.variants.map((variant, index) => (
                 <div key={variant.id ?? index} className="grid gap-2 sm:grid-cols-[1fr_140px_auto]">
                   <input
                     value={variant.name}
@@ -645,59 +826,181 @@ function ProductModal({
                   <button
                     type="button"
                     onClick={() => update({ variants: form.variants.filter((_, variantIndex) => variantIndex !== index) })}
-                    disabled={form.variants.length === 1}
-                    className="h-10 rounded-lg border border-border px-3 text-xs font-black text-red disabled:opacity-50"
+                    className="h-10 rounded-lg border border-border px-3 text-xs font-black text-red"
                   >
                     Remove
                   </button>
                 </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <p className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-muted">No variations. Customers will add this dish directly.</p>
+            )}
           </div>
           <div className="grid gap-3 rounded-xl border border-border bg-cream p-3 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-black text-maroon">Add-ons</p>
-                <p className="text-xs font-bold text-muted">Shown to customers when this dish is opened.</p>
+                <p className="text-sm font-black text-maroon">Choice groups and add-ons</p>
+                <p className="text-xs font-bold text-muted">Add only the custom groups this dish needs.</p>
               </div>
               <button
                 type="button"
-                onClick={() => update({ addons: [...form.addons, { name: "", price: "0" }] })}
+                onClick={() => addAddonGroup()}
                 className="h-9 rounded-lg bg-maroon px-3 text-xs font-black text-white"
               >
-                Add add-on
+                Add group
               </button>
             </div>
-            {form.addons.length ? (
-              <div className="grid gap-2">
-                {form.addons.map((addon, index) => (
-                  <div key={addon.id ?? index} className="grid gap-2 sm:grid-cols-[1fr_120px_auto]">
-                    <input
-                      value={addon.name}
-                      onChange={(event) => updateAddon(index, { name: event.target.value })}
-                      className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-bold text-charcoal"
-                      placeholder="Add-on name, e.g. Extra paneer"
-                    />
-                    <input
-                      type="number"
-                      min={0}
-                      value={addon.price}
-                      onChange={(event) => updateAddon(index, { price: event.target.value })}
-                      className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-bold text-charcoal"
-                      placeholder="Price"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => update({ addons: form.addons.filter((_, addonIndex) => addonIndex !== index) })}
-                      className="h-10 rounded-lg border border-border px-3 text-xs font-black text-red"
-                    >
-                      Remove
-                    </button>
+            {savedAddonGroups.length ? (
+              <div className="grid gap-2 rounded-xl border border-border bg-white p-3">
+                <p className="text-xs font-black uppercase tracking-wide text-maroon">Saved groups</p>
+                <div className="flex flex-wrap gap-2">
+                  {savedAddonGroups.map((group) => (
+                    <span key={group.title} className="inline-flex max-w-full items-center gap-1 rounded-lg border border-border bg-cream p-1">
+                      <button
+                        type="button"
+                        onClick={() => applySavedGroup(group)}
+                        className="h-8 max-w-[180px] truncate px-2 text-xs font-black text-charcoal"
+                        title={`Use ${group.title}`}
+                      >
+                        {group.title}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteSavedGroup(group.title)}
+                        className="grid h-8 w-8 place-items-center rounded-md text-red"
+                        aria-label={`Delete saved group ${group.title}`}
+                      >
+                        <X size={14} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {form.addonGroups.length ? (
+              <div className="grid gap-3">
+                {form.addonGroups.map((group, groupIndex) => (
+                  <div key={group.id} className="grid gap-3 rounded-xl border border-border bg-white p-3">
+                    <div className="grid gap-2 lg:grid-cols-[minmax(180px,1fr)_128px_112px_88px_88px_auto_auto]">
+                      <input
+                        value={group.title}
+                        onChange={(event) => updateAddonGroup(groupIndex, { title: event.target.value })}
+                        className="h-10 rounded-lg border border-border bg-cream px-3 text-sm font-bold text-charcoal"
+                        placeholder="Group title"
+                      />
+                      <select
+                        value={group.kind}
+                        onChange={(event) => {
+                          const kind = event.target.value as AddonGroupDraft["kind"];
+                          updateAddonGroup(groupIndex, {
+                            kind,
+                            max: kind === "single" ? "1" : group.max,
+                            min: kind === "single" && group.required ? "1" : group.min,
+                          });
+                        }}
+                        className="h-10 rounded-lg border border-border bg-cream px-3 text-sm font-black text-charcoal"
+                      >
+                        <option value="single">Single</option>
+                        <option value="multi">Multiple</option>
+                      </select>
+                      <label className="flex h-10 items-center gap-2 rounded-lg border border-border bg-cream px-3 text-xs font-black text-charcoal">
+                        <input
+                          type="checkbox"
+                          checked={group.required}
+                          onChange={(event) => updateAddonGroup(groupIndex, {
+                            required: event.target.checked,
+                            min: event.target.checked ? group.min || "1" : "0",
+                          })}
+                        />
+                        Required
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={group.min}
+                        onChange={(event) => updateAddonGroup(groupIndex, { min: event.target.value })}
+                        className="h-10 rounded-lg border border-border bg-cream px-3 text-sm font-bold text-charcoal"
+                        placeholder="Min"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        value={group.max}
+                        onChange={(event) => updateAddonGroup(groupIndex, { max: event.target.value })}
+                        className="h-10 rounded-lg border border-border bg-cream px-3 text-sm font-bold text-charcoal"
+                        placeholder="Max"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => update({ addonGroups: form.addonGroups.filter((_, currentIndex) => currentIndex !== groupIndex) })}
+                        className="h-10 rounded-lg border border-border px-3 text-xs font-black text-red"
+                      >
+                        Remove
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!group.title.trim() || !group.options.some((option) => option.name.trim())}
+                        onClick={() => saveGroupForReuse(group)}
+                        className="h-10 rounded-lg bg-charcoal px-3 text-xs font-black text-white disabled:opacity-45"
+                      >
+                        Save group
+                      </button>
+                    </div>
+                    <div className="grid gap-2">
+                      {!group.options.length ? (
+                        <p className="rounded-lg border border-dashed border-border bg-cream px-3 py-2 text-xs font-bold text-muted">
+                          No options in this group yet.
+                        </p>
+                      ) : null}
+                      {group.options.map((addon, optionIndex) => (
+                        <div key={addon.id ?? optionIndex} className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_120px_132px_auto]">
+                          <input
+                            value={addon.name}
+                            onChange={(event) => updateAddonOption(groupIndex, optionIndex, { name: event.target.value })}
+                            className="h-10 rounded-lg border border-border bg-cream px-3 text-sm font-bold text-charcoal"
+                            placeholder="Option name, e.g. Sprite 250ml"
+                          />
+                          <input
+                            type="number"
+                            min={0}
+                            value={addon.price}
+                            onChange={(event) => updateAddonOption(groupIndex, optionIndex, { price: event.target.value })}
+                            className="h-10 rounded-lg border border-border bg-cream px-3 text-sm font-bold text-charcoal"
+                            placeholder="Price"
+                          />
+                          <select
+                            value={addon.dietaryType}
+                            onChange={(event) => updateAddonOption(groupIndex, optionIndex, { dietaryType: event.target.value as AdminProduct["dietaryType"] })}
+                            className="h-10 rounded-lg border border-border bg-cream px-3 text-sm font-black text-charcoal"
+                            title="Dietary type"
+                          >
+                            <option value="VEG">Veg</option>
+                            <option value="NON_VEG">Non-veg</option>
+                            <option value="JAIN">Jain</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => updateAddonGroup(groupIndex, { options: group.options.filter((_, currentIndex) => currentIndex !== optionIndex) })}
+                            className="h-10 rounded-lg border border-border px-3 text-xs font-black text-red"
+                          >
+                            Remove option
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => updateAddonGroup(groupIndex, { options: [...group.options, { name: "", price: "0", dietaryType: form.dietaryType }] })}
+                        className="h-10 rounded-lg border border-dashed border-maroon/40 bg-cream px-3 text-xs font-black text-maroon"
+                      >
+                        Add option
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-muted">No add-ons yet.</p>
+              <p className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-muted">No choice groups yet. Use a template or add a custom group.</p>
             )}
           </div>
           <label className="flex items-center gap-3 rounded-lg border border-border bg-cream px-3 py-3 text-sm font-black text-charcoal">
@@ -709,9 +1012,9 @@ function ProductModal({
             <textarea value={form.description} onChange={(event) => update({ description: event.target.value })} className="min-h-28 rounded-lg border border-border bg-cream px-3 py-2 text-charcoal" />
           </label>
         </div>
-        <div className="flex justify-end gap-2 border-t border-border p-5">
+        <div className="flex justify-end gap-2 border-t border-border bg-white p-5">
           <button onClick={() => setForm(null)} className="h-11 rounded-lg border border-border px-4 font-black">Cancel</button>
-          <button onClick={saveProduct} disabled={isPending || !form.category} className="h-11 rounded-lg bg-red px-4 font-black text-white disabled:opacity-60">
+          <button onClick={saveProduct} disabled={isPending || !form.name.trim() || !form.category} className="h-11 rounded-lg bg-red px-4 font-black text-white disabled:opacity-60">
             {isPending ? "Saving..." : "Save product"}
           </button>
         </div>

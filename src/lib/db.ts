@@ -500,6 +500,18 @@ export async function getHomeDishCategoriesFromDb(): Promise<string[]> {
   }
 }
 
+export async function getCartSuggestionCategoriesFromDb(): Promise<string[]> {
+  if (!isDatabaseConfigured()) return [];
+
+  try {
+    const row = await prisma.businessSetting.findUnique({ where: { key: "cartSuggestionCategories" } });
+    return isStringArray(row?.value) ? row.value : [];
+  } catch (error) {
+    console.error("Cart suggestion category read failed.", error);
+    return [];
+  }
+}
+
 export async function getHomeSlidesFromDb(): Promise<HomeSlide[]> {
   if (!isDatabaseConfigured()) return defaultHomeSlides;
 
@@ -553,14 +565,15 @@ export const getPublicMenuPageDataFromDb = unstable_cache(
 
 export const getPublicCartPageDataFromDb = unstable_cache(
   async () => {
-    const [products, coupons, restaurantSettings, categoryOffers] = await Promise.all([
+    const [products, coupons, restaurantSettings, categoryOffers, cartSuggestionCategories] = await Promise.all([
       getProductsFromDb(),
       getCouponsFromDb(),
       getRestaurantSettingsFromDb(),
       getCategoryOffersFromDb(),
+      getCartSuggestionCategoriesFromDb(),
     ]);
 
-    return { products, coupons, restaurantSettings, categoryOffers };
+    return { products, coupons, restaurantSettings, categoryOffers, cartSuggestionCategories };
   },
   ["public-cart-page-data"],
   { revalidate: storefrontCacheSeconds, tags: ["storefront", "storefront-cart"] },

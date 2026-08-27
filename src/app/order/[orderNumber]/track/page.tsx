@@ -11,6 +11,7 @@ import {
   PackageCheck,
   Phone,
   Star,
+  Store,
   User,
   Wallet,
   XCircle,
@@ -35,7 +36,8 @@ const orderSteps = [
   { status: "NEW", label: "Order placed", detail: "The kitchen has received it.", icon: CheckCircle2 },
   { status: "CONFIRMED", label: "Accepted", detail: "Fresh prep is scheduled.", icon: ChefHat },
   { status: "PREPARING", label: "Cooking", detail: "Your meal is being prepared.", icon: CookingPot },
-  { status: "PACKED", label: "Packed", detail: "Packed neatly for delivery.", icon: PackageCheck },
+  { status: "PACKED", label: "Packed", detail: "Packed neatly.", icon: PackageCheck },
+  { status: "READY_FOR_PICKUP", label: "Ready", detail: "Ready for pickup.", icon: Store },
   { status: "OUT_FOR_DELIVERY", label: "On the way", detail: "Rider is heading to you.", icon: Bike },
   { status: "DELIVERED", label: "Delivered", detail: "Enjoy your meal.", icon: CheckCircle2 },
 ] as const;
@@ -66,20 +68,26 @@ export default async function TrackPage({
   if (!order) notFound();
 
   const notes = order.timeline.map((item) => item.note).filter((note): note is string => Boolean(note));
+  const addressType = extractTimelineValue(notes, "Address type");
+  const fulfillment = extractTimelineValue(notes, "Fulfillment");
+  const pickupAddress = extractTimelineValue(notes, "Pickup address");
+  const isPickup = /pickup/i.test(`${addressType ?? ""} ${fulfillment ?? ""}`);
   const cancelled = order.status === "CANCELLED";
-  const visibleSteps = getVisibleSteps(order.status, order.payments[0]?.provider);
+  const visibleSteps = getVisibleSteps(order.status, order.payments[0]?.provider, isPickup);
   const activeIndex = getActiveStepIndex(order.status, visibleSteps);
   const currentStep = visibleSteps[activeIndex] ?? visibleSteps[0];
   const currentIcon = cancelled ? XCircle : getHeroIcon(order.status, currentStep.icon);
   const palette = getTrackingPalette(order.status);
   const placedAt = formatIstTime(toIsoTimestamp(order.createdAt));
   const eta = formatEta(extractTimelineValue(notes, "ETA"), restaurantSettings.defaultPrepMinutes);
-  const deliveryLocation = extractTimelineValue(notes, "Address") ?? extractTimelineValue(notes, "Location") ?? "Delivery address saved with this order.";
+  const deliveryLocation = isPickup
+    ? pickupAddress ?? extractTimelineValue(notes, "Address") ?? restaurantSettings.kitchenAddress
+    : extractTimelineValue(notes, "Address") ?? extractTimelineValue(notes, "Location") ?? "Delivery address saved with this order.";
   const deliveryNote = extractTimelineValue(notes, "Customer note");
   const gps = extractTimelineValue(notes, "GPS");
   const distance = extractTimelineValue(notes, "Distance");
   const latestUpdate = getLatestCustomerUpdate(notes);
-  const statusCopy = getStatusCopy(order.status, placedAt, eta);
+  const statusCopy = getStatusCopy(order.status, placedAt, eta, isPickup);
   const reviewItems = getReviewItems(order.items);
   const reviewedProductIds = new Set(order.reviews.map((review) => review.productId));
   const pendingReviewItems = reviewItems.filter((item) => !reviewedProductIds.has(item.productId));
@@ -134,7 +142,7 @@ export default async function TrackPage({
               <section className="px-5 pt-5 lg:px-0">
                 <div className="overflow-hidden rounded-[22px] bg-white shadow-sm ring-1 ring-[#eadfe3]">
                   <InfoRow icon={User} title="Customer" body={`${order.customer.name} | ${order.customer.mobile}`} />
-                  <InfoRow icon={MapPin} title="Delivery details" body={deliveryLocation} subBody={[deliveryNote, gps, distance].filter(Boolean).join(" | ")} />
+                  <InfoRow icon={isPickup ? Store : MapPin} title={isPickup ? "Pickup details" : "Delivery details"} body={deliveryLocation} subBody={[deliveryNote, gps, distance].filter(Boolean).join(" | ")} />
                   <InfoRow icon={Wallet} title="Payment" body={paymentSummary} subBody={payment ? `Payment status: ${formatStatus(payment.status)}` : "Cash will be collected on delivery."} />
                 </div>
 

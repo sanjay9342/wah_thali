@@ -64,6 +64,36 @@ describe("cart pricing", () => {
     expect(lineTotal).toBe(129);
   });
 
+  it("prices dishes that have no variation rows as the regular dish", () => {
+    const dishWithoutVariations = {
+      id: "no-variation",
+      slug: "no-variation",
+      name: "No Variation Dish",
+      category: "Mini Thali",
+      description: "",
+      image: "/wah-thali-meal-cutout-v2.png",
+      dietaryType: "VEG" as const,
+      rating: 4.5,
+      ratingCount: 1,
+      prepTimeMinutes: 20,
+      price: 120,
+      originalPrice: 150,
+      available: true,
+      spiceLevel: "Medium" as const,
+      variants: [],
+      addons: [],
+    };
+
+    const lineTotal = getProductPrice({
+      productId: "no-variation",
+      variantId: "regular",
+      addonIds: [],
+      quantity: 2,
+    }, [dishWithoutVariations]);
+
+    expect(lineTotal).toBe(240);
+  });
+
   it("lets dish offers override category offers", () => {
     const lineTotal = getProductPrice(
       {
