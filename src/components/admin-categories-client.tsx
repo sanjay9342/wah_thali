@@ -181,8 +181,10 @@ export function AdminCategoriesClient({
   function toggleCartSuggestionCategory(categoryName: string) {
     setCartSuggestionCategories((current) =>
       current.includes(categoryName)
-        ? []
-        : [categoryName],
+        ? current.filter((name) => name !== categoryName)
+        : current.length < 2
+          ? [...current, categoryName]
+          : [current[1], categoryName],
     );
   }
 
@@ -198,7 +200,7 @@ export function AdminCategoriesClient({
       const data = await response.json();
       if (!response.ok) throw new Error(getApiErrorMessage(data, "Cart recommendation categories save failed."));
       await refreshCategories();
-      showSuccess(cartSuggestionCategories.length ? "Cart showcase category saved." : "Cart showcase category cleared.");
+      showSuccess(cartSuggestionCategories.length ? "Home showcase categories saved." : "Home showcase categories cleared.");
     });
   }
 
@@ -360,7 +362,7 @@ export function AdminCategoriesClient({
             <div className="mt-4 grid gap-3 rounded-xl border border-border bg-white p-4">
               <div>
                 <h2 className="text-base font-black text-maroon">Complete your meal with</h2>
-                <p className="mt-1 text-xs font-bold leading-5 text-muted">Choose one category to showcase in the cart add-on strip. Only online dishes from this category appear there, and items already in the cart are skipped.</p>
+                <p className="mt-1 text-xs font-bold leading-5 text-muted">Choose up to two categories to showcase on the home page dishes section and cart add-on strip.</p>
               </div>
               <div className="grid max-h-56 gap-2 overflow-y-auto pr-1">
                 {categories.map((category) => {
@@ -380,10 +382,10 @@ export function AdminCategoriesClient({
                 })}
               </div>
               <p className="text-xs font-bold text-muted">
-                {cartSuggestionCategories.length ? `Showcasing ${cartSuggestionCategories[0]}` : "No category selected. Cart will use available menu items."}
+                {cartSuggestionCategories.length ? `Showcasing ${cartSuggestionCategories.join(", ")}` : "No category selected. Home will show popular dishes."}
               </p>
               <button disabled={isPending} onClick={saveCartSuggestionCategories} className="h-10 rounded-lg bg-maroon px-4 text-sm font-black text-white disabled:opacity-60">
-                Save showcase category
+                Save showcase categories
               </button>
             </div>
           </aside>

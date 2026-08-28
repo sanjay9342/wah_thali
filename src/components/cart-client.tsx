@@ -872,7 +872,7 @@ export function CartClient({
             <CompactMealSuggestions
               products={suggestions}
               categoryOffers={initialCategoryOffers}
-              categoryLabel={cartSuggestionCategories[0]}
+              categoryLabel={cartSuggestionCategories.join(", ")}
               onAdd={addSuggestedProduct}
               className="mt-5"
             />
@@ -1090,7 +1090,7 @@ export function CartClient({
           <CompactMealSuggestions
             products={suggestions}
             categoryOffers={initialCategoryOffers}
-            categoryLabel={cartSuggestionCategories[0]}
+            categoryLabel={cartSuggestionCategories.join(", ")}
             onAdd={addSuggestedProduct}
             className="mx-3 mt-4"
           />

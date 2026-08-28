@@ -223,16 +223,16 @@ function MobileLocationLink() {
   const deliveryLocation = useDeliveryLocation();
 
   return (
-    <Link href="/address" className="mt-2 grid min-h-[46px] w-full grid-cols-[36px_minmax(0,1fr)_26px] items-center gap-2 rounded-2xl border border-[#e7ebf2] bg-white px-2.5 py-2">
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-maroon ring-1 ring-[#e7ebf2]">
-        <MapPin size={19} strokeWidth={2.6} />
+    <Link href="/address" className="mt-1.5 grid min-h-[36px] w-full grid-cols-[28px_minmax(0,1fr)_22px] items-center gap-1.5 rounded-xl border border-[#e7ebf2] bg-white px-2 py-1.5">
+      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white text-maroon ring-1 ring-[#e7ebf2]">
+        <MapPin size={15} strokeWidth={2.6} />
       </span>
       <span className="min-w-0">
-        <span className="block text-[9px] font-semibold uppercase tracking-wide text-maroon/75">Delivering to</span>
-        <span className="mt-0.5 block truncate text-[13px] font-semibold leading-tight text-charcoal">{deliveryLocation.address}</span>
+        <span className="block text-[7px] font-bold uppercase tracking-wide text-maroon/75">Delivering to</span>
+        <span className="block truncate text-[10px] font-semibold leading-tight text-charcoal">{deliveryLocation.address}</span>
       </span>
-      <span className="grid h-6 w-6 place-items-center rounded-full bg-white text-[#6b7280] ring-1 ring-[#e7ebf2]">
-        <ChevronDown size={14} strokeWidth={2.6} />
+      <span className="grid h-5 w-5 place-items-center rounded-full bg-white text-[#6b7280] ring-1 ring-[#e7ebf2]">
+        <ChevronDown size={11} strokeWidth={2.6} />
       </span>
     </Link>
   );

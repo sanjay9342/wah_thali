@@ -122,8 +122,9 @@ export default function RootLayout({
       lang="en"
       className={`${foodieSans.variable} ${foodieSans.className} h-full antialiased`}
       data-scroll-behavior="smooth"
+      suppressHydrationWarning
     >
-      <body className="wt-soft-type min-h-full flex flex-col font-sans">
+      <body className="wt-soft-type min-h-full flex flex-col font-sans" suppressHydrationWarning>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(restaurantJsonLd).replace(/</g, "\\u003c") }}

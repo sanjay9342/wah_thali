@@ -21,7 +21,7 @@ const reorderSchema = z.object({
     id: z.string().min(1),
     sortOrder: z.coerce.number().int().min(1),
   })).min(1).optional(),
-  cartSuggestionCategories: z.array(z.string().trim().min(1)).max(1).optional(),
+  cartSuggestionCategories: z.array(z.string().trim().min(1)).max(2).optional(),
 });
 
 async function getHandler() {
@@ -147,12 +147,19 @@ async function patchHandler(request: Request) {
   }
 
   if (parsed.data.cartSuggestionCategories !== undefined) {
-    const cartSuggestionCategories = parsed.data.cartSuggestionCategories.slice(0, 1);
-    await prisma.businessSetting.upsert({
-      where: { key: "cartSuggestionCategories" },
-      create: { key: "cartSuggestionCategories", value: cartSuggestionCategories as Prisma.InputJsonValue },
-      update: { value: cartSuggestionCategories as Prisma.InputJsonValue },
-    });
+    const cartSuggestionCategories = parsed.data.cartSuggestionCategories.slice(0, 2);
+    await Promise.all([
+      prisma.businessSetting.upsert({
+        where: { key: "cartSuggestionCategories" },
+        create: { key: "cartSuggestionCategories", value: cartSuggestionCategories as Prisma.InputJsonValue },
+        update: { value: cartSuggestionCategories as Prisma.InputJsonValue },
+      }),
+      prisma.businessSetting.upsert({
+        where: { key: "homeDishCategories" },
+        create: { key: "homeDishCategories", value: cartSuggestionCategories as Prisma.InputJsonValue },
+        update: { value: cartSuggestionCategories as Prisma.InputJsonValue },
+      }),
+    ]);
   }
 
   await logActivity({

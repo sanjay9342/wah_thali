@@ -51,6 +51,8 @@ function getVariantQuantity(lines: CartLine[], productId: string, variantId: str
 }
 
 type MenuFilterId = "veg" | "offers" | "bestseller" | "rating" | "under199";
+type PriceSortId = "priceLowHigh" | "priceHighLow";
+type SearchGroup = { category: string; itemCount: number; subgroups: { category: string; items: Product[] }[] };
 
 const menuFilterOptions: { id: MenuFilterId; label: string; helper: string }[] = [
   { id: "veg", label: "Pure Veg", helper: "Veg and Jain dishes" },
@@ -58,6 +60,10 @@ const menuFilterOptions: { id: MenuFilterId; label: string; helper: string }[] =
   { id: "bestseller", label: "Bestseller", helper: "Most loved dishes" },
   { id: "rating", label: "Rating 4.5+", helper: "Top rated items" },
   { id: "under199", label: "Under Rs 199", helper: "Budget picks" },
+];
+const priceSortOptions: { id: PriceSortId; label: string; helper: string }[] = [
+  { id: "priceLowHigh", label: "Price Low to High", helper: "Show lowest price first" },
+  { id: "priceHighLow", label: "Price High to Low", helper: "Show highest price first" },
 ];
 
 function MenuFilterIcon({ filterId, className }: { filterId: MenuFilterId; className?: string }) {
@@ -84,9 +90,11 @@ function SearchFilterControl({
   query,
   setQuery,
   activeFilters,
+  priceSort,
   filtersOpen,
   onToggleFiltersOpen,
   onToggleFilter,
+  onChoosePriceSort,
   onClearFilters,
   placeholder,
   className = "",
@@ -94,13 +102,17 @@ function SearchFilterControl({
   query: string;
   setQuery: (value: string) => void;
   activeFilters: MenuFilterId[];
+  priceSort: PriceSortId | null;
   filtersOpen: boolean;
   onToggleFiltersOpen: () => void;
   onToggleFilter: (filterId: MenuFilterId) => void;
+  onChoosePriceSort: (sortId: PriceSortId) => void;
   onClearFilters: () => void;
   placeholder: string;
   className?: string;
 }) {
+  const activeFilterCount = activeFilters.length + (priceSort ? 1 : 0);
+
   return (
     <section className={`rounded-[16px] border border-[#eef1f6] bg-white px-2 py-1.5 shadow-[0_8px_22px_rgba(34,31,32,0.05)] ${className}`}>
       <div className="grid h-11 grid-cols-[42px_1fr_auto] items-center gap-1 lg:h-12">
@@ -115,15 +127,15 @@ function SearchFilterControl({
           type="button"
           onClick={onToggleFiltersOpen}
           className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-[11px] px-2.5 text-[10px] font-black transition-colors lg:px-3 lg:text-[11px] ${
-            activeFilters.length ? "bg-red text-white" : "bg-[#f7f8fc] text-charcoal ring-1 ring-[#e7ebf2]"
+            activeFilterCount ? "bg-red text-white" : "bg-[#f7f8fc] text-charcoal ring-1 ring-[#e7ebf2]"
           }`}
           aria-expanded={filtersOpen}
         >
           <SlidersHorizontal size={15} strokeWidth={2.7} />
           <span>Filters</span>
-          {activeFilters.length ? (
+          {activeFilterCount ? (
             <span className="grid h-4 min-w-4 place-items-center rounded-full bg-white px-1 text-[9px] text-red">
-              {activeFilters.length}
+              {activeFilterCount}
             </span>
           ) : null}
         </button>
@@ -151,7 +163,27 @@ function SearchFilterControl({
               </button>
             );
           })}
-          {activeFilters.length ? (
+          {priceSortOptions.map((option) => {
+            const selected = priceSort === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => onChoosePriceSort(option.id)}
+                title={option.helper}
+                className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[11px] font-black transition-colors ${
+                  selected
+                    ? "border-red bg-red text-white shadow-[0_8px_18px_rgba(141,0,33,0.16)]"
+                    : "border-[#e5e9f0] bg-white text-[#374151] hover:border-red/40 hover:text-red"
+                }`}
+                aria-pressed={selected}
+              >
+                <IndianRupee size={15} strokeWidth={2.6} />
+                {option.label}
+              </button>
+            );
+          })}
+          {activeFilterCount ? (
             <button
               type="button"
               onClick={onClearFilters}
@@ -445,9 +477,11 @@ function DesktopSearchPage({
   query,
   setQuery,
   activeFilters,
+  priceSort,
   filtersOpen,
   onToggleFiltersOpen,
   onToggleFilter,
+  onChoosePriceSort,
   onClearFilters,
   searchGroups,
   categoryOffers,
@@ -463,11 +497,13 @@ function DesktopSearchPage({
   query: string;
   setQuery: (value: string) => void;
   activeFilters: MenuFilterId[];
+  priceSort: PriceSortId | null;
   filtersOpen: boolean;
   onToggleFiltersOpen: () => void;
   onToggleFilter: (filterId: MenuFilterId) => void;
+  onChoosePriceSort: (sortId: PriceSortId) => void;
   onClearFilters: () => void;
-  searchGroups: { category: string; items: Product[] }[];
+  searchGroups: SearchGroup[];
   categoryOffers: CategoryOfferMap;
   prepMinutes: number;
   quantityByProduct: Map<string, number>;
@@ -493,9 +529,11 @@ function DesktopSearchPage({
               query={query}
               setQuery={setQuery}
               activeFilters={activeFilters}
+              priceSort={priceSort}
               filtersOpen={filtersOpen}
               onToggleFiltersOpen={onToggleFiltersOpen}
               onToggleFilter={onToggleFilter}
+              onChoosePriceSort={onChoosePriceSort}
               onClearFilters={onClearFilters}
               placeholder="Search fresh dishes"
               className="rounded-[18px] border-[#f0e2e4] px-2.5 py-2"
@@ -508,23 +546,33 @@ function DesktopSearchPage({
             <section key={group.category}>
               <div className="mb-5 flex items-center gap-4">
                 <h2 className="text-[26px] font-black text-[#111827]">{group.category}</h2>
-                <span className="rounded-full bg-[#fff4f5] px-3 py-1 text-xs font-black text-maroon">{group.items.length} {group.items.length === 1 ? "item" : "items"}</span>
+                <span className="rounded-full bg-[#fff4f5] px-3 py-1 text-xs font-black text-maroon">{group.itemCount} {group.itemCount === 1 ? "item" : "items"}</span>
               </div>
-              <div className="grid grid-cols-4 gap-5">
-                {group.items.map((product) => (
-                  <FoodieProductCard
-                    key={product.id}
-                    product={product}
-                    offer={getProductOffer(product, categoryOffers)}
-                    prepMinutes={prepMinutes}
-                    quantity={quantityByProduct.get(product.id) ?? 0}
-                    saved={savedProductIdSet.has(product.id)}
-                    onAdd={() => onAdd(product)}
-                    onDecrease={() => onDecrease(product)}
-                    onOpen={() => onOpen(product)}
-                    onToggleSave={() => onToggleSave(product)}
-                    orderingDisabled={orderingDisabled}
-                  />
+              <div className="grid gap-7">
+                {group.subgroups.map((subgroup) => (
+                  <div key={`${group.category}-${subgroup.category}`}>
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <h3 className="text-[15px] font-black uppercase text-[#667085]">{subgroup.category}</h3>
+                      <span className="text-[11px] font-black text-maroon">{subgroup.items.length} {subgroup.items.length === 1 ? "item" : "items"}</span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-5">
+                      {subgroup.items.map((product) => (
+                        <FoodieProductCard
+                          key={product.id}
+                          product={product}
+                          offer={getProductOffer(product, categoryOffers)}
+                          prepMinutes={prepMinutes}
+                          quantity={quantityByProduct.get(product.id) ?? 0}
+                          saved={savedProductIdSet.has(product.id)}
+                          onAdd={() => onAdd(product)}
+                          onDecrease={() => onDecrease(product)}
+                          onOpen={() => onOpen(product)}
+                          onToggleSave={() => onToggleSave(product)}
+                          orderingDisabled={orderingDisabled}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             </section>
@@ -657,9 +705,6 @@ function DishDetailSheet({
   const unavailable = !product.available;
   const modifierSelectionIssue = getModifierSelectionIssue(modifierGroups, addonQuantities);
   const addDisabled = orderingDisabled || unavailable || Boolean(modifierSelectionIssue);
-  const discountPercent = pricing.originalUnitPrice > 0
-    ? Math.max(Math.round((pricing.discountPerUnit / pricing.originalUnitPrice) * 100), 0)
-    : 0;
 
   function canSelectMore(groupId: string) {
     const group = modifierGroups.find((item) => item.id === groupId);
@@ -723,11 +768,6 @@ function DishDetailSheet({
             <span className="absolute bottom-4 left-4">
               <DietMark type={product.dietaryType} />
             </span>
-            {discountPercent > 0 ? (
-              <span className="absolute left-0 top-[52%] rounded-r-full bg-[#fff2f4] px-3 py-1.5 text-[10px] font-black text-maroon">
-                {discountPercent}% OFF
-              </span>
-            ) : null}
           </div>
 
           <div className="px-5 pt-3">
@@ -747,17 +787,7 @@ function DishDetailSheet({
             <div className="mt-4 flex flex-wrap items-end gap-2.5">
               <span className="text-[26px] font-black leading-none text-charcoal">{formatRupees(totalPrice)}</span>
               {pricing.discountPerUnit > 0 ? <span className="text-sm font-bold text-muted line-through">{formatRupees(pricing.originalUnitPrice)}</span> : null}
-              {discountPercent > 0 ? <span className="pb-0.5 text-xs font-black text-maroon">{discountPercent}% off</span> : null}
             </div>
-          
-
-          {offer ? (
-            <div className="mt-4 grid grid-cols-[28px_1fr_auto] items-center gap-3 rounded-[14px] border border-[#f0d7dd] bg-[#fff4f5] px-3.5 py-2.5 text-maroon">
-              <BadgeCheck size={19} className="fill-maroon text-maroon" />
-              <span className="text-[11px] font-black uppercase tracking-wide">{offer}</span>
-              <span className="text-[13px] font-black">{pricing.discountPerUnit > 0 ? `-${formatRupees(pricing.discountPerUnit)}` : "Offer"}</span>
-            </div>
-          ) : null}
 
           {product.variants.length ? (
           <div className="mt-4">
@@ -985,6 +1015,7 @@ export function MenuExperience({
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
   const [query, setQuery] = useState("");
   const [activeFilters, setActiveFilters] = useState<MenuFilterId[]>([]);
+  const [priceSort, setPriceSort] = useState<PriceSortId | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState(() => {
     if (!initialActiveCategory || initialActiveCategory === "All") return "All";
@@ -1029,13 +1060,15 @@ export function MenuExperience({
 
   const visibleProducts = useMemo(() => {
     const needle = deferredQuery.trim().toLowerCase();
-    return products.filter((product) => {
+    const matchingProducts = products.filter((product) => {
       const categoryMatch = activeCategory === "All" || productMatchesCategory(product, activeCategory);
       const textMatch = !needle || `${product.name} ${product.category} ${product.parentCategory ?? ""} ${product.description}`.toLowerCase().includes(needle);
       const filterMatch = productMatchesMenuFilters(product, activeFilters, categoryOffers);
       return categoryMatch && textMatch && filterMatch;
-    }).sort(compareProductsForAvailability);
-  }, [activeCategory, activeFilters, categoryOffers, deferredQuery, products]);
+    });
+
+    return sortProductsForMenu(matchingProducts, categoryOffers, priceSort);
+  }, [activeCategory, activeFilters, categoryOffers, deferredQuery, priceSort, products]);
 
   const homeProducts = useMemo(() => {
     if (usingConfiguredHomeDishes) {
@@ -1181,8 +1214,13 @@ export function MenuExperience({
     );
   }
 
+  function choosePriceSort(sortId: PriceSortId) {
+    setPriceSort((current) => current === sortId ? null : sortId);
+  }
+
   function clearFilters() {
     setActiveFilters([]);
+    setPriceSort(null);
   }
 
   function selectHomeCategory(category: string) {
@@ -1237,31 +1275,27 @@ export function MenuExperience({
     () => ["All", ...(topLevelCategories.length ? topLevelCategories : categories)],
     [categories, topLevelCategories],
   );
-  const mobileCategoryGroups = useMemo(() => getCategoryGroups(categoryOptions), [categoryOptions]);
-  const allProductCategories = useMemo(
-    () => Array.from(new Set([...categoryItems.filter((category) => category !== "All"), ...products.map((product) => product.category)])),
-    [categoryItems, products],
+  const homeCategoryItems = useMemo(
+    () => (topLevelCategories.length ? topLevelCategories : categories).filter((category) => category !== "All").slice(0, 4),
+    [categories, topLevelCategories],
   );
+  const mobileCategoryGroups = useMemo(() => getCategoryGroups(categoryOptions), [categoryOptions]);
   const mobileCategoryProducts = useMemo(() => {
     const source = mobileCategory === "All"
       ? products
       : products.filter((product) => productMatchesCategory(product, mobileCategory));
-    return [...source].sort(compareProductsForAvailability);
-  }, [mobileCategory, products]);
+    return sortProductsForMenu(source, categoryOffers, priceSort);
+  }, [categoryOffers, mobileCategory, priceSort, products]);
   const searchGroups = useMemo(() => {
     const needle = deferredQuery.trim().toLowerCase();
-    return allProductCategories
-      .map((category) => {
-        const items = products.filter((product) => {
-          const matchesCategory = productMatchesCategory(product, category);
-          const matchesText = !needle || `${product.name} ${product.category} ${product.parentCategory ?? ""} ${product.description}`.toLowerCase().includes(needle);
-          const filterMatch = productMatchesMenuFilters(product, activeFilters, categoryOffers);
-          return matchesCategory && matchesText && filterMatch;
-        }).sort(compareProductsForAvailability);
-        return { category, items };
-      })
-      .filter((group) => group.items.length > 0);
-  }, [activeFilters, allProductCategories, categoryOffers, deferredQuery, products]);
+    const matchingProducts = products.filter((product) => {
+      const matchesText = !needle || `${product.name} ${product.category} ${product.parentCategory ?? ""} ${product.description}`.toLowerCase().includes(needle);
+      const filterMatch = productMatchesMenuFilters(product, activeFilters, categoryOffers);
+      return matchesText && filterMatch;
+    });
+
+    return buildSearchGroups(matchingProducts, categoryOptions, categoryOffers, priceSort);
+  }, [activeFilters, categoryOffers, categoryOptions, deferredQuery, priceSort, products]);
   const cartCount = validCart.reduce((total, line) => total + line.quantity, 0);
   const cartSubtotal = useMemo(
     () => validCart.reduce((total, line) => total + getProductPrice(line, products, categoryOffers), 0),
@@ -1321,9 +1355,11 @@ export function MenuExperience({
               query={query}
               setQuery={setQuery}
               activeFilters={activeFilters}
+              priceSort={priceSort}
               filtersOpen={filtersOpen}
               onToggleFiltersOpen={() => setFiltersOpen((current) => !current)}
               onToggleFilter={toggleFilter}
+              onChoosePriceSort={choosePriceSort}
               onClearFilters={clearFilters}
               placeholder="Search fresh dishes"
               className="mt-6 shadow-[0_6px_16px_rgba(17,24,39,0.05)]"
@@ -1335,23 +1371,33 @@ export function MenuExperience({
               <section key={group.category}>
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-[22px] font-black text-[#111827]">{group.category}</h2>
-                  <span className="text-[14px] font-black text-maroon">{group.items.length} {group.items.length === 1 ? "item" : "items"}</span>
+                  <span className="text-[14px] font-black text-maroon">{group.itemCount} {group.itemCount === 1 ? "item" : "items"}</span>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {group.items.map((product) => (
-                    <FoodieProductCard
-                      key={product.id}
-                      product={product}
-                      offer={getProductOffer(product, categoryOffers)}
-                      prepMinutes={displayPrepMinutes}
-                      quantity={quantityByProduct.get(product.id) ?? 0}
-                      saved={savedProductIdSet.has(product.id)}
-                      onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
-                      onDecrease={() => decreaseProduct(product)}
-                      onOpen={() => setSelectedProduct(product)}
-                      onToggleSave={() => toggleSaved(product)}
-                      orderingDisabled={orderingDisabled}
-                    />
+                <div className="grid gap-6">
+                  {group.subgroups.map((subgroup) => (
+                    <div key={`${group.category}-${subgroup.category}`}>
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <h3 className="text-[10px] font-black uppercase text-[#7b8492]">{subgroup.category}</h3>
+                        <span className="text-[11px] font-black text-maroon">{subgroup.items.length} {subgroup.items.length === 1 ? "item" : "items"}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        {subgroup.items.map((product) => (
+                          <FoodieProductCard
+                            key={product.id}
+                            product={product}
+                            offer={getProductOffer(product, categoryOffers)}
+                            prepMinutes={displayPrepMinutes}
+                            quantity={quantityByProduct.get(product.id) ?? 0}
+                            saved={savedProductIdSet.has(product.id)}
+                            onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
+                            onDecrease={() => decreaseProduct(product)}
+                            onOpen={() => setSelectedProduct(product)}
+                            onToggleSave={() => toggleSaved(product)}
+                            orderingDisabled={orderingDisabled}
+                          />
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </section>
@@ -1382,9 +1428,11 @@ export function MenuExperience({
           query={query}
           setQuery={setQuery}
           activeFilters={activeFilters}
+          priceSort={priceSort}
           filtersOpen={filtersOpen}
           onToggleFiltersOpen={() => setFiltersOpen((current) => !current)}
           onToggleFilter={toggleFilter}
+          onChoosePriceSort={choosePriceSort}
           onClearFilters={clearFilters}
           searchGroups={searchGroups}
           categoryOffers={categoryOffers}
@@ -1567,9 +1615,11 @@ export function MenuExperience({
             query={query}
             setQuery={setQuery}
             activeFilters={activeFilters}
+            priceSort={priceSort}
             filtersOpen={filtersOpen}
             onToggleFiltersOpen={() => setFiltersOpen((current) => !current)}
             onToggleFilter={toggleFilter}
+            onChoosePriceSort={choosePriceSort}
             onClearFilters={clearFilters}
             placeholder="Search dishes or cuisines"
             className="mt-5 lg:mt-6"
@@ -1588,26 +1638,26 @@ export function MenuExperience({
           ) : null}
 
           <section className="mt-5 lg:mt-6">
-            <div className="flex justify-between gap-2 overflow-x-auto pb-3 lg:justify-between lg:overflow-visible">
-              {categoryItems.slice(0, 5).map((category) => (
+            <div className="grid grid-cols-5 gap-2 pb-3">
+              {homeCategoryItems.map((category) => (
                 <button
                   key={category}
                   onClick={() => {
                     openMenuCategory(category);
                   }}
-                  className="group grid w-[68px] shrink-0 place-items-center gap-2 text-center sm:w-24"
+                  className="group grid min-w-0 place-items-center gap-1.5 text-center"
                 >
-                  <span className={`grid h-[52px] w-[52px] place-items-center overflow-hidden rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] transition duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06] group-hover:shadow-[0_14px_30px_rgba(34,31,32,0.12)] sm:h-20 sm:w-20 lg:h-20 lg:w-20 ${
+                  <span className={`grid h-[52px] w-[52px] place-items-center overflow-hidden rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] transition duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06] group-hover:shadow-[0_14px_30px_rgba(34,31,32,0.12)] sm:h-20 sm:w-20 ${
                     activeCategory === category ? "border-maroon bg-maroon text-white" : "border-[#f1e7e4] bg-white text-charcoal group-hover:border-maroon/30 group-hover:bg-[#fff4f5] group-hover:text-maroon"
                   }`}>
-                    {category === "All" ? (
-                      <Grid3X3 size={21} />
-                    ) : (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[72%] w-[72%] rounded-full object-cover transition duration-300 group-hover:scale-110 group-hover:saturate-[1.08]" loading="lazy" decoding="async" onError={useFallbackImage} />
-                    )}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[72%] w-[72%] rounded-full object-cover transition duration-300 group-hover:scale-110 group-hover:saturate-[1.08]" loading="lazy" decoding="async" onError={useFallbackImage} />
                   </span>
-                  <span className={`w-full break-words text-[10px] font-black leading-tight transition-colors sm:text-[12px] ${activeCategory === category ? "text-maroon" : "text-charcoal group-hover:text-maroon"}`}>
+                  <span
+                    className={`w-full whitespace-nowrap px-0.5 text-center font-black transition-colors ${activeCategory === category ? "text-maroon" : "text-charcoal group-hover:text-maroon"}`}
+                    style={getCompactCategoryLabelStyle(category)}
+                    title={category}
+                  >
                     {category}
                   </span>
                 </button>
@@ -1619,27 +1669,15 @@ export function MenuExperience({
                   setShowMoreCategories((current) => !current);
                 }}
                 aria-expanded={showMoreCategories}
-                className="group grid w-[68px] shrink-0 place-items-center gap-2 text-center sm:w-24 lg:hidden"
+                className="group grid min-w-0 place-items-center gap-1.5 text-center"
               >
-                <span className={`grid h-[52px] w-[52px] place-items-center rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] transition duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06] group-hover:border-maroon/30 group-hover:bg-maroon group-hover:text-white group-hover:shadow-[0_14px_30px_rgba(141,0,33,0.18)] sm:h-20 sm:w-20 lg:h-20 lg:w-20 ${showMoreCategories ? "border-maroon bg-maroon text-white" : "border-[#f1e7e4] bg-[#f8fafc] text-charcoal"}`}>
+                <span className={`grid h-[52px] w-[52px] place-items-center rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] transition duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06] group-hover:border-maroon/30 group-hover:bg-maroon group-hover:text-white group-hover:shadow-[0_14px_30px_rgba(141,0,33,0.18)] sm:h-20 sm:w-20 ${showMoreCategories ? "border-maroon bg-maroon text-white" : "border-[#f1e7e4] bg-[#f8fafc] text-charcoal"}`}>
                   <Grid3X3 size={21} />
                 </span>
-                <span className={`max-w-[54px] truncate text-[10px] font-black transition-colors group-hover:text-maroon sm:max-w-20 sm:text-[12px] ${showMoreCategories ? "text-maroon" : "text-charcoal"}`}>
+                <span className={`w-full whitespace-nowrap px-0.5 text-center text-[9px] font-black leading-none transition-colors group-hover:text-maroon sm:text-[12px] ${showMoreCategories ? "text-maroon" : "text-charcoal"}`}>
                   {showMoreCategories ? "Less" : "More"}
                 </span>
               </button>
-              <Link
-                href="/menu"
-                className="group hidden w-24 shrink-0 place-items-center gap-2 text-center lg:grid"
-                aria-label="Open full menu search page"
-              >
-                <span className="grid h-20 w-20 place-items-center rounded-full border border-[#f1e7e4] bg-[#f8fafc] text-charcoal shadow-[0_8px_22px_rgba(34,31,32,0.06)] transition duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06] group-hover:border-maroon/30 group-hover:bg-maroon group-hover:text-white group-hover:shadow-[0_14px_30px_rgba(141,0,33,0.18)]">
-                  <Search size={22} strokeWidth={2.7} />
-                </span>
-                <span className="max-w-20 text-[12px] font-black leading-tight text-charcoal transition-colors group-hover:text-maroon">
-                  Full Menu
-                </span>
-              </Link>
             </div>
             {showMoreCategories && categoryItems.length > 5 ? (
               <div className="mt-2 hidden max-w-[430px] lg:block">
@@ -1934,10 +1972,6 @@ function getProductOffer(product: Product, categoryOffers: CategoryOfferMap) {
   return product.offer?.trim() || categoryOffers[slugifyCategory(product.category)]?.trim() || undefined;
 }
 
-function compareProductsForAvailability(a: Product, b: Product) {
-  return Number(b.available) - Number(a.available) || a.name.localeCompare(b.name);
-}
-
 function CategoryListPanel({
   groups,
   expandedCategories,
@@ -2025,6 +2059,61 @@ function getCategoryGroups(categories: CategoryOption[]) {
     category,
     children: byParent.get(category.id) ?? [],
   }));
+}
+
+function buildSearchGroups(products: Product[], categoryOptions: CategoryOption[], categoryOffers: CategoryOfferMap, priceSort: PriceSortId | null): SearchGroup[] {
+  const categoryByName = new Map(categoryOptions.map((category) => [category.name, category]));
+  const parentNameById = new Map(categoryOptions.map((category) => [category.id, category.name]));
+  const categoryOrder = new Map(categoryOptions.map((category, index) => [category.name, index]));
+  const groups = new Map<string, Map<string, Product[]>>();
+
+  for (const product of products) {
+    const category = categoryByName.get(product.category);
+    const mainCategory = product.parentCategory ?? (category?.parentId ? parentNameById.get(category.parentId) : undefined) ?? product.category;
+    const subcategory = mainCategory === product.category ? "All dishes" : product.category;
+    const subgroups = groups.get(mainCategory) ?? new Map<string, Product[]>();
+    subgroups.set(subcategory, [...(subgroups.get(subcategory) ?? []), product]);
+    groups.set(mainCategory, subgroups);
+  }
+
+  return Array.from(groups, ([category, subgroups]) => ({
+    category,
+    itemCount: Array.from(subgroups.values()).reduce((total, items) => total + items.length, 0),
+    subgroups: Array.from(subgroups, ([subcategory, items]) => ({
+      category: subcategory,
+      items: sortProductsForMenu(items, categoryOffers, priceSort),
+    })).sort((a, b) => getCategorySortOrder(a.category, categoryOrder) - getCategorySortOrder(b.category, categoryOrder)),
+  })).sort((a, b) => getCategorySortOrder(a.category, categoryOrder) - getCategorySortOrder(b.category, categoryOrder));
+}
+
+function getCategorySortOrder(category: string, categoryOrder: Map<string, number>) {
+  return categoryOrder.get(category) ?? Number.MAX_SAFE_INTEGER;
+}
+
+function getCompactCategoryLabelStyle(category: string) {
+  const compactLength = category.replace(/\s+/g, "").length;
+  const fontSize = compactLength > 17 ? 5.7 : compactLength > 14 ? 6.3 : compactLength > 11 ? 7.1 : 8.2;
+
+  return {
+    fontSize: `${fontSize}px`,
+    lineHeight: "1",
+  };
+}
+
+function sortProductsForMenu(products: Product[], categoryOffers: CategoryOfferMap, priceSort: PriceSortId | null) {
+  return [...products].sort((a, b) => {
+    const availabilitySort = Number(b.available) - Number(a.available);
+    if (availabilitySort) return availabilitySort;
+
+    if (priceSort) {
+      const aPrice = getProductUnitPricing(a, categoryOffers).unitPrice;
+      const bPrice = getProductUnitPricing(b, categoryOffers).unitPrice;
+      const priceDifference = priceSort === "priceLowHigh" ? aPrice - bPrice : bPrice - aPrice;
+      if (priceDifference) return priceDifference;
+    }
+
+    return a.name.localeCompare(b.name);
+  });
 }
 
 function getHomeOfferCards(coupons: Coupon[]) {
