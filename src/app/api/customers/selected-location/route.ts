@@ -15,6 +15,20 @@ const locationSchema = z.object({
   longitude: z.string().optional(),
 });
 
+function normalizeAddressText(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function getAddressGps(landmark?: string | null) {
+  const gps = landmark?.match(/GPS:\s*([^,]+),\s*([^|]+)/i);
+  return gps ? { latitude: gps[1].trim(), longitude: gps[2].trim() } : null;
+}
+
+function sameCoordinates(first?: string | null, second?: string | null) {
+  if (!first || !second) return false;
+  return Math.abs(Number(first) - Number(second)) < 0.00015;
+}
+
 function mobileFromRequest(request: Request) {
   const { searchParams } = new URL(request.url);
   const queryMobile = normalizeMobile(searchParams.get("mobile") ?? "");
@@ -84,7 +98,13 @@ async function postHandler(request: Request) {
   const mobile = normalizeMobile(parsed.data.mobile ?? mobileFromRequest(request));
   if (!mobile) return NextResponse.json({ saved: false });
 
-  const customer = await prisma.customer.findUnique({ where: { mobile }, select: { id: true } });
+  const customer = await prisma.customer.findUnique({
+    where: { mobile },
+    select: {
+      id: true,
+      addresses: true,
+    },
+  });
   if (!customer) return NextResponse.json({ saved: false });
 
   await prisma.customerAddress.updateMany({
@@ -92,21 +112,45 @@ async function postHandler(request: Request) {
     data: { isDefault: false },
   });
 
-  const saved = await prisma.customerAddress.create({
-    data: {
-      customerId: customer.id,
-      label: parsed.data.label,
-      line1: parsed.data.address,
-      area: "",
-      city: "",
-      state: "",
-      pinCode: parsed.data.pinCode ?? "",
-      landmark: [
-        parsed.data.latitude && parsed.data.longitude ? `GPS: ${parsed.data.latitude}, ${parsed.data.longitude}` : "",
-      ].filter(Boolean).join(" | ") || undefined,
-      isDefault: true,
-    },
+  const nextAddress = {
+    label: parsed.data.label,
+    line1: parsed.data.address,
+    area: "",
+    city: "",
+    state: "",
+    pinCode: parsed.data.pinCode ?? "",
+    landmark: [
+      parsed.data.latitude && parsed.data.longitude ? `GPS: ${parsed.data.latitude}, ${parsed.data.longitude}` : "",
+    ].filter(Boolean).join(" | ") || undefined,
+    isDefault: true,
+  };
+  const incomingGps = getAddressGps(nextAddress.landmark);
+  const incomingLine = normalizeAddressText(nextAddress.line1);
+  const existing = customer.addresses.find((item) => {
+    const existingGps = getAddressGps(item.landmark);
+    const gpsMatch = incomingGps && existingGps
+      ? sameCoordinates(incomingGps.latitude, existingGps.latitude) && sameCoordinates(incomingGps.longitude, existingGps.longitude)
+      : false;
+    const existingLine = normalizeAddressText(item.line1);
+    const existingArea = normalizeAddressText(item.area);
+    const textMatch =
+      existingLine === incomingLine ||
+      Boolean(existingArea && incomingLine.includes(existingArea)) ||
+      Boolean(existingLine && incomingLine.includes(existingLine));
+    return gpsMatch || textMatch;
   });
+
+  const saved = existing
+    ? await prisma.customerAddress.update({
+        where: { id: existing.id },
+        data: nextAddress,
+      })
+    : await prisma.customerAddress.create({
+        data: {
+          ...nextAddress,
+          customerId: customer.id,
+        },
+      });
 
   return NextResponse.json({ saved: true, location: toDeliveryLocation(saved) });
 }

@@ -10,8 +10,14 @@ export const metadata: Metadata = {
   alternates: { canonical: "/menu" },
 };
 
-export default async function MenuPage() {
-  const { categories, products, slides, categoryImages, categoryOffers, restaurantSettings } = await getPublicMenuPageDataFromDb();
+export default async function MenuPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ category?: string | string[] }>;
+}) {
+  const params = await searchParams;
+  const activeCategory = Array.isArray(params.category) ? params.category[0] : params.category;
+  const { categories, categoryOptions, products, slides, categoryImages, categoryOffers, restaurantSettings } = await getPublicMenuPageDataFromDb();
 
-  return <MenuExperience initialCategories={categories} initialProducts={products} initialSlides={slides} initialCategoryImages={categoryImages} initialCategoryOffers={categoryOffers} restaurantSettings={restaurantSettings} />;
+  return <MenuExperience initialCategories={categories} initialCategoryOptions={categoryOptions} initialProducts={products} initialSlides={slides} initialCategoryImages={categoryImages} initialCategoryOffers={categoryOffers} restaurantSettings={restaurantSettings} initialActiveCategory={activeCategory} />;
 }

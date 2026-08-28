@@ -18,6 +18,7 @@ const updateProductSchema = z.object({
   reportCode: nullableReportCode(),
   description: z.string().trim().optional(),
   category: z.string().min(1).optional(),
+  categoryId: z.string().min(1).nullable().optional(),
   image: imagePathSchema.nullable().optional(),
   price: z.coerce.number().int().nonnegative().optional(),
   originalPrice: z.coerce.number().int().nonnegative().nullable().optional(),
@@ -76,7 +77,7 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ product });
   }
 
-  const { category, image, prepTimeMinutes, stock, reorderAt, margin, addons, variants, ...productUpdate } = parsed.data;
+  const { category, categoryId, image, prepTimeMinutes, stock, reorderAt, margin, addons, variants, ...productUpdate } = parsed.data;
   if (productUpdate.reportCode) {
     const duplicate = await prisma.product.findFirst({
       where: { reportCode: productUpdate.reportCode, id: { not: id } },
@@ -91,14 +92,16 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ id
     data: {
       ...productUpdate,
       prepMinutes: prepTimeMinutes,
-      category: category
-        ? {
+      category: categoryId
+        ? { connect: { id: categoryId } }
+        : category
+          ? {
             connectOrCreate: {
               where: { slug: slugify(category) },
               create: { name: category, slug: slugify(category) },
             },
           }
-        : undefined,
+          : undefined,
       images:
         image !== undefined
           ? {
@@ -147,7 +150,7 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ id
           : undefined,
     },
     include: {
-      category: true,
+      category: { include: { parent: true } },
       images: { orderBy: { sortOrder: "asc" } },
       variants: true,
       addons: true,

@@ -27,7 +27,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { calculateCartTotals, formatRupees, getPricableCartLines, getProductUnitPricing, isCouponEligibleForCustomer } from "@/lib/pricing";
+import { calculateCartTotals, formatRupees, getPricableCartLines, getProductUnitPricing, isCouponEligibleForCustomer, isCouponEligibleForFulfillment } from "@/lib/pricing";
 import { getModifierOptionLabel } from "@/lib/product-modifiers";
 import { writeStoredCart } from "@/lib/cart-storage";
 import { readCustomerSession, saveCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
@@ -166,8 +166,8 @@ export function CartClient({
   const fulfillmentChargeNote = isPickup ? "Self pickup: no delivery charge" : "Incl. taxes and charges";
 
   const totals = useMemo(
-    () => calculateCartTotals(validLines, couponEligible ? coupon : undefined, initialProducts, initialCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm),
-    [couponCustomer, couponEligible, fulfillmentDistanceKm, initialCategoryOffers, initialCoupons, initialProducts, validLines, coupon, billingSettings],
+    () => calculateCartTotals(validLines, couponEligible ? coupon : undefined, initialProducts, initialCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm, fulfillmentMethod),
+    [couponCustomer, couponEligible, fulfillmentDistanceKm, fulfillmentMethod, initialCategoryOffers, initialCoupons, initialProducts, validLines, coupon, billingSettings],
   );
   const suggestions = useMemo(() => {
     const cartProductIds = new Set(validLines.map((line) => line.productId));
@@ -191,9 +191,10 @@ export function CartClient({
       initialCoupons.filter((item) => (
         totals.subtotal >= item.minOrder &&
         isCouponEligibleForCustomer(item, couponCustomer) &&
-        calculateCartTotals(validLines, item.code, initialProducts, initialCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm).discount > 0
+        isCouponEligibleForFulfillment(item, fulfillmentMethod) &&
+        calculateCartTotals(validLines, item.code, initialProducts, initialCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm, fulfillmentMethod).discount > 0
       )),
-    [couponCustomer, fulfillmentDistanceKm, initialCategoryOffers, initialCoupons, initialProducts, billingSettings, totals.subtotal, validLines],
+    [couponCustomer, fulfillmentDistanceKm, fulfillmentMethod, initialCategoryOffers, initialCoupons, initialProducts, billingSettings, totals.subtotal, validLines],
   );
   const featuredCoupon = availableCoupons[0];
   const featuredCouponValue = featuredCoupon ? getCouponBenefitText(featuredCoupon) : "";
@@ -343,6 +344,12 @@ export function CartClient({
       return false;
     }
 
+    if (!isCouponEligibleForFulfillment(availableCoupon, fulfillmentMethod)) {
+      setCoupon(undefined);
+      setCheckoutMessage(`${availableCoupon.code} is not available for ${fulfillmentMethod === "PICKUP" ? "takeaway" : "delivery"} orders.`);
+      return false;
+    }
+
     setCoupon(availableCoupon.code);
     setCheckoutMessage("");
     return true;
@@ -422,10 +429,10 @@ export function CartClient({
         let pinCode = locationDraft.pinCode;
 
         try {
-          const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&lat=${latitude}&lon=${longitude}`);
+          const response = await fetch(`/api/maps/reverse?lat=${encodeURIComponent(latitude)}&lng=${encodeURIComponent(longitude)}`, { cache: "no-store" });
           const data = await response.json();
-          area = data.display_name || area || "Detected location";
-          pinCode = extractPinCode(area) || pinCode;
+          area = data.result?.formattedAddress || data.result?.area || area || "Detected location";
+          pinCode = data.result?.pinCode || extractPinCode(area) || pinCode;
         } catch {
           area = area || "Detected location";
         }
@@ -1396,6 +1403,7 @@ export function CartClient({
           restaurantSettings={billingSettings}
           categoryOffers={initialCategoryOffers}
           deliveryDistanceKm={fulfillmentDistanceKm}
+          fulfillmentMethod={fulfillmentMethod}
           onClose={() => setShowCouponSheet(false)}
           onSelect={selectCoupon}
         />
@@ -1694,6 +1702,7 @@ function CouponSheet({
   restaurantSettings,
   categoryOffers,
   deliveryDistanceKm,
+  fulfillmentMethod,
   onClose,
   onSelect,
 }: {
@@ -1706,6 +1715,7 @@ function CouponSheet({
   restaurantSettings: RestaurantSettings;
   categoryOffers: CategoryOfferMap;
   deliveryDistanceKm?: number | null;
+  fulfillmentMethod: FulfillmentMethod;
   onClose: () => void;
   onSelect: (code: string) => void;
 }) {
@@ -1715,8 +1725,9 @@ function CouponSheet({
         {coupons.length ? coupons.map((coupon) => {
           const eligibleForCustomer = isCouponEligibleForCustomer(coupon, customer);
           const minOrderGap = Math.max(coupon.minOrder - subtotal, 0);
-          const available = eligibleForCustomer && minOrderGap === 0;
-          const estimatedDiscount = calculateCartTotals(lines, coupon.code, products, coupons, restaurantSettings, customer, categoryOffers, deliveryDistanceKm).discount;
+          const eligibleForFulfillment = isCouponEligibleForFulfillment(coupon, fulfillmentMethod);
+          const available = eligibleForCustomer && eligibleForFulfillment && minOrderGap === 0;
+          const estimatedDiscount = calculateCartTotals(lines, coupon.code, products, coupons, restaurantSettings, customer, categoryOffers, deliveryDistanceKm, fulfillmentMethod).discount;
           const selected = selectedCode === coupon.code;
 
           return (
@@ -1750,6 +1761,8 @@ function CouponSheet({
 
               {!eligibleForCustomer ? (
                 <p className="mt-3 text-[12px] font-black leading-5 text-maroon">{getCouponEligibilityMessage(coupon)}</p>
+              ) : !eligibleForFulfillment ? (
+                <p className="mt-3 text-[12px] font-black leading-5 text-maroon">Available only for {getFulfillmentCouponLabel(coupon)} orders.</p>
               ) : minOrderGap > 0 ? (
                 <p className="mt-3 text-[12px] font-black leading-5 text-maroon">Add {formatRupees(minOrderGap)} more to apply this coupon.</p>
               ) : null}
@@ -1938,13 +1951,22 @@ function getCouponDescription(coupon: Coupon) {
 
 function getCouponEligibilityMessage(coupon: Coupon) {
   if (coupon.audience === "VIP") return "This coupon is only for VIP customers.";
+  if (coupon.audience === "NEW") return "This coupon is only for new customers.";
+  if (coupon.audience === "EXISTING") return `This coupon unlocks after ${getCouponOrderCountRequirement(coupon)} successful order${getCouponOrderCountRequirement(coupon) === 1 ? "" : "s"}.`;
   if (coupon.audience === "POINTS") return `This reward unlocks after ${getCouponOrderCountRequirement(coupon)} placed orders.`;
   if (coupon.audience === "TAGS") return `This coupon is only for ${formatCouponTags(coupon.tagNames)} customers.`;
   return "This coupon is not eligible for this account.";
 }
 
-function getCouponOrderCountRequirement(coupon: Pick<Coupon, "minPoints">) {
-  return Math.max(1, Number(coupon.minPoints ?? 1));
+function getCouponOrderCountRequirement(coupon: Pick<Coupon, "minPoints" | "minCustomerOrders">) {
+  return Math.max(1, Number(coupon.minCustomerOrders ?? coupon.minPoints ?? 1));
+}
+
+function getFulfillmentCouponLabel(coupon: Coupon) {
+  const methods = coupon.fulfillmentMethods?.length ? coupon.fulfillmentMethods : ["DELIVERY", "PICKUP"];
+  if (methods.includes("DELIVERY") && methods.includes("PICKUP")) return "delivery and takeaway";
+  if (methods.includes("PICKUP")) return "takeaway";
+  return "delivery";
 }
 
 function formatCouponTags(tags: string[] | undefined) {

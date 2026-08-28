@@ -321,11 +321,10 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
         let pinCode = address.pinCode;
 
         try {
-          const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`);
+          const response = await fetch(`/api/maps/reverse?lat=${encodeURIComponent(latitude)}&lng=${encodeURIComponent(longitude)}`, { cache: "no-store" });
           const data = await response.json();
-          const details = data.address ?? {};
-          area = [details.suburb, details.neighbourhood, details.city_district, details.city, details.state].filter(Boolean).slice(0, 3).join(", ") || data.display_name || area;
-          pinCode = details.postcode || pinCode;
+          area = data.result?.area || data.result?.formattedAddress || area;
+          pinCode = data.result?.pinCode || pinCode;
         } catch {
           area = area || "Detected location";
         }
@@ -341,6 +340,7 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
         saveDeliveryLocation({
           label: "Home",
           address: area,
+          pinCode,
           latitude,
           longitude,
         });

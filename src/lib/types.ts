@@ -12,6 +12,8 @@ export type Product = {
   kitchenName?: string;
   reportCode?: string;
   category: string;
+  categoryId?: string;
+  parentCategory?: string;
   description: string;
   image: string;
   dietaryType: DietaryType;
@@ -27,6 +29,15 @@ export type Product = {
   variants: { id: string; name: string; price: number }[];
   addons: { id: string; name: string; price: number }[];
   recentReviews?: ProductReview[];
+};
+
+export type CategoryOption = {
+  id: string;
+  name: string;
+  parentId?: string | null;
+  parentName?: string;
+  sortOrder: number;
+  visible: boolean;
 };
 
 export type ProductReview = {
@@ -115,6 +126,10 @@ export type CartLine = {
   instructions?: string;
 };
 
+export type CouponAudience = "ALL" | "NEW" | "EXISTING" | "VIP" | "POINTS" | "TAGS";
+export type CouponChannel = "WEBSITE";
+export type FulfillmentMethod = "DELIVERY" | "PICKUP";
+
 export type Coupon = {
   code: string;
   label: string;
@@ -122,8 +137,17 @@ export type Coupon = {
   value: number;
   minOrder: number;
   maxDiscount?: number;
-  audience?: "ALL" | "VIP" | "POINTS" | "TAGS";
+  audience?: CouponAudience;
   minPoints?: number;
+  minCustomerOrders?: number;
+  redemptionLimit?: number | null;
+  customerUsageLimit?: number;
+  redeemedCount?: number;
+  customerRedeemedCount?: number;
+  productIds?: string[];
+  categoryIds?: string[];
+  channels?: CouponChannel[];
+  fulfillmentMethods?: FulfillmentMethod[];
   tagNames?: string[];
   startsAt?: string;
   endsAt?: string;

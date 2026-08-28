@@ -108,6 +108,7 @@ model Customer {
   leads       Lead[]
   reviews     Review[]
   tickets     SupportTicket[]
+  couponRedemptions CouponRedemption[]
   passwordResetTokens CustomerPasswordResetToken[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -200,9 +201,14 @@ model Category {
   id        String    @id @default(cuid())
   name      String    @unique
   slug      String    @unique
+  parentId  String?
   sortOrder Int       @default(0)
   visible   Boolean   @default(true)
+  parent    Category? @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Category[] @relation("CategoryHierarchy")
   products  Product[]
+
+  @@index([parentId])
 }
 
 model Product {
@@ -307,6 +313,9 @@ model Order {
   status      OrderStatus         @default(NEW)
   subtotal    Int
   discount    Int                 @default(0)
+  couponCode  String?
+  fulfillmentMethod String        @default("DELIVERY")
+  orderSource String              @default("WEBSITE")
   gst         Int
   grandTotal  Int
   customer    Customer            @relation(fields: [customerId], references: [id])
@@ -314,10 +323,14 @@ model Order {
   payments    Payment[]
   timeline    OrderStatusHistory[]
   reviews     Review[]
+  couponRedemption CouponRedemption?
   createdAt   DateTime            @default(now())
 
   @@index([status])
   @@index([createdAt])
+  @@index([couponCode])
+  @@index([fulfillmentMethod])
+  @@index([orderSource])
 }
 
 model OrderItem {
@@ -362,9 +375,42 @@ model Coupon {
   value      Int
   minOrder   Int
   maxDiscount Int?
+  audience   String   @default("ALL")
+  minCustomerOrders Int @default(0)
+  redemptionLimit Int?
+  customerUsageLimit Int @default(1)
+  productIds String[] @default([])
+  categoryIds String[] @default([])
+  channels   String[] @default(["WEBSITE"])
+  fulfillmentMethods String[] @default(["DELIVERY", "PICKUP"])
   startsAt   DateTime
   endsAt     DateTime
   active     Boolean  @default(true)
+  redemptions CouponRedemption[]
+
+  @@index([active, startsAt, endsAt])
+}
+
+model CouponRedemption {
+  id          String   @id @default(cuid())
+  couponCode  String
+  couponId    String?
+  orderId     String   @unique
+  customerId  String
+  discount    Int
+  orderTotal  Int
+  orderSource String   @default("WEBSITE")
+  fulfillmentMethod String @default("DELIVERY")
+  coupon      Coupon?  @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customer    Customer @relation(fields: [customerId], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([couponCode])
+  @@index([customerId])
+  @@index([createdAt])
+  @@index([orderSource])
+  @@index([fulfillmentMethod])
 }
 
 model LoyaltyAccount {

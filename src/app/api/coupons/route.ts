@@ -24,9 +24,22 @@ const couponSchema = z.object({
   startsAt: istDateSchema("start").default(() => parseIstDateInput(getIstDateInputValue(), "start") ?? new Date()),
   endsAt: istDateSchema("end").default(() => parseIstDateInput(getIstDateInputValue(new Date(), 30), "end") ?? new Date(Date.now() + 1000 * 60 * 60 * 24 * 30)),
   active: z.boolean().default(true),
-  audience: z.enum(["ALL", "VIP", "POINTS", "TAGS"]).default("ALL"),
+  audience: z.enum(["ALL", "NEW", "EXISTING", "VIP", "POINTS", "TAGS"]).default("ALL"),
   minPoints: z.coerce.number().int().nonnegative().default(0),
+  minCustomerOrders: z.coerce.number().int().nonnegative().default(0),
+  redemptionLimit: z.coerce.number().int().positive().nullable().optional(),
+  customerUsageLimit: z.coerce.number().int().nonnegative().default(1),
+  productIds: z.array(z.string().min(1)).default([]),
+  categoryIds: z.array(z.string().min(1)).default([]),
+  channels: z.array(z.enum(["WEBSITE"])).default(["WEBSITE"]),
+  fulfillmentMethods: z.array(z.enum(["DELIVERY", "PICKUP"])).default(["DELIVERY", "PICKUP"]),
   tagNames: z.array(z.string().min(1)).default([]),
+}).refine((coupon) => coupon.type !== "PERCENT" || coupon.value <= 100, {
+  path: ["value"],
+  message: "Percentage coupons cannot be more than 100%.",
+}).refine((coupon) => coupon.endsAt > coupon.startsAt, {
+  path: ["endsAt"],
+  message: "End date and time must be after the start.",
 });
 
 async function getHandler() {
@@ -51,13 +64,21 @@ async function postHandler(request: Request) {
     return NextResponse.json({ error: "Invalid coupon payload", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { audience, minPoints, tagNames, ...couponData } = parsed.data;
+  const { minPoints, tagNames, ...couponData } = parsed.data;
+  const normalizedCouponData = {
+    ...couponData,
+    minCustomerOrders: couponData.audience === "POINTS" ? Math.max(1, minPoints) : couponData.audience === "EXISTING" ? Math.max(1, couponData.minCustomerOrders) : 0,
+    productIds: normalizeIds(couponData.productIds),
+    categoryIds: normalizeIds(couponData.categoryIds),
+    channels: couponData.channels.length ? couponData.channels : ["WEBSITE"],
+    fulfillmentMethods: couponData.fulfillmentMethods.length ? couponData.fulfillmentMethods : ["DELIVERY", "PICKUP"],
+  };
   const coupon = await prisma.coupon.upsert({
-    where: { code: couponData.code },
-    create: couponData,
-    update: couponData,
+    where: { code: normalizedCouponData.code },
+    create: normalizedCouponData,
+    update: normalizedCouponData,
   });
-  await saveCouponRule(coupon.code, { audience, minPoints, tagNames });
+  await saveCouponRule(coupon.code, { audience: coupon.audience as never, minPoints: coupon.minCustomerOrders, minCustomerOrders: coupon.minCustomerOrders, tagNames });
 
   await logActivity({
     type: "COUPON_SAVED",
@@ -71,3 +92,7 @@ async function postHandler(request: Request) {
 
 export const GET = withApiErrorHandling(getHandler, "GET /api/coupons");
 export const POST = withApiErrorHandling(postHandler, "POST /api/coupons");
+
+function normalizeIds(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).slice(0, 80);
+}

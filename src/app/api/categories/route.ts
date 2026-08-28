@@ -9,6 +9,7 @@ import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
 const categorySchema = z.object({
   name: z.string().min(1),
+  parentId: nullableParentId(),
   image: z.string().optional(),
   offer: z.string().optional(),
   visible: z.boolean().default(true),
@@ -50,7 +51,7 @@ async function getHandler() {
   return NextResponse.json({
     categories: categories.map((category) => ({
       ...category,
-      image: images[category.slug] ?? category.products[0]?.images[0]?.url ?? "/wah-thali-meal-cutout-v2.png",
+      image: images[category.slug] ?? "",
       offer: offers[category.slug] ?? "",
     })),
     cartSuggestionCategories,
@@ -175,6 +176,13 @@ function getTextMap(value: unknown): Record<string, string> {
 
 function getStringArray(value: unknown): string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : [];
+}
+
+function nullableParentId() {
+  return z.preprocess(
+    (value) => value === "" ? null : value,
+    z.string().min(1).nullable().optional(),
+  );
 }
 
 function slugify(value: string) {

@@ -13,6 +13,7 @@ export type DeliveryLocation = {
 };
 
 const deliveryLocationEvent = "wah-thali-delivery-location-change";
+const deliveryLocationStorageKey = "wah-thali-delivery-location-v1";
 
 export const defaultDeliveryLocation: DeliveryLocation = {
   label: "Home",
@@ -29,7 +30,7 @@ function dispatchLocationChange() {
 
 function normalizeLocation(value: unknown): DeliveryLocation | null {
   const location = value as Partial<DeliveryLocation> | null;
-  if (!location?.address) return null;
+  if (!location?.address || location.address === defaultDeliveryLocation.address) return null;
 
   return {
     label: location.label || "Home",
@@ -40,15 +41,43 @@ function normalizeLocation(value: unknown): DeliveryLocation | null {
   };
 }
 
+function readStoredDeliveryLocation(): DeliveryLocation | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(deliveryLocationStorageKey);
+    if (!raw) return null;
+    return normalizeLocation(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredDeliveryLocation(location: DeliveryLocation | null) {
+  if (typeof window === "undefined") return;
+
+  try {
+    if (!location || location.address === defaultDeliveryLocation.address) {
+      window.localStorage.removeItem(deliveryLocationStorageKey);
+      return;
+    }
+
+    window.localStorage.setItem(deliveryLocationStorageKey, JSON.stringify(location));
+  } catch {
+    // Storage can be unavailable in private modes. The in-memory value still works for this visit.
+  }
+}
+
 async function loadDeliveryLocation() {
   if (typeof window === "undefined") return;
   const session = readCustomerSession();
   const owner = session?.mobile ?? null;
   if (loadedForOwner === owner) return;
   loadedForOwner = owner;
+  const storedLocation = readStoredDeliveryLocation();
 
   if (!owner) {
-    currentLocation = defaultDeliveryLocation;
+    currentLocation = storedLocation ?? defaultDeliveryLocation;
     dispatchLocationChange();
     return;
   }
@@ -56,9 +85,10 @@ async function loadDeliveryLocation() {
   try {
     const response = await fetch("/api/customers/selected-location", { cache: "no-store" });
     const data = await response.json();
-    currentLocation = normalizeLocation(data.location) ?? defaultDeliveryLocation;
+    currentLocation = normalizeLocation(data.location) ?? storedLocation ?? defaultDeliveryLocation;
+    writeStoredDeliveryLocation(currentLocation);
   } catch {
-    currentLocation = defaultDeliveryLocation;
+    currentLocation = storedLocation ?? defaultDeliveryLocation;
   }
 
   dispatchLocationChange();
@@ -72,6 +102,7 @@ export function saveDeliveryLocation(location: DeliveryLocation) {
   if (typeof window === "undefined") return;
 
   currentLocation = location;
+  writeStoredDeliveryLocation(location);
   loadedForOwner = readCustomerSession()?.mobile ?? null;
   dispatchLocationChange();
 
@@ -106,6 +137,10 @@ export function useDeliveryLocation() {
       setLocation(currentLocation);
     }
 
+    const storedLocation = readStoredDeliveryLocation();
+    if (storedLocation) {
+      currentLocation = storedLocation;
+    }
     handleChange();
     void loadDeliveryLocation();
     const unsubscribeSession = subscribeCustomerSession(() => {

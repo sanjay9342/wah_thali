@@ -7,7 +7,7 @@ import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { adminFetch } from "@/lib/admin-client-auth";
 import { formatRupees } from "@/lib/pricing";
-import { formatIstDate, getIstDateInputValue, parseIstDateInput } from "@/lib/time";
+import { formatIstDate, getIstDateTimeInputValue, parseIstDateInput } from "@/lib/time";
 
 type AdminCoupon = {
   code: string;
@@ -16,13 +16,24 @@ type AdminCoupon = {
   value: number;
   minOrder: number;
   maxDiscount?: number | null;
-  audience?: "ALL" | "VIP" | "POINTS" | "TAGS";
+  audience?: "ALL" | "NEW" | "EXISTING" | "VIP" | "POINTS" | "TAGS";
   minPoints?: number;
+  minCustomerOrders?: number;
+  redemptionLimit?: number | null;
+  customerUsageLimit?: number;
+  redeemedCount?: number;
+  productIds?: string[];
+  categoryIds?: string[];
+  channels?: "WEBSITE"[];
+  fulfillmentMethods?: ("DELIVERY" | "PICKUP")[];
   tagNames?: string[];
   startsAt: string;
   endsAt: string;
   active: boolean;
 };
+
+type CouponProductOption = { id: string; name: string; categoryId: string; category: string };
+type CouponCategoryOption = { id: string; name: string };
 
 const emptyCoupon: AdminCoupon = {
   code: "",
@@ -33,9 +44,16 @@ const emptyCoupon: AdminCoupon = {
   maxDiscount: null,
   audience: "ALL",
   minPoints: 0,
+  minCustomerOrders: 0,
+  redemptionLimit: null,
+  customerUsageLimit: 1,
+  productIds: [],
+  categoryIds: [],
+  channels: ["WEBSITE"],
+  fulfillmentMethods: ["DELIVERY", "PICKUP"],
   tagNames: [],
-  startsAt: getIstDateInputValue(),
-  endsAt: getIstDateInputValue(new Date(), 30),
+  startsAt: getIstDateTimeInputValue(),
+  endsAt: getIstDateTimeInputValue(new Date(), 30),
   active: true,
 };
 
@@ -54,10 +72,14 @@ export function AdminCouponsClient({
   initialCoupons,
   discountedProducts,
   initialCustomerTags,
+  products,
+  categories,
 }: {
   initialCoupons: AdminCoupon[];
   discountedProducts: number;
   initialCustomerTags: string[];
+  products: CouponProductOption[];
+  categories: CouponCategoryOption[];
 }) {
   const [coupons, setCoupons] = useState(initialCoupons);
   const [customerTags, setCustomerTags] = useState(() => Array.from(new Set(["VIP", ...initialCustomerTags])).sort((a, b) => a.localeCompare(b)));
@@ -73,8 +95,8 @@ export function AdminCouponsClient({
     if (!response.ok) throw new Error(data.error ?? "Could not reload coupons.");
     setCoupons(data.coupons.map((coupon: AdminCoupon) => ({
       ...coupon,
-      startsAt: coupon.startsAt ? getIstDateInputValue(coupon.startsAt) : emptyCoupon.startsAt,
-      endsAt: coupon.endsAt ? getIstDateInputValue(coupon.endsAt) : emptyCoupon.endsAt,
+      startsAt: coupon.startsAt ? getIstDateTimeInputValue(coupon.startsAt) : emptyCoupon.startsAt,
+      endsAt: coupon.endsAt ? getIstDateTimeInputValue(coupon.endsAt) : emptyCoupon.endsAt,
     })));
   }
 
@@ -99,7 +121,14 @@ export function AdminCouponsClient({
           ...editing,
           code: editing.code.toUpperCase(),
           maxDiscount: editing.maxDiscount ? Number(editing.maxDiscount) : null,
-          minPoints: editing.audience === "POINTS" ? Math.max(1, Number(editing.minPoints ?? 1)) : 0,
+          minPoints: editing.audience === "POINTS" ? Math.max(1, Number(editing.minCustomerOrders ?? editing.minPoints ?? 1)) : 0,
+          minCustomerOrders: editing.audience === "POINTS" || editing.audience === "EXISTING" ? Math.max(1, Number(editing.minCustomerOrders ?? editing.minPoints ?? 1)) : 0,
+          redemptionLimit: editing.redemptionLimit ? Number(editing.redemptionLimit) : null,
+          customerUsageLimit: Math.max(0, Number(editing.customerUsageLimit ?? 1)),
+          productIds: editing.productIds ?? [],
+          categoryIds: editing.categoryIds ?? [],
+          channels: editing.channels?.length ? editing.channels : ["WEBSITE"],
+          fulfillmentMethods: editing.fulfillmentMethods?.length ? editing.fulfillmentMethods : ["DELIVERY", "PICKUP"],
           tagNames: editing.audience === "TAGS" ? normalizeTagNames(editing.tagNames ?? []) : [],
         }),
       });
@@ -153,7 +182,8 @@ export function AdminCouponsClient({
     setEditing({
       ...editing,
       audience,
-      minPoints: audience === "POINTS" ? Math.max(1, Number(editing.minPoints ?? 0)) : 0,
+      minPoints: audience === "POINTS" ? Math.max(1, Number(editing.minCustomerOrders ?? editing.minPoints ?? 0)) : 0,
+      minCustomerOrders: audience === "POINTS" || audience === "EXISTING" ? Math.max(1, Number(editing.minCustomerOrders ?? editing.minPoints ?? 0)) : 0,
       tagNames: audience === "TAGS" ? editing.tagNames ?? [] : [],
     });
   }
@@ -271,7 +301,10 @@ export function AdminCouponsClient({
                       <td className="p-4 font-black">{coupon.label}</td>
                       <td className="p-4">{coupon.type === "FIXED" ? formatRupees(coupon.value) : `${coupon.value}%`}</td>
                       <td className="p-4"><EligibilityPill coupon={coupon} /></td>
-                      <td className="p-4">{formatRupees(coupon.minOrder)}</td>
+                      <td className="p-4">
+                        <p>{formatRupees(coupon.minOrder)}</p>
+                        <p className="mt-1 text-xs font-bold text-muted">{coupon.redeemedCount ?? 0}{coupon.redemptionLimit ? `/${coupon.redemptionLimit}` : ""} used</p>
+                      </td>
                       <td className="p-4 text-xs font-bold text-muted">{formatCouponDate(coupon.startsAt)} to {formatCouponDate(coupon.endsAt)}</td>
                       <td className="p-4">
                         <button
@@ -328,23 +361,60 @@ export function AdminCouponsClient({
                 <Field label={editing.type === "FIXED" ? "Amount off" : "Percent off"} value={String(editing.value)} onChange={(value) => setEditing({ ...editing, value: Number(value) })} />
                 <Field label="Minimum order" value={String(editing.minOrder)} onChange={(value) => setEditing({ ...editing, minOrder: Number(value) })} />
                 <Field label="Max discount" value={editing.maxDiscount ? String(editing.maxDiscount) : ""} onChange={(value) => setEditing({ ...editing, maxDiscount: value ? Number(value) : null })} />
+                <Field label="Redemption limit" value={editing.redemptionLimit ? String(editing.redemptionLimit) : ""} onChange={(value) => setEditing({ ...editing, redemptionLimit: value ? Number(value) : null })} />
+                <Field label="Customer usage limit" value={String(editing.customerUsageLimit ?? 1)} onChange={(value) => setEditing({ ...editing, customerUsageLimit: Number(value) })} />
                 <label className="grid gap-2 text-sm font-black text-charcoal">
                   Eligible customers
                   <select value={editing.audience ?? "ALL"} onChange={(event) => setCouponAudience(event.target.value as AdminCoupon["audience"])} className="h-11 rounded-lg border border-border bg-cream px-3">
                     <option value="ALL">All customers</option>
+                    <option value="NEW">New customers only</option>
+                    <option value="EXISTING">Existing customers</option>
                     <option value="VIP">VIP customers only</option>
                     <option value="POINTS">Order count based</option>
                     <option value="TAGS">Tag based</option>
                   </select>
                 </label>
-                {editing.audience === "POINTS" ? (
+                {editing.audience === "POINTS" || editing.audience === "EXISTING" ? (
                   <Field
-                    label="Customer order count"
+                    label="Minimum successful orders"
                     type="number"
-                    value={String(Math.max(1, Number(editing.minPoints ?? 1)))}
-                    onChange={(value) => setEditing({ ...editing, minPoints: Math.max(1, Number(value) || 1) })}
+                    value={String(Math.max(1, Number(editing.minCustomerOrders ?? editing.minPoints ?? 1)))}
+                    onChange={(value) => setEditing({ ...editing, minCustomerOrders: Math.max(1, Number(value) || 1), minPoints: Math.max(1, Number(value) || 1) })}
                   />
                 ) : null}
+                <div className="grid gap-2 rounded-xl border border-border bg-cream p-3 sm:col-span-2">
+                  <p className="text-sm font-black text-maroon">Coupon applies to</p>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      ["DELIVERY", "Delivery"],
+                      ["PICKUP", "Takeaway"],
+                    ].map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setEditing({ ...editing, fulfillmentMethods: toggleName(editing.fulfillmentMethods ?? [], value as "DELIVERY" | "PICKUP") })}
+                        className={`inline-flex h-9 items-center rounded-lg px-3 text-xs font-black ${(editing.fulfillmentMethods ?? []).includes(value as never) ? "bg-maroon text-white" : "border border-border bg-white text-maroon"}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    <span className="inline-flex h-9 items-center rounded-lg bg-white px-3 text-xs font-black text-maroon ring-1 ring-border">Website</span>
+                  </div>
+                </div>
+                <MultiSelectBox
+                  title="Eligible categories"
+                  items={categories}
+                  selectedIds={editing.categoryIds ?? []}
+                  onToggle={(id) => setEditing({ ...editing, categoryIds: toggleName(editing.categoryIds ?? [], id) })}
+                  emptyLabel="No category restriction"
+                />
+                <MultiSelectBox
+                  title="Eligible items"
+                  items={products.map((product) => ({ id: product.id, name: `${product.name} (${product.category})` }))}
+                  selectedIds={editing.productIds ?? []}
+                  onToggle={(id) => setEditing({ ...editing, productIds: toggleName(editing.productIds ?? [], id) })}
+                  emptyLabel="No item restriction"
+                />
                 {editing.audience === "TAGS" ? (
                   <div className="grid gap-2 rounded-xl border border-border bg-cream p-3 sm:col-span-2">
                     <p className="flex items-center gap-2 text-sm font-black text-maroon"><Tag size={16} /> Eligible customer tags</p>
@@ -368,8 +438,8 @@ export function AdminCouponsClient({
                     </div>
                   </div>
                 ) : null}
-                <Field label="Start date" type="date" value={editing.startsAt} onChange={(value) => setEditing({ ...editing, startsAt: value })} />
-                <Field label="End date" type="date" value={editing.endsAt} onChange={(value) => setEditing({ ...editing, endsAt: value })} />
+                <Field label="Start date and time" type="datetime-local" value={editing.startsAt} onChange={(value) => setEditing({ ...editing, startsAt: value })} />
+                <Field label="End date and time" type="datetime-local" value={editing.endsAt} onChange={(value) => setEditing({ ...editing, endsAt: value })} />
               </div>
 
               <div className="rounded-2xl bg-[#f7f8fc] p-4">
@@ -402,9 +472,48 @@ function Field({ label, value, onChange, type = "text" }: { label: string; value
   );
 }
 
+function MultiSelectBox({
+  title,
+  items,
+  selectedIds,
+  onToggle,
+  emptyLabel,
+}: {
+  title: string;
+  items: { id: string; name: string }[];
+  selectedIds: string[];
+  onToggle: (id: string) => void;
+  emptyLabel: string;
+}) {
+  return (
+    <div className="grid max-h-56 gap-2 overflow-hidden rounded-xl border border-border bg-cream p-3 sm:col-span-2">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-black text-maroon">{title}</p>
+        <span className="text-xs font-black text-muted">{selectedIds.length ? `${selectedIds.length} selected` : emptyLabel}</span>
+      </div>
+      <div className="flex flex-wrap gap-2 overflow-y-auto pr-1">
+        {items.map((item) => {
+          const selected = selectedIds.includes(item.id);
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onToggle(item.id)}
+              className={`inline-flex min-h-9 items-center rounded-lg px-3 py-2 text-left text-xs font-black ${selected ? "bg-maroon text-white" : "border border-border bg-white text-maroon"}`}
+            >
+              {item.name}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function canSaveCoupon(coupon: AdminCoupon) {
   if (!coupon.code.trim() || !coupon.label.trim()) return false;
   if (coupon.audience === "TAGS" && !normalizeTagNames(coupon.tagNames ?? []).length) return false;
+  if (!(coupon.fulfillmentMethods ?? []).length) return false;
   return true;
 }
 
@@ -462,28 +571,32 @@ function AdminCouponPreview({
   );
 }
 
-function EligibilityPill({ coupon }: { coupon: Pick<AdminCoupon, "audience" | "minPoints" | "tagNames"> }) {
+function EligibilityPill({ coupon }: { coupon: Pick<AdminCoupon, "audience" | "minPoints" | "minCustomerOrders" | "tagNames"> }) {
   const audience = coupon.audience ?? "ALL";
   const label = audience === "VIP"
     ? "VIP only"
-    : audience === "POINTS"
-      ? `${getMinimumOrderCount(coupon)}+ orders`
-      : audience === "TAGS"
-        ? `${formatTagList(coupon.tagNames)} only`
-      : "All customers";
+    : audience === "NEW"
+      ? "New customers"
+      : audience === "EXISTING"
+        ? `${getMinimumOrderCount(coupon)}+ orders`
+        : audience === "POINTS"
+          ? `${getMinimumOrderCount(coupon)}+ orders`
+          : audience === "TAGS"
+            ? `${formatTagList(coupon.tagNames)} only`
+            : "All customers";
 
   return <span className="inline-flex rounded-lg bg-[#fff4f5] px-3 py-2 text-xs font-black text-maroon">{label}</span>;
 }
 
-function getMinimumOrderCount(coupon: Pick<AdminCoupon, "minPoints">) {
-  return Math.max(1, Number(coupon.minPoints ?? 1));
+function getMinimumOrderCount(coupon: Pick<AdminCoupon, "minPoints" | "minCustomerOrders">) {
+  return Math.max(1, Number(coupon.minCustomerOrders ?? coupon.minPoints ?? 1));
 }
 
 function formatTagList(tagNames: string[] | undefined) {
   return tagNames?.length ? tagNames.join(", ") : "Selected tags";
 }
 
-function toggleName(values: string[], name: string) {
+function toggleName<T extends string>(values: T[], name: T) {
   return values.includes(name) ? values.filter((value) => value !== name) : [...values, name];
 }
 

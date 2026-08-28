@@ -13,10 +13,12 @@ export type CartTotals = {
 };
 
 export type CouponCustomerContext = {
+  mobile?: string;
   isVip?: boolean;
   orderCount?: number;
   points?: number;
   tags?: string[];
+  redeemedCount?: number;
 };
 
 export type ProductUnitPricing = {
@@ -83,10 +85,21 @@ function getCartLineVariant(product: Product, variantId: string) {
 }
 
 export function isCouponEligibleForCustomer(coupon: Coupon, customer?: CouponCustomerContext) {
-  if ((coupon.audience ?? "ALL") === "VIP") return Boolean(customer?.isVip);
-  if (coupon.audience === "POINTS") return (customer?.orderCount ?? customer?.points ?? 0) >= getCouponOrderCountRequirement(coupon);
-  if (coupon.audience === "TAGS") return hasMatchingCouponTag(coupon.tagNames, customer?.tags);
-  return true;
+  const audience = coupon.audience ?? "ALL";
+  const audienceEligible =
+    audience === "VIP"
+      ? Boolean(customer?.isVip)
+      : audience === "NEW"
+        ? (customer?.orderCount ?? 0) === 0
+        : audience === "EXISTING"
+          ? (customer?.orderCount ?? 0) >= Math.max(1, Number(coupon.minCustomerOrders ?? 1))
+          : audience === "POINTS"
+            ? (customer?.orderCount ?? customer?.points ?? 0) >= getCouponOrderCountRequirement(coupon)
+            : audience === "TAGS"
+              ? hasMatchingCouponTag(coupon.tagNames, customer?.tags)
+              : true;
+  if (!audienceEligible) return false;
+  return !((coupon.customerUsageLimit ?? 0) > 0 && (customer?.redeemedCount ?? coupon.customerRedeemedCount ?? 0) >= (coupon.customerUsageLimit ?? 0));
 }
 
 function getCouponOrderCountRequirement(coupon: Pick<Coupon, "minPoints">) {
@@ -99,16 +112,40 @@ function hasMatchingCouponTag(couponTags: string[] | undefined, customerTags: st
   return (customerTags ?? []).some((tag) => required.has(tag));
 }
 
-export function applyCoupon(subtotal: number, coupon?: Coupon, customer?: CouponCustomerContext): number {
-  if (!coupon || subtotal < coupon.minOrder || !isCouponEligibleForCustomer(coupon, customer)) {
+export function isCouponEligibleForFulfillment(coupon: Coupon, fulfillmentMethod: "DELIVERY" | "PICKUP" = "DELIVERY", channel = "WEBSITE") {
+  const channels = coupon.channels?.length ? coupon.channels : ["WEBSITE"];
+  const fulfillmentMethods = coupon.fulfillmentMethods?.length ? coupon.fulfillmentMethods : ["DELIVERY", "PICKUP"];
+  return channels.includes(channel as never) && fulfillmentMethods.includes(fulfillmentMethod);
+}
+
+export function getCouponEligibleSubtotal(
+  lines: CartLine[],
+  productCatalog: Product[] = products,
+  categoryOffers: CategoryOfferMap = {},
+  coupon?: Coupon,
+) {
+  const productIds = new Set(coupon?.productIds ?? []);
+  const categoryIds = new Set(coupon?.categoryIds ?? []);
+  const restricted = productIds.size > 0 || categoryIds.size > 0;
+
+  return getPricableCartLines(lines, productCatalog).reduce((total, line) => {
+    const product = productCatalog.find((item) => item.id === line.productId);
+    if (!product) return total;
+    if (restricted && !productIds.has(product.id) && !categoryIds.has(product.categoryId ?? "")) return total;
+    return total + getProductPrice(line, productCatalog, categoryOffers);
+  }, 0);
+}
+
+export function applyCoupon(subtotal: number, coupon?: Coupon, customer?: CouponCustomerContext, eligibleSubtotal = subtotal): number {
+  if (!coupon || subtotal < coupon.minOrder || eligibleSubtotal <= 0 || !isCouponEligibleForCustomer(coupon, customer)) {
     return 0;
   }
 
   if (coupon.type === "FIXED") {
-    return Math.min(coupon.value, subtotal);
+    return Math.min(coupon.value, eligibleSubtotal, subtotal);
   }
 
-  return Math.min((subtotal * coupon.value) / 100, coupon.maxDiscount ?? subtotal);
+  return Math.min((eligibleSubtotal * coupon.value) / 100, coupon.maxDiscount ?? eligibleSubtotal, subtotal);
 }
 
 export function calculateCartTotals(
@@ -120,11 +157,16 @@ export function calculateCartTotals(
   customer?: CouponCustomerContext,
   categoryOffers: CategoryOfferMap = {},
   deliveryDistanceKm?: number | null,
+  fulfillmentMethod: "DELIVERY" | "PICKUP" = "DELIVERY",
+  channel = "WEBSITE",
 ): CartTotals {
   const pricableLines = getPricableCartLines(lines, productCatalog);
   const subtotal = pricableLines.reduce((total, line) => total + getProductPrice(line, productCatalog, categoryOffers), 0);
   const coupon = couponCatalog.find((item) => item.code === couponCode?.toUpperCase());
-  const discount = applyCoupon(subtotal, coupon, customer);
+  const eligibleSubtotal = coupon ? getCouponEligibleSubtotal(pricableLines, productCatalog, categoryOffers, coupon) : subtotal;
+  const discount = coupon && isCouponEligibleForFulfillment(coupon, fulfillmentMethod, channel)
+    ? applyCoupon(subtotal, coupon, customer, eligibleSubtotal)
+    : 0;
   const packaging = pricableLines.length > 0 ? activeSettings.packagingFee : 0;
   const freeDeliveryEnabled = activeSettings.freeDeliveryThreshold > 0;
   const eligibleOrderValue = subtotal - discount;

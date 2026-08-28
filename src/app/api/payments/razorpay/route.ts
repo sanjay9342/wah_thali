@@ -1,4 +1,5 @@
 import { withApiErrorHandling } from "@/lib/api-error";
+import type { Prisma } from "@prisma/client";
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -92,6 +93,16 @@ async function postHandler(request: NextRequest) {
             },
           },
         });
+        if (order.couponCode && order.discount > 0) {
+          await redeemCouponForSuccessfulOrder(tx, {
+            couponCode: order.couponCode,
+            orderId: order.id,
+            customerId: order.customerId,
+            discount: order.discount,
+            orderTotal: order.grandTotal,
+            fulfillmentMethod: order.fulfillmentMethod === "PICKUP" ? "PICKUP" : "DELIVERY",
+          });
+        }
         notifiedStatus = nextStatus;
         notificationNote = `Razorpay payment verified: ${razorpay_payment_id}`;
       }
@@ -165,3 +176,39 @@ async function postHandler(request: NextRequest) {
 }
 
 export const POST = withApiErrorHandling(postHandler, "POST /api/payments/razorpay");
+
+async function redeemCouponForSuccessfulOrder(
+  tx: Prisma.TransactionClient,
+  input: {
+    couponCode: string;
+    orderId: string;
+    customerId: string;
+    discount: number;
+    orderTotal: number;
+    fulfillmentMethod: "DELIVERY" | "PICKUP";
+  },
+) {
+  const coupon = await tx.coupon.findUnique({ where: { code: input.couponCode }, select: { id: true } });
+  await tx.couponRedemption.upsert({
+    where: { orderId: input.orderId },
+    create: {
+      couponCode: input.couponCode,
+      couponId: coupon?.id,
+      orderId: input.orderId,
+      customerId: input.customerId,
+      discount: input.discount,
+      orderTotal: input.orderTotal,
+      orderSource: "WEBSITE",
+      fulfillmentMethod: input.fulfillmentMethod,
+    },
+    update: {
+      couponCode: input.couponCode,
+      couponId: coupon?.id,
+      customerId: input.customerId,
+      discount: input.discount,
+      orderTotal: input.orderTotal,
+      orderSource: "WEBSITE",
+      fulfillmentMethod: input.fulfillmentMethod,
+    },
+  });
+}

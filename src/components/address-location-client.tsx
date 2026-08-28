@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -48,11 +48,65 @@ type SearchResult = {
 };
 
 type PinPosition = {
-  x: number;
-  y: number;
+  latitude: string;
+  longitude: string;
 };
 
+type GoogleMapsApi = {
+  maps: {
+    Map: new (element: HTMLElement, options: Record<string, unknown>) => GoogleMap;
+    Marker: new (options: Record<string, unknown>) => GoogleMarker;
+    Geocoder: new () => GoogleGeocoder;
+  };
+};
+
+type GoogleMap = {
+  setCenter: (position: GoogleLatLngLiteral) => void;
+  setZoom: (zoom: number) => void;
+  addListener: (eventName: string, handler: (event: GoogleMapMouseEvent) => void) => GoogleMapsListener;
+};
+
+type GoogleMarker = {
+  setPosition: (position: GoogleLatLngLiteral) => void;
+  addListener: (eventName: string, handler: (event: GoogleMapMouseEvent) => void) => GoogleMapsListener;
+};
+
+type GoogleGeocoder = {
+  geocode: (request: Record<string, unknown>) => Promise<{ results: GoogleGeocoderResult[] }>;
+};
+
+type GoogleGeocoderResult = {
+  place_id: string;
+  formatted_address: string;
+  address_components: { long_name: string; short_name: string; types: string[] }[];
+  geometry: {
+    location: { lat: () => number; lng: () => number };
+  };
+};
+
+type GoogleLatLngLiteral = {
+  lat: number;
+  lng: number;
+};
+
+type GoogleMapMouseEvent = {
+  latLng?: { lat: () => number; lng: () => number };
+};
+
+type GoogleMapsListener = {
+  remove: () => void;
+};
+
+declare global {
+  interface Window {
+    google?: GoogleMapsApi;
+    __wahThaliGoogleMapsReady?: () => void;
+  }
+}
+
 const defaultArea = "Select delivery location";
+const defaultMapCenter = { lat: 22.5726, lng: 88.3639 };
+let googleMapsPromise: Promise<GoogleMapsApi> | null = null;
 
 type DbCustomerAddress = {
   id: string;
@@ -68,36 +122,141 @@ function getAddressLabel(tag: AddressTag, customLabel?: string) {
   return customLabel?.trim() || "Other";
 }
 
-function getAreaFromNominatim(data: Record<string, unknown>, fallback: string) {
-  const address = (data.address ?? {}) as Record<string, string | undefined>;
-  const parts = [
-    address.suburb,
-    address.neighbourhood,
-    address.village,
-    address.town,
-    address.city,
-    address.county,
-    address.state,
-  ].filter(Boolean);
-
-  return parts.slice(0, 3).join(", ") || (typeof data.display_name === "string" ? data.display_name : fallback);
+function cleanPhone(value: string) {
+  return value.replace(/\D/g, "").slice(-10);
 }
 
-function getSearchTitle(data: Record<string, unknown>) {
-  const address = (data.address ?? {}) as Record<string, string | undefined>;
+function normalizeAddressText(value: string | undefined) {
+  return (value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function coordinatesMatch(first: Partial<SavedAddress>, second: Partial<SavedAddress>) {
+  if (!first.latitude || !first.longitude || !second.latitude || !second.longitude) return false;
+  return Math.abs(Number(first.latitude) - Number(second.latitude)) < 0.00015 &&
+    Math.abs(Number(first.longitude) - Number(second.longitude)) < 0.00015;
+}
+
+function addressesMatch(first: Partial<SavedAddress>, second: Partial<SavedAddress>) {
+  const firstAddress = normalizeAddressText(`${first.details ?? ""}, ${first.area ?? ""}`);
+  const secondAddress = normalizeAddressText(`${second.details ?? ""}, ${second.area ?? ""}`);
+  const firstArea = normalizeAddressText(first.area);
+  const secondArea = normalizeAddressText(second.area);
+  return Boolean(
+    firstArea && secondArea && firstArea === secondArea ||
+    firstAddress && secondAddress && firstAddress === secondAddress ||
+    firstArea && secondAddress.includes(firstArea) ||
+    secondArea && firstAddress.includes(secondArea),
+  );
+}
+
+function dedupeSavedAddresses(addresses: SavedAddress[]) {
+  return addresses.reduce<SavedAddress[]>((unique, item) => {
+    const duplicateIndex = unique.findIndex((existing) => coordinatesMatch(existing, item) || addressesMatch(existing, item));
+    if (duplicateIndex === -1) {
+      unique.push(item);
+      return unique;
+    }
+
+    const existing = unique[duplicateIndex];
+    const betterBase = getSavedAddressScore(item) > getSavedAddressScore(existing) ? item : existing;
+    unique[duplicateIndex] = {
+      ...betterBase,
+      receiver: betterBase.receiver || existing.receiver || item.receiver,
+      phone: betterBase.phone || existing.phone || item.phone,
+      pinCode: betterBase.pinCode || existing.pinCode || item.pinCode,
+      latitude: betterBase.latitude || existing.latitude || item.latitude,
+      longitude: betterBase.longitude || existing.longitude || item.longitude,
+    };
+    return unique;
+  }, []);
+}
+
+function getSavedAddressScore(address: SavedAddress) {
+  return [
+    address.area && address.area !== address.details ? 4 : 0,
+    address.pinCode ? 2 : 0,
+    address.latitude && address.longitude ? 2 : 0,
+    address.receiver || address.phone ? 2 : 0,
+    address.details && address.details !== "India" ? 1 : 0,
+  ].reduce((total, score) => total + score, 0);
+}
+
+function getGoogleAddressComponent(result: GoogleGeocoderResult, types: string[]) {
+  return result.address_components.find((component) => types.some((type) => component.types.includes(type)))?.long_name ?? "";
+}
+
+function getAreaFromGoogleResult(result: GoogleGeocoderResult, fallback: string) {
+  return [
+    getGoogleAddressComponent(result, ["sublocality_level_1", "sublocality", "neighborhood"]),
+    getGoogleAddressComponent(result, ["locality", "postal_town"]),
+    getGoogleAddressComponent(result, ["administrative_area_level_1"]),
+  ].filter(Boolean).slice(0, 3).join(", ") || result.formatted_address || fallback;
+}
+
+function getSearchTitleFromGoogleResult(result: GoogleGeocoderResult) {
   return (
-    address.suburb ||
-    address.neighbourhood ||
-    address.village ||
-    address.town ||
-    address.city ||
-    (typeof data.name === "string" ? data.name : "") ||
+    getGoogleAddressComponent(result, ["premise", "point_of_interest", "establishment"]) ||
+    getGoogleAddressComponent(result, ["sublocality_level_1", "sublocality", "neighborhood"]) ||
+    getGoogleAddressComponent(result, ["locality", "postal_town"]) ||
+    result.formatted_address ||
     "Selected location"
   );
 }
 
-function cleanPhone(value: string) {
-  return value.replace(/\D/g, "").slice(-10);
+function toSearchResult(result: GoogleGeocoderResult, fallback: string, index: number): SearchResult {
+  return {
+    id: result.place_id || `${result.formatted_address}-${index}`,
+    title: getSearchTitleFromGoogleResult(result),
+    subtitle: result.formatted_address || fallback,
+    pinCode: getGoogleAddressComponent(result, ["postal_code"]) || extractPinCode(result.formatted_address),
+    latitude: result.geometry.location.lat().toFixed(6),
+    longitude: result.geometry.location.lng().toFixed(6),
+  };
+}
+
+function parseMapCoordinates(latitude: string, longitude: string) {
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
+async function loadGoogleMaps() {
+  if (window.google?.maps) return window.google;
+  if (googleMapsPromise) return googleMapsPromise;
+
+  googleMapsPromise = new Promise<GoogleMapsApi>(async (resolve, reject) => {
+    try {
+      const configResponse = await fetch("/api/maps/config", { cache: "no-store" });
+      const config = (await configResponse.json()) as { configured?: boolean; apiKey?: string };
+      if (!configResponse.ok || !config.configured || !config.apiKey) {
+        reject(new Error("Google Maps is not configured."));
+        return;
+      }
+
+      const existing = document.getElementById("wah-thali-google-maps") as HTMLScriptElement | null;
+      window.__wahThaliGoogleMapsReady = () => {
+        if (window.google?.maps) resolve(window.google);
+        else reject(new Error("Google Maps could not be loaded."));
+      };
+
+      if (existing) return;
+
+      const script = document.createElement("script");
+      script.id = "wah-thali-google-maps";
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(config.apiKey)}&loading=async&v=weekly&callback=__wahThaliGoogleMapsReady`;
+      script.async = true;
+      script.onerror = () => reject(new Error("Google Maps could not be loaded."));
+      document.head.appendChild(script);
+    } catch (error) {
+      reject(error);
+    }
+  }).catch((error) => {
+    googleMapsPromise = null;
+    throw error;
+  });
+
+  return googleMapsPromise;
 }
 
 function toSavedAddress(address: DbCustomerAddress): SavedAddress {
@@ -126,7 +285,6 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
   const deliveryLocation = useDeliveryLocation();
   const supportMobile = cleanPhone(restaurantSettings.supportPhone);
   const supportMobileRef = useRef(supportMobile);
-  supportMobileRef.current = supportMobile;
   const [mode, setMode] = useState<ScreenMode>("select");
   const [locating, setLocating] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -137,7 +295,6 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
-  const [markerPosition, setMarkerPosition] = useState<PinPosition>({ x: 50, y: 43 });
   const [address, setAddress] = useState({
     area: deliveryLocation.address === defaultArea ? "" : deliveryLocation.address,
     details: "",
@@ -152,6 +309,10 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
 
   const currentArea = address.area || (deliveryLocation.address === defaultArea ? "" : deliveryLocation.address);
   const recentAddresses = useMemo(() => savedAddresses.slice(0, 5), [savedAddresses]);
+
+  useEffect(() => {
+    supportMobileRef.current = supportMobile;
+  }, [supportMobile]);
 
   useEffect(() => {
     function refreshSession() {
@@ -191,7 +352,7 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
               phone: cleanPhone(item.phone) === storedSupportMobile ? "" : cleanPhone(item.phone),
             }))
           : [];
-        setSavedAddresses(next);
+        setSavedAddresses(dedupeSavedAddresses(next));
       } catch {
         if (!cancelled) setSavedAddresses([]);
       }
@@ -224,43 +385,44 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
       return () => window.clearTimeout(timeoutId);
     }
 
-    const controller = new AbortController();
+    let cancelled = false;
     const timeoutId = window.setTimeout(async () => {
       setSearching(true);
       try {
-        const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&countrycodes=in&q=${encodeURIComponent(searchText)}`,
-          { signal: controller.signal },
-        );
-        const data = (await response.json()) as Array<Record<string, unknown>>;
-        setSearchResults(
-          data.map((item, index) => {
-            const displayName = typeof item.display_name === "string" ? item.display_name : searchText;
-            const title = getSearchTitle(item);
-            return {
-              id: String(item.place_id ?? `${displayName}-${index}`),
-              title,
-              subtitle: displayName,
-              pinCode: extractPinCode(displayName),
-              latitude: typeof item.lat === "string" ? Number(item.lat).toFixed(6) : "",
-              longitude: typeof item.lon === "string" ? Number(item.lon).toFixed(6) : "",
-            };
-          }),
-        );
-      } catch {
-        if (!controller.signal.aborted) setSearchResults([]);
+        const response = await fetch(`/api/maps/autocomplete?input=${encodeURIComponent(searchText)}`, { cache: "no-store" });
+        const data = (await response.json()) as { results?: SearchResult[]; error?: string };
+        if (!response.ok) throw new Error(data.error || "Google location search is not ready.");
+        if (!cancelled) {
+          setSearchResults(data.results ?? []);
+        }
+      } catch (error) {
+        try {
+          const google = await loadGoogleMaps();
+          const geocoder = new google.maps.Geocoder();
+          const { results } = await geocoder.geocode({
+            address: searchText,
+            componentRestrictions: { country: "IN" },
+            region: "in",
+          });
+          if (!cancelled) setSearchResults(results.slice(0, 5).map((item, index) => toSearchResult(item, searchText, index)));
+        } catch {
+          if (!cancelled) {
+            setSearchResults([]);
+            setMessage(error instanceof Error ? error.message : "Location search failed. Please try again.");
+          }
+        }
       } finally {
-        if (!controller.signal.aborted) setSearching(false);
+        if (!cancelled) setSearching(false);
       }
     }, 450);
 
     return () => {
-      controller.abort();
+      cancelled = true;
       window.clearTimeout(timeoutId);
     };
   }, [query]);
 
-  async function syncAddressToCustomer(item: SavedAddress, isDefault: boolean) {
+  async function syncAddressToCustomer(item: SavedAddress, isDefault: boolean, options: { silent?: boolean } = {}) {
     const session = readCustomerSession();
     if (!session?.mobile) {
       setMessage("Location saved on this device. Login to sync it to your profile.");
@@ -286,23 +448,20 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
           isDefault,
         }),
       });
-      const data = (await response.json()) as { error?: string };
-      setMessage(response.ok ? "Location saved to your customer profile." : data.error || "Saved here, but profile sync failed.");
+      const data = (await response.json()) as { address?: DbCustomerAddress; error?: string };
+      if (response.ok && data.address) {
+        upsertSavedAddress(toSavedAddress(data.address));
+      }
+      if (!options.silent) {
+        setMessage(response.ok ? "Location saved to your customer profile." : data.error || "Saved here, but profile sync failed.");
+      }
     } catch {
-      setMessage("Saved here, but profile sync failed. Please try again.");
+      if (!options.silent) setMessage("Saved here, but profile sync failed. Please try again.");
     }
   }
 
   function upsertSavedAddress(next: SavedAddress) {
-    setSavedAddresses((current) => [
-      next,
-      ...current.filter((item) => {
-        if (item.id === next.id) return false;
-        const sameCoordinates = item.latitude && next.latitude && item.latitude === next.latitude && item.longitude === next.longitude;
-        const sameAddress = `${item.details}, ${item.area}`.toLowerCase() === `${next.details}, ${next.area}`.toLowerCase();
-        return !sameCoordinates && !sameAddress;
-      }),
-    ]);
+    setSavedAddresses((current) => dedupeSavedAddresses([next, ...current.filter((item) => item.id !== next.id)]));
   }
 
   function buildSavedAddress(partial: Partial<SavedAddress> & { area: string }) {
@@ -335,7 +494,6 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
       distance: "0 m",
     });
 
-    setMarkerPosition({ x: 50, y: 43 });
     setAddress((current) => ({
       ...current,
       area,
@@ -353,25 +511,22 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
   }
 
   async function updateLocationFromMovedPin(position: PinPosition) {
-    if (!address.latitude || !address.longitude) {
-      setMessage("Detecting your current location first...");
-      void detectLocation(true);
-      return;
-    }
-
-    const latitude = (Number(address.latitude) - (position.y - 43) * 0.00008).toFixed(6);
-    const longitude = (Number(address.longitude) + (position.x - 50) * 0.00008).toFixed(6);
+    const latitude = position.latitude;
+    const longitude = position.longitude;
     let area = address.area || "Selected location";
     let pinCode = address.pinCode;
 
     setLocating(true);
     setMessage("Detecting moved pin location...");
     try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&lat=${latitude}&lon=${longitude}`);
-      const data = (await response.json()) as Record<string, unknown>;
-      const displayName = typeof data.display_name === "string" ? data.display_name : "";
-      area = getAreaFromNominatim(data, area);
-      pinCode = extractPinCode(displayName) || pinCode;
+      const google = await loadGoogleMaps();
+      const geocoder = new google.maps.Geocoder();
+      const { results } = await geocoder.geocode({ location: { lat: Number(latitude), lng: Number(longitude) } });
+      const result = results[0];
+      if (result) {
+        area = getAreaFromGoogleResult(result, area);
+        pinCode = getGoogleAddressComponent(result, ["postal_code"]) || extractPinCode(result.formatted_address) || pinCode;
+      }
     } catch {
       area = address.area || "Moved pin location";
     }
@@ -398,11 +553,14 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
         let pinCode = "";
 
         try {
-          const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&lat=${latitude}&lon=${longitude}`);
-          const data = (await response.json()) as Record<string, unknown>;
-          const displayName = typeof data.display_name === "string" ? data.display_name : "";
-          area = getAreaFromNominatim(data, area);
-          pinCode = extractPinCode(displayName);
+          const google = await loadGoogleMaps();
+          const geocoder = new google.maps.Geocoder();
+          const { results } = await geocoder.geocode({ location: { lat: Number(latitude), lng: Number(longitude) } });
+          const result = results[0];
+          if (result) {
+            area = getAreaFromGoogleResult(result, area);
+            pinCode = getGoogleAddressComponent(result, ["postal_code"]) || extractPinCode(result.formatted_address);
+          }
         } catch {
           area = query.trim() || "Current location";
         }
@@ -440,7 +598,7 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
     });
     saveDeliveryLocation({ label: next.label || next.tag, address: result.title, pinCode: result.pinCode, latitude: result.latitude, longitude: result.longitude });
     upsertSavedAddress(next);
-    void syncAddressToCustomer(next, true);
+    void syncAddressToCustomer(next, true, { silent: true });
   }
 
   function saveAddress() {
@@ -532,7 +690,6 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
       latitude: item.latitude || "",
       longitude: item.longitude || "",
     }));
-    setMarkerPosition({ x: 50, y: 43 });
     setMode("add");
   }
 
@@ -585,7 +742,7 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
             <div className="mt-8 overflow-hidden rounded-[22px] bg-white shadow-sm ring-1 ring-black/5 lg:mt-6 lg:rounded-[18px]">
               <button
                 type="button"
-                onClick={() => void detectLocation(false)}
+                onClick={() => void detectLocation(true)}
                 className="grid min-h-24 w-full grid-cols-[46px_1fr_auto] items-center gap-3 px-5 py-5 text-left lg:min-h-[74px] lg:grid-cols-[36px_1fr_auto] lg:px-4 lg:py-4"
               >
                 <LocateFixed className={`h-[30px] w-[30px] text-maroon lg:h-6 lg:w-6 ${locating ? "animate-spin" : ""}`} strokeWidth={2.7} />
@@ -641,7 +798,7 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
               <p className="mt-2 text-[12px] font-bold leading-5 text-muted">Search, detect GPS, or add complete delivery details. Logged-in customer details sync automatically.</p>
             </div>
             <p className="mt-7 text-center text-[15px] font-bold text-muted lg:text-[13px]">
-              powered by <span className="font-black text-maroon">Wah Thali Maps</span>
+              powered by <span className="font-black text-maroon">Google Maps</span>
             </p>
           </aside>
         </div>
@@ -668,8 +825,6 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
             longitude={address.longitude}
             locating={locating}
             onLocate={() => void detectLocation(true)}
-            pinPosition={markerPosition}
-            onPinMove={setMarkerPosition}
             onPinDrop={(position) => void updateLocationFromMovedPin(position)}
           />
 
@@ -907,8 +1062,6 @@ function MapPreview({
   longitude,
   locating,
   onLocate,
-  pinPosition,
-  onPinMove,
   onPinDrop,
 }: {
   area: string;
@@ -916,74 +1069,95 @@ function MapPreview({
   longitude: string;
   locating: boolean;
   onLocate: () => void;
-  pinPosition: PinPosition;
-  onPinMove: (position: PinPosition) => void;
   onPinDrop: (position: PinPosition) => void;
 }) {
   const mapRef = useRef<HTMLDivElement>(null);
-  const draggingRef = useRef(false);
-  const dragStartRef = useRef(pinPosition);
+  const googleMapRef = useRef<GoogleMap | null>(null);
+  const markerRef = useRef<GoogleMarker | null>(null);
+  const onPinDropRef = useRef(onPinDrop);
+  const initialCenterRef = useRef(parseMapCoordinates(latitude, longitude) ?? defaultMapCenter);
+  const initialHasCoordinatesRef = useRef(Boolean(parseMapCoordinates(latitude, longitude)));
+  const [mapError, setMapError] = useState("");
 
-  function getPositionFromPointer(clientX: number, clientY: number) {
-    const rect = mapRef.current?.getBoundingClientRect();
-    if (!rect) return pinPosition;
+  useEffect(() => {
+    onPinDropRef.current = onPinDrop;
+  }, [onPinDrop]);
 
-    return {
-      x: Math.min(88, Math.max(12, ((clientX - rect.left) / rect.width) * 100)),
-      y: Math.min(72, Math.max(20, ((clientY - rect.top) / rect.height) * 100)),
+  useEffect(() => {
+    let cancelled = false;
+    const listeners: GoogleMapsListener[] = [];
+
+    async function mountMap() {
+      if (!mapRef.current) return;
+
+      try {
+        const google = await loadGoogleMaps();
+        if (cancelled || !mapRef.current) return;
+
+        const center = initialCenterRef.current;
+        const map = new google.maps.Map(mapRef.current, {
+          center,
+          zoom: initialHasCoordinatesRef.current ? 17 : 13,
+          clickableIcons: false,
+          fullscreenControl: false,
+          mapTypeControl: false,
+          streetViewControl: false,
+        });
+        const marker = new google.maps.Marker({
+          map,
+          position: center,
+          draggable: true,
+          title: "Delivery location",
+        });
+
+        googleMapRef.current = map;
+        markerRef.current = marker;
+        listeners.push(
+          map.addListener("click", (event) => {
+            if (!event.latLng) return;
+            const position = { lat: event.latLng.lat(), lng: event.latLng.lng() };
+            marker.setPosition(position);
+            map.setCenter(position);
+            onPinDropRef.current({ latitude: position.lat.toFixed(6), longitude: position.lng.toFixed(6) });
+          }),
+          marker.addListener("dragend", (event) => {
+            if (!event.latLng) return;
+            const position = { lat: event.latLng.lat(), lng: event.latLng.lng() };
+            map.setCenter(position);
+            onPinDropRef.current({ latitude: position.lat.toFixed(6), longitude: position.lng.toFixed(6) });
+          }),
+        );
+        setMapError("");
+      } catch (error) {
+        if (!cancelled) setMapError(error instanceof Error ? error.message : "Google Maps could not be loaded.");
+      }
+    }
+
+    void mountMap();
+
+    return () => {
+      cancelled = true;
+      listeners.forEach((listener) => listener.remove());
     };
-  }
+  }, []);
 
-  function startDrag(event: PointerEvent<HTMLButtonElement>) {
-    draggingRef.current = true;
-    dragStartRef.current = pinPosition;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    onPinMove(getPositionFromPointer(event.clientX, event.clientY));
-  }
+  useEffect(() => {
+    const nextCenter = parseMapCoordinates(latitude, longitude);
+    if (!nextCenter || !googleMapRef.current || !markerRef.current) return;
 
-  function movePin(event: PointerEvent<HTMLButtonElement>) {
-    if (!draggingRef.current) return;
-    onPinMove(getPositionFromPointer(event.clientX, event.clientY));
-  }
-
-  function finishDrag(event: PointerEvent<HTMLButtonElement>) {
-    if (!draggingRef.current) return;
-    draggingRef.current = false;
-    const nextPosition = getPositionFromPointer(event.clientX, event.clientY);
-    const dragDistance = Math.hypot(nextPosition.x - dragStartRef.current.x, nextPosition.y - dragStartRef.current.y);
-    onPinMove(nextPosition);
-    if (dragDistance > 1.5) onPinDrop(nextPosition);
-  }
+    googleMapRef.current.setCenter(nextCenter);
+    googleMapRef.current.setZoom(17);
+    markerRef.current.setPosition(nextCenter);
+  }, [latitude, longitude]);
 
   return (
-    <div ref={mapRef} className="relative h-[330px] overflow-hidden bg-[#eef1f6] touch-none lg:h-full lg:min-h-0">
-      <div
-        className="absolute inset-0 opacity-80"
-        style={{
-          backgroundImage:
-            "linear-gradient(28deg, transparent 0 41%, rgba(255,255,255,0.95) 41% 47%, transparent 47%), linear-gradient(115deg, transparent 0 48%, rgba(255,255,255,0.95) 48% 54%, transparent 54%), linear-gradient(90deg,#d9dee8 1px,transparent 1px), linear-gradient(#d9dee8 1px,transparent 1px)",
-          backgroundSize: "260px 180px, 260px 180px, 82px 82px, 82px 82px",
-        }}
-      />
-      <div className="absolute left-[8%] top-[10%] h-16 w-28 rounded-sm bg-[#dde2ec]" />
-      <div className="absolute right-[10%] top-[13%] h-20 w-32 rounded-sm bg-[#dde2ec]" />
-      <div className="absolute left-[3%] top-[47%] h-24 w-36 rounded-sm bg-[#dde2ec]" />
-      <div className="absolute right-[7%] top-[50%] h-20 w-28 rounded-sm bg-[#dde2ec]" />
-      <span className="absolute left-1/2 top-[38%] grid h-16 w-16 -translate-x-1/2 place-items-center rounded-full bg-[#2ca8ff]/20 text-[#2ca8ff]">
-        <span className="h-7 w-7 rounded-full border-4 border-white bg-[#2ca8ff] shadow-md" />
-      </span>
-      <button
-        type="button"
-        className="absolute z-10 grid h-[70px] w-[70px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-maroon text-white shadow-2xl active:scale-95"
-        style={{ left: `${pinPosition.x}%`, top: `${pinPosition.y}%` }}
-        onPointerDown={startDrag}
-        onPointerMove={movePin}
-        onPointerUp={finishDrag}
-        onPointerCancel={finishDrag}
-        aria-label="Move delivery pin"
-      >
-        <MapPin size={42} fill="currentColor" />
-      </button>
+    <div className="relative h-[330px] overflow-hidden bg-[#eef1f6] lg:h-full lg:min-h-0">
+      <div ref={mapRef} className="absolute inset-0" aria-label="Google delivery location map" />
+      {mapError ? (
+        <div className="absolute inset-0 grid place-items-center bg-white px-8 text-center text-sm font-black leading-6 text-muted">
+          {mapError}
+        </div>
+      ) : null}
       <button
         type="button"
         onClick={onLocate}

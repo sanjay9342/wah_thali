@@ -6,7 +6,7 @@ import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { adminFetch } from "@/lib/admin-client-auth";
 import { formatModifierOptionName, getProductModifierGroups } from "@/lib/product-modifiers";
-import type { AdminProduct } from "@/lib/types";
+import type { AdminProduct, CategoryOption } from "@/lib/types";
 import { formatRupees, getProductUnitPricing } from "@/lib/pricing";
 import { formatIstTime } from "@/lib/time";
 
@@ -15,6 +15,7 @@ type ProductForm = {
   name: string;
   kitchenName: string;
   reportCode: string;
+  categoryId: string;
   category: string;
   description: string;
   image: string;
@@ -59,6 +60,7 @@ const emptyForm: ProductForm = {
   name: "",
   kitchenName: "",
   reportCode: "",
+  categoryId: "",
   category: "",
   description: "",
   image: "",
@@ -77,10 +79,12 @@ const savedAddonGroupsStorageKey = "wah-thali-admin-saved-addon-groups";
 
 export function AdminInventoryClient({
   initialCategories,
+  initialCategoryOptions = [],
   initialProducts,
   initialEditId,
 }: {
   initialCategories: string[];
+  initialCategoryOptions?: CategoryOption[];
   initialProducts: AdminProduct[];
   initialEditId?: string;
 }) {
@@ -106,10 +110,32 @@ export function AdminInventoryClient({
     return () => window.clearTimeout(timer);
   }, [message, messageTone]);
 
-  const categories = useMemo(
-    () => Array.from(new Set([...initialCategories, ...products.map((product) => product.category)])).sort(),
-    [initialCategories, products],
-  );
+  const categoryOptions = useMemo(() => {
+    const optionsByName = new Map(initialCategoryOptions.map((category) => [category.name, category]));
+    for (const category of initialCategories) {
+      if (!optionsByName.has(category)) {
+        optionsByName.set(category, {
+          id: category,
+          name: category,
+          sortOrder: optionsByName.size + 1,
+          visible: true,
+        });
+      }
+    }
+    for (const product of products) {
+      if (!optionsByName.has(product.category)) {
+        optionsByName.set(product.category, {
+          id: product.categoryId ?? product.category,
+          name: product.category,
+          parentName: product.parentCategory,
+          sortOrder: optionsByName.size + 1,
+          visible: true,
+        });
+      }
+    }
+    return Array.from(optionsByName.values()).sort(compareCategoryOptions);
+  }, [initialCategories, initialCategoryOptions, products]);
+  const categories = useMemo(() => categoryOptions.map((category) => category.name), [categoryOptions]);
 
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
@@ -189,6 +215,7 @@ export function AdminInventoryClient({
         displayName: form.name.trim(),
         kitchenName: form.kitchenName || null,
         reportCode: form.reportCode ? form.reportCode.toUpperCase() : null,
+        categoryId: form.categoryId || undefined,
         category: form.category.trim(),
         description: form.description.trim(),
         image: form.image.trim() || undefined,
@@ -290,12 +317,13 @@ export function AdminInventoryClient({
 
   function exportCsv() {
     const rows = [
-      ["Display Name", "Internal Name", "Shortcut Code", "Category", "Discount Price", "Real/Strike Price", "Available"],
+      ["Display Name", "Internal Name", "Shortcut Code", "Category", "Parent Category", "Discount Price", "Real/Strike Price", "Available"],
       ...filteredProducts.map((product) => [
         product.name,
         product.kitchenName ?? "",
         product.reportCode ?? "",
         product.category,
+        product.parentCategory ?? "",
         String(product.price),
         product.originalPrice ? String(product.originalPrice) : "",
         product.available ? "Available" : "Unavailable",
@@ -428,7 +456,7 @@ export function AdminInventoryClient({
                             <img src={safeAdminImage(product.image)} alt="" className="h-14 w-14 rounded-xl object-cover" onError={useFallbackImage} />
                             <div>
                               <p className="font-black text-charcoal">{product.name}</p>
-                              <p className="text-xs font-bold text-muted">{product.category} - {product.dietaryType} - {product.spiceLevel}</p>
+                              <p className="text-xs font-bold text-muted">{product.parentCategory ? `${product.parentCategory} / ` : ""}{product.category} - {product.dietaryType} - {product.spiceLevel}</p>
                               {product.kitchenName ? <p className="mt-1 text-xs font-black text-maroon">Kitchen: {product.kitchenName}</p> : null}
                             </div>
                           </div>
@@ -478,7 +506,7 @@ export function AdminInventoryClient({
         </section>
       </div>
 
-      {form ? <ProductModal form={form} setForm={setForm} saveProduct={saveProduct} isPending={isPending || uploading} categories={categories} uploadImage={uploadImage} /> : null}
+      {form ? <ProductModal form={form} setForm={setForm} saveProduct={saveProduct} isPending={isPending || uploading} categories={categoryOptions} uploadImage={uploadImage} /> : null}
     </main>
   );
 }
@@ -524,6 +552,13 @@ function getApiErrorMessage(data: unknown, fallback: string) {
 
 function compareProductsForMenuState(a: AdminProduct, b: AdminProduct) {
   return Number(b.available) - Number(a.available) || a.name.localeCompare(b.name);
+}
+
+function compareCategoryOptions(a: CategoryOption, b: CategoryOption) {
+  return (a.parentName ?? a.name).localeCompare(b.parentName ?? b.name) ||
+    Number(Boolean(a.parentId)) - Number(Boolean(b.parentId)) ||
+    a.sortOrder - b.sortOrder ||
+    a.name.localeCompare(b.name);
 }
 
 function createDraftId() {
@@ -605,6 +640,7 @@ function toProductForm(product: AdminProduct): ProductForm {
     name: product.name,
     kitchenName: product.kitchenName ?? "",
     reportCode: product.reportCode ?? "",
+    categoryId: product.categoryId ?? "",
     category: product.category,
     description: product.description,
     image: product.image,
@@ -649,7 +685,7 @@ function ProductModal({
   setForm: (form: ProductForm | null) => void;
   saveProduct: () => void;
   isPending: boolean;
-  categories: string[];
+  categories: CategoryOption[];
   uploadImage: (file: File) => Promise<string>;
 }) {
   const [savedAddonGroups, setSavedAddonGroups] = useState<AddonGroupDraft[]>(() => readSavedAddonGroups());
@@ -723,6 +759,31 @@ function ProductModal({
     writeSavedAddonGroups(nextGroups);
   }
 
+  const parentCategories = categories.filter((category) => !category.parentId);
+  const selectedCategory = categories.find((category) => category.id === form.categoryId) ?? categories.find((category) => category.name === form.category);
+  const selectedParentId = selectedCategory?.parentId ?? selectedCategory?.id ?? "";
+  const subcategoryOptions = selectedParentId ? categories.filter((category) => category.parentId === selectedParentId) : [];
+  const selectedSubcategoryId = selectedCategory?.parentId ? selectedCategory.id : "";
+
+  function chooseCategory(categoryId: string) {
+    const selected = categories.find((category) => category.id === categoryId);
+    update({
+      categoryId: selected?.id ?? "",
+      category: selected?.name ?? "",
+    });
+  }
+
+  function chooseSubcategory(categoryId: string) {
+    const selected = categories.find((category) => category.id === categoryId);
+    if (selected) {
+      update({ categoryId: selected.id, category: selected.name });
+      return;
+    }
+
+    const parent = categories.find((category) => category.id === selectedParentId);
+    update({ categoryId: parent?.id ?? "", category: parent?.name ?? "" });
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/45 p-3 sm:p-4">
       <div className="grid max-h-[calc(100dvh-24px)] w-full max-w-5xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-2xl bg-white shadow-2xl sm:max-h-[92dvh]">
@@ -736,11 +797,36 @@ function ProductModal({
           <Field label="Display name" value={form.name} onChange={(value) => update({ name: value })} />
           <label className="grid min-w-0 gap-2 text-sm font-black text-maroon">
             Category
-            <input list="inventory-category-options" value={form.category} onChange={(event) => update({ category: event.target.value })} className="h-11 w-full min-w-0 rounded-lg border border-border bg-cream px-3 text-charcoal" placeholder="Type or choose category" />
-            <datalist id="inventory-category-options">
-              {categories.map((category) => <option key={category} value={category} />)}
-            </datalist>
-            <span className="text-xs font-bold text-muted">New names create categories automatically when saved.</span>
+            <select
+              value={selectedParentId}
+              onChange={(event) => chooseCategory(event.target.value)}
+              className="h-11 w-full min-w-0 rounded-lg border border-border bg-cream px-3 text-charcoal"
+            >
+              <option value="">Choose main category</option>
+              {parentCategories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+            <span className="text-xs font-bold text-muted">Main menu heading, such as Mini Thali or Combos.</span>
+          </label>
+          <label className="grid min-w-0 gap-2 text-sm font-black text-maroon">
+            Subcategory <span className="text-xs text-muted">(optional)</span>
+            <select
+              value={selectedSubcategoryId}
+              disabled={!selectedParentId || !subcategoryOptions.length}
+              onChange={(event) => chooseSubcategory(event.target.value)}
+              className="h-11 w-full min-w-0 rounded-lg border border-border bg-cream px-3 text-charcoal disabled:opacity-60"
+            >
+              <option value="">{subcategoryOptions.length ? "No subcategory, use main category" : "No subcategories for this category"}</option>
+              {subcategoryOptions.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+            <span className="text-xs font-bold text-muted">Select this for items like Indian Combo inside Combos.</span>
           </label>
           <Field label="Internal dish name" value={form.kitchenName} onChange={(value) => update({ kitchenName: value })} />
           <Field label="Report shortcut code" value={form.reportCode} onChange={(value) => update({ reportCode: value.toUpperCase() })} />

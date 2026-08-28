@@ -10,8 +10,8 @@ import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { createRazorpayOrder } from "@/lib/razorpay";
 import { notifyOrderStatus, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
 import { getStoreOrderingStatus } from "@/lib/store-hours";
-import type { CartLine, OrderStatus, RestaurantSettings } from "@/lib/types";
-import { getDeliveryFee, getOfferDiscount, isCouponEligibleForCustomer, normalizeGstRate, type CouponCustomerContext } from "@/lib/pricing";
+import type { CartLine, Coupon, OrderStatus, RestaurantSettings } from "@/lib/types";
+import { applyCoupon, getDeliveryFee, getOfferDiscount, isCouponEligibleForCustomer, isCouponEligibleForFulfillment, normalizeGstRate, type CouponCustomerContext } from "@/lib/pricing";
 import { getModifierOptionLabel, getModifierSelectionIssue, getProductModifierGroups } from "@/lib/product-modifiers";
 import { getRewardTier } from "@/lib/rewards";
 
@@ -42,14 +42,25 @@ const orderSchema = z.object({
   items: z.array(orderItemSchema).min(1),
 });
 
-function calculateDiscount(subtotal: number, couponCode: string | undefined, coupons: Awaited<ReturnType<typeof getCouponsFromDb>>, customer?: CouponCustomerContext) {
+function calculateDiscount(
+  subtotal: number,
+  couponCode: string | undefined,
+  coupons: Awaited<ReturnType<typeof getCouponsFromDb>>,
+  customer: CouponCustomerContext | undefined,
+  items: { productId: string; categoryId: string; lineTotal: number }[],
+  fulfillmentMethod: "DELIVERY" | "PICKUP",
+) {
   const coupon = coupons.find((item) => item.code === couponCode?.toUpperCase());
-  if (!coupon || subtotal < coupon.minOrder || !isCouponEligibleForCustomer(coupon, customer)) return { coupon: null, discount: 0 };
+  if (!coupon || !isCouponEligibleForFulfillment(coupon, fulfillmentMethod) || subtotal < coupon.minOrder || !isCouponEligibleForCustomer(coupon, customer)) return { coupon: null, discount: 0 };
+  if (coupon.redemptionLimit && (coupon.redeemedCount ?? 0) >= coupon.redemptionLimit) return { coupon: null, discount: 0 };
 
-  const discount =
-    coupon.type === "FIXED"
-      ? Math.min(coupon.value, subtotal)
-      : Math.min(Math.round((subtotal * coupon.value) / 100), coupon.maxDiscount ?? subtotal);
+  const productIds = new Set(coupon.productIds ?? []);
+  const categoryIds = new Set(coupon.categoryIds ?? []);
+  const restricted = productIds.size > 0 || categoryIds.size > 0;
+  const eligibleSubtotal = restricted
+    ? items.filter((item) => productIds.has(item.productId) || categoryIds.has(item.categoryId)).reduce((total, item) => total + item.lineTotal, 0)
+    : subtotal;
+  const discount = Math.round(applyCoupon(subtotal, coupon, customer, eligibleSubtotal));
 
   return { coupon, discount };
 }
@@ -93,6 +104,7 @@ async function calculateServerOrder(lines: CartLine[], couponCode: string | unde
     const unitPrice = Math.max(dishPrice - getOfferDiscount(dishPrice, offerText), 0) + addonTotal;
     return {
       productId: product.id,
+      categoryId: product.categoryId,
       name: [product.name, variantName, addonNames.length ? `With ${addonNames.join(", ")}` : ""].filter(Boolean).join(" - "),
       quantity: line.quantity,
       price: unitPrice,
@@ -101,8 +113,8 @@ async function calculateServerOrder(lines: CartLine[], couponCode: string | unde
   });
 
   const subtotal = items.reduce((total, item) => total + item.lineTotal, 0);
-  const coupons = await getCouponsFromDb();
-  const { coupon, discount } = calculateDiscount(subtotal, couponCode, coupons, customer);
+  const coupons = await getCouponsWithRedemptionCounts(customer?.mobile, couponCode);
+  const { coupon, discount } = calculateDiscount(subtotal, couponCode, coupons, customer, items, fulfillmentMethod);
   const packaging = items.length ? settings.packagingFee : 0;
   const eligibleOrderValue = subtotal - discount;
   const delivery = fulfillmentMethod === "PICKUP" ? 0 : getDeliveryFee(settings, eligibleOrderValue, items.length > 0, deliveryDistanceKm);
@@ -191,6 +203,7 @@ async function postHandler(request: Request) {
     },
   });
   const couponCustomer = {
+    mobile: data.customerMobile,
     isVip: existingCustomer?.tags.some((assignment) => assignment.tag.name === "VIP") ?? false,
     orderCount: rewardOrderCount,
     points: rewardOrderCount,
@@ -316,11 +329,14 @@ async function postHandler(request: Request) {
       select: { id: true },
     });
 
-    return tx.order.create({
+    const createdOrder = await tx.order.create({
       data: {
         orderNumber,
         subtotal: calculated.subtotal,
         discount: calculated.discount,
+        couponCode: calculated.couponCode,
+        fulfillmentMethod: data.fulfillmentMethod,
+        orderSource: "WEBSITE",
         gst: calculated.gst,
         grandTotal: calculated.grandTotal,
         status: data.paymentMethod === "RAZORPAY"
@@ -374,6 +390,19 @@ async function postHandler(request: Request) {
         timeline: true,
       },
     });
+
+    if (data.paymentMethod === "COD" && calculated.couponCode && calculated.discount > 0) {
+      await redeemCouponForSuccessfulOrder(tx, {
+        couponCode: calculated.couponCode,
+        orderId: createdOrder.id,
+        customerId: customer.id,
+        discount: calculated.discount,
+        orderTotal: calculated.grandTotal,
+        fulfillmentMethod: data.fulfillmentMethod,
+      });
+    }
+
+    return createdOrder;
   }).catch((error) => {
     console.error("Order creation transaction failed.", error);
     return null;
@@ -450,6 +479,73 @@ function visiblePlacedOrderWhere(): Prisma.OrderWhereInput {
       { payments: { some: { provider: "RAZORPAY", status: { in: paidOnlineStatuses } } } },
     ],
   };
+}
+
+async function getCouponsWithRedemptionCounts(customerMobile?: string, couponCode?: string): Promise<Coupon[]> {
+  const coupons = await getCouponsFromDb();
+  if (!couponCode) return coupons;
+
+  const normalizedCode = couponCode.toUpperCase();
+  const [redemptionCounts, customerRedemptionCounts] = await Promise.all([
+    prisma.couponRedemption.groupBy({
+      by: ["couponCode"],
+      where: { couponCode: normalizedCode },
+      _count: { _all: true },
+    }),
+    customerMobile
+      ? prisma.couponRedemption.groupBy({
+          by: ["couponCode"],
+          where: { couponCode: normalizedCode, customer: { mobile: customerMobile } },
+          _count: { _all: true },
+        })
+      : Promise.resolve([]),
+  ]);
+  const redeemedCountByCode = new Map(redemptionCounts.map((row) => [row.couponCode, row._count._all]));
+  const customerRedeemedCountByCode = new Map(customerRedemptionCounts.map((row) => [row.couponCode, row._count._all]));
+
+  return coupons.map((coupon) => coupon.code === normalizedCode
+    ? {
+        ...coupon,
+        redeemedCount: redeemedCountByCode.get(coupon.code) ?? 0,
+        customerRedeemedCount: customerRedeemedCountByCode.get(coupon.code) ?? 0,
+      }
+    : coupon);
+}
+
+async function redeemCouponForSuccessfulOrder(
+  tx: Prisma.TransactionClient,
+  input: {
+    couponCode: string;
+    orderId: string;
+    customerId: string;
+    discount: number;
+    orderTotal: number;
+    fulfillmentMethod: "DELIVERY" | "PICKUP";
+  },
+) {
+  const coupon = await tx.coupon.findUnique({ where: { code: input.couponCode }, select: { id: true } });
+  await tx.couponRedemption.upsert({
+    where: { orderId: input.orderId },
+    create: {
+      couponCode: input.couponCode,
+      couponId: coupon?.id,
+      orderId: input.orderId,
+      customerId: input.customerId,
+      discount: input.discount,
+      orderTotal: input.orderTotal,
+      orderSource: "WEBSITE",
+      fulfillmentMethod: input.fulfillmentMethod,
+    },
+    update: {
+      couponCode: input.couponCode,
+      couponId: coupon?.id,
+      customerId: input.customerId,
+      discount: input.discount,
+      orderTotal: input.orderTotal,
+      orderSource: "WEBSITE",
+      fulfillmentMethod: input.fulfillmentMethod,
+    },
+  });
 }
 
 export const GET = withApiErrorHandling(getHandler, "GET /api/orders");

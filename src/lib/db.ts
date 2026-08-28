@@ -8,7 +8,7 @@ import { defaultNewOrderSound, getNewOrderSound } from "@/lib/order-sounds";
 import { normalizeDeliveryDistanceSlabs, normalizeGstRate } from "@/lib/pricing";
 import { getRewardTier, rewardCoupons } from "@/lib/rewards";
 import { getIstDayRangeUtc } from "@/lib/time";
-import type { AdvancedSettings, AdminCustomer, AdminOrder, AdminProduct, BusinessSettings, CategoryImageMap, CategoryOfferMap, Coupon, HomeSlide, Product, RestaurantSettings, StoreMode } from "@/lib/types";
+import type { AdvancedSettings, AdminCustomer, AdminOrder, AdminProduct, BusinessSettings, CategoryImageMap, CategoryOfferMap, CategoryOption, Coupon, HomeSlide, Product, RestaurantSettings, StoreMode } from "@/lib/types";
 
 const paidOnlineStatuses: PaymentStatus[] = ["PAID", "AUTHORIZED"];
 const storefrontCacheSeconds = 60;
@@ -16,7 +16,7 @@ const businessSettingKeys = Object.keys(fallbackSettings);
 
 type ProductWithRelations = Prisma.ProductGetPayload<{
   include: {
-    category: true;
+    category: { include: { parent: true } };
     images: { orderBy: { sortOrder: "asc" } };
     variants: true;
     addons: true;
@@ -33,6 +33,8 @@ function toProduct(product: ProductWithRelations): Product {
     kitchenName: product.kitchenName ?? undefined,
     reportCode: product.reportCode ?? undefined,
     category: product.category.name,
+    categoryId: product.category.id,
+    parentCategory: product.category.parent?.name ?? undefined,
     description: product.description,
     image: product.images[0]?.url ?? "/wah-thali-meal-cutout-v2.png",
     dietaryType: product.dietaryType as Product["dietaryType"],
@@ -61,6 +63,7 @@ function toProduct(product: ProductWithRelations): Product {
 function toAdminProduct(product: ProductWithRelations): AdminProduct {
   return {
     ...toProduct(product),
+    image: product.images[0]?.url ?? "",
     stock: product.inventory?.stock ?? 0,
     reorderAt: product.inventory?.reorderAt ?? 0,
     margin: product.inventory?.margin ?? 0,
@@ -75,7 +78,7 @@ export async function getProductsFromDb(): Promise<Product[]> {
       where: { category: { visible: true } },
       orderBy: { name: "asc" },
       include: {
-        category: true,
+        category: { include: { parent: true } },
         images: { orderBy: { sortOrder: "asc" } },
         variants: true,
         addons: true,
@@ -104,7 +107,7 @@ export async function getAdminProductsFromDb(): Promise<AdminProduct[]> {
     const products = await prisma.product.findMany({
       orderBy: { name: "asc" },
       include: {
-        category: true,
+        category: { include: { parent: true } },
         images: { orderBy: { sortOrder: "asc" } },
         variants: true,
         addons: true,
@@ -140,6 +143,44 @@ export async function getCategoriesFromDb(): Promise<string[]> {
   }
 }
 
+export async function getCategoryOptionsFromDb({ visibleOnly = true }: { visibleOnly?: boolean } = {}): Promise<CategoryOption[]> {
+  if (!isDatabaseConfigured()) {
+    return [...new Set(fallbackProducts.map((product) => product.category))].map((name, index) => ({
+      id: name,
+      name,
+      parentId: null,
+      sortOrder: index + 1,
+      visible: true,
+    }));
+  }
+
+  try {
+    const categories = await prisma.category.findMany({
+      where: visibleOnly ? { visible: true } : undefined,
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      include: { parent: { select: { id: true, name: true } } },
+    });
+
+    return categories.map((category) => ({
+      id: category.id,
+      name: category.name,
+      parentId: category.parentId,
+      parentName: category.parent?.name,
+      sortOrder: category.sortOrder,
+      visible: category.visible,
+    }));
+  } catch (error) {
+    console.error("Database category option read failed. Falling back to local categories.", error);
+    return [...new Set(fallbackProducts.map((product) => product.category))].map((name, index) => ({
+      id: name,
+      name,
+      parentId: null,
+      sortOrder: index + 1,
+      visible: true,
+    }));
+  }
+}
+
 function isCategoryImageMap(value: unknown): value is CategoryImageMap {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -172,7 +213,7 @@ export async function getCategoryOffersFromDb(): Promise<CategoryOfferMap> {
   }
 }
 
-type CouponRule = Pick<Coupon, "audience" | "minPoints" | "tagNames">;
+type CouponRule = Pick<Coupon, "audience" | "minPoints" | "minCustomerOrders" | "tagNames">;
 type CouponRuleMap = Record<string, CouponRule>;
 
 function isCouponRuleMap(value: unknown): value is CouponRuleMap {
@@ -231,6 +272,14 @@ function applyCouponRules(coupons: Array<{
   value: number;
   minOrder: number;
   maxDiscount: number | null;
+  audience?: string;
+  minCustomerOrders?: number;
+  redemptionLimit?: number | null;
+  customerUsageLimit?: number;
+  productIds?: string[];
+  categoryIds?: string[];
+  channels?: string[];
+  fulfillmentMethods?: string[];
   startsAt: Date;
   endsAt: Date;
 }>, rules: CouponRuleMap): Coupon[] {
@@ -243,8 +292,15 @@ function applyCouponRules(coupons: Array<{
       value: coupon.value,
       minOrder: coupon.minOrder,
       maxDiscount: coupon.maxDiscount ?? undefined,
-      audience: rule.audience ?? "ALL",
-      minPoints: rule.minPoints ?? 0,
+      audience: (coupon.audience ?? rule.audience ?? "ALL") as Coupon["audience"],
+      minPoints: rule.minPoints ?? coupon.minCustomerOrders ?? 0,
+      minCustomerOrders: coupon.minCustomerOrders ?? rule.minCustomerOrders ?? rule.minPoints ?? 0,
+      redemptionLimit: coupon.redemptionLimit ?? undefined,
+      customerUsageLimit: coupon.customerUsageLimit ?? 1,
+      productIds: coupon.productIds ?? [],
+      categoryIds: coupon.categoryIds ?? [],
+      channels: (coupon.channels?.length ? coupon.channels : ["WEBSITE"]) as Coupon["channels"],
+      fulfillmentMethods: (coupon.fulfillmentMethods?.length ? coupon.fulfillmentMethods : ["DELIVERY", "PICKUP"]) as Coupon["fulfillmentMethods"],
       tagNames: rule.tagNames ?? [],
       startsAt: coupon.startsAt.toISOString(),
       endsAt: coupon.endsAt.toISOString(),
@@ -261,7 +317,7 @@ export async function getCouponsFromDb(): Promise<Coupon[]> {
 
   try {
     const now = new Date();
-    const [coupons, rules] = await Promise.all([
+    const [coupons, rules, redemptionCounts] = await Promise.all([
       prisma.coupon.findMany({
       where: {
         active: true,
@@ -271,9 +327,16 @@ export async function getCouponsFromDb(): Promise<Coupon[]> {
       orderBy: { code: "asc" },
     }),
       getCouponRulesFromDb(),
+      prisma.couponRedemption.groupBy({
+        by: ["couponCode"],
+        _count: { _all: true },
+      }).catch(() => []),
     ]);
+    const redeemedCountByCode = new Map(redemptionCounts.map((row) => [row.couponCode, row._count._all]));
 
-    return withRewardCoupons(applyCouponRules(coupons, rules));
+    return withRewardCoupons(applyCouponRules(coupons, rules)
+      .map((coupon) => ({ ...coupon, redeemedCount: redeemedCountByCode.get(coupon.code) ?? 0 }))
+      .filter((coupon) => !coupon.redemptionLimit || (coupon.redeemedCount ?? 0) < coupon.redemptionLimit));
   } catch (error) {
     console.error("Database coupon read failed. Falling back to local coupons.", error);
     return fallbackCoupons;
@@ -283,13 +346,19 @@ export async function getCouponsFromDb(): Promise<Coupon[]> {
 export async function getAdminCouponsFromDb(): Promise<Array<Coupon & { active: boolean }>> {
   if (!isDatabaseConfigured()) return [];
 
-  const [coupons, rules] = await Promise.all([
+  const [coupons, rules, redemptionCounts] = await Promise.all([
     prisma.coupon.findMany({ orderBy: { code: "asc" } }),
     getCouponRulesFromDb(),
+    prisma.couponRedemption.groupBy({
+      by: ["couponCode"],
+      _count: { _all: true },
+    }).catch(() => []),
   ]);
+  const redemptionCountByCode = new Map(redemptionCounts.map((row) => [row.couponCode, row._count._all]));
 
   return withRewardCoupons(applyCouponRules(coupons, rules)).map((coupon) => ({
     ...coupon,
+    redeemedCount: redemptionCountByCode.get(coupon.code) ?? 0,
     active: coupons.find((item) => item.code === coupon.code)?.active ?? true,
   }));
 }
@@ -532,8 +601,9 @@ export async function getHomeSlidesFromDb(): Promise<HomeSlide[]> {
 
 export const getPublicHomePageDataFromDb = unstable_cache(
   async () => {
-    const [categories, products, slides, categoryImages, categoryOffers, restaurantSettings, coupons, homeDishCategories] = await Promise.all([
+    const [categories, categoryOptions, products, slides, categoryImages, categoryOffers, restaurantSettings, coupons, homeDishCategories] = await Promise.all([
       getCategoriesFromDb(),
+      getCategoryOptionsFromDb(),
       getProductsFromDb(),
       getHomeSlidesFromDb(),
       getCategoryImagesFromDb(),
@@ -543,7 +613,7 @@ export const getPublicHomePageDataFromDb = unstable_cache(
       getHomeDishCategoriesFromDb(),
     ]);
 
-    return { categories, products, slides, categoryImages, categoryOffers, restaurantSettings, coupons, homeDishCategories };
+    return { categories, categoryOptions, products, slides, categoryImages, categoryOffers, restaurantSettings, coupons, homeDishCategories };
   },
   ["public-home-page-data"],
   { revalidate: storefrontCacheSeconds, tags: ["storefront", "storefront-home"] },
@@ -551,8 +621,9 @@ export const getPublicHomePageDataFromDb = unstable_cache(
 
 export const getPublicMenuPageDataFromDb = unstable_cache(
   async () => {
-    const [categories, products, slides, categoryImages, categoryOffers, restaurantSettings] = await Promise.all([
+    const [categories, categoryOptions, products, slides, categoryImages, categoryOffers, restaurantSettings] = await Promise.all([
       getCategoriesFromDb(),
+      getCategoryOptionsFromDb(),
       getProductsFromDb(),
       getHomeSlidesFromDb(),
       getCategoryImagesFromDb(),
@@ -560,7 +631,7 @@ export const getPublicMenuPageDataFromDb = unstable_cache(
       getRestaurantSettingsFromDb(),
     ]);
 
-    return { categories, products, slides, categoryImages, categoryOffers, restaurantSettings };
+    return { categories, categoryOptions, products, slides, categoryImages, categoryOffers, restaurantSettings };
   },
   ["public-menu-page-data"],
   { revalidate: storefrontCacheSeconds, tags: ["storefront", "storefront-menu"] },

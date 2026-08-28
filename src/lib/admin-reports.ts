@@ -46,6 +46,19 @@ export type OrderReportRow = {
   createdAt: string;
 };
 
+export type CouponReportRow = {
+  code: string;
+  label: string;
+  redemptions: number;
+  members: number;
+  sales: number;
+  discount: number;
+  averageOrderValue: number;
+  delivery: number;
+  takeaway: number;
+  website: number;
+};
+
 export type ReportBucket = {
   label: string;
   orders: number;
@@ -113,6 +126,15 @@ export type AdminReportsSnapshot = {
     best: ReportRow[];
     worst: ReportRow[];
   };
+  coupons: {
+    totalRedemptions: number;
+    uniqueMembers: number;
+    couponSales: number;
+    discountOffered: number;
+    averageCouponOrder: number;
+    popularCoupon?: CouponReportRow;
+    rows: CouponReportRow[];
+  };
   dishSearch: DishSearchReport;
   timeline: ReportBucket[];
 };
@@ -151,6 +173,12 @@ type ReportProduct = {
   category: { name: string };
 };
 
+type ReportCouponRedemption = Prisma.CouponRedemptionGetPayload<{
+  include: {
+    coupon: { select: { label: true } };
+  };
+}>;
+
 export function parseReportPeriod(value: unknown): ReportPeriod {
   return reportPeriods.includes(value as ReportPeriod) ? value as ReportPeriod : "daily";
 }
@@ -170,7 +198,7 @@ export async function getAdminReportsSnapshot(input: { period?: string; date?: s
     ],
   } satisfies Prisma.OrderWhereInput;
 
-  const [orders, products, totalCustomers, newCustomers] = await Promise.all([
+  const [orders, products, totalCustomers, newCustomers, couponRedemptions] = await Promise.all([
     prisma.order.findMany({
       where,
       include: {
@@ -206,6 +234,11 @@ export async function getAdminReportsSnapshot(input: { period?: string; date?: s
     }),
     prisma.customer.count(),
     prisma.customer.count({ where: { createdAt: { gte: window.start, lt: window.end } } }),
+    prisma.couponRedemption.findMany({
+      where: { createdAt: { gte: window.start, lt: window.end } },
+      include: { coupon: { select: { label: true } } },
+      orderBy: { createdAt: "desc" },
+    }).catch(() => []),
   ]);
 
   return buildSnapshot({
@@ -219,6 +252,7 @@ export async function getAdminReportsSnapshot(input: { period?: string; date?: s
     products: filterReportProducts(products, searchQuery),
     totalCustomers,
     newCustomers,
+    couponRedemptions,
     searchQuery,
   });
 }
@@ -234,6 +268,7 @@ function buildSnapshot(input: {
   products: ReportProduct[];
   totalCustomers: number;
   newCustomers: number;
+  couponRedemptions: ReportCouponRedemption[];
   searchQuery: string;
 }): AdminReportsSnapshot {
   const revenueOrders = input.orders.filter((order) => !cancelledStatuses.has(order.status));
@@ -257,6 +292,7 @@ function buildSnapshot(input: {
   const repeatCustomers = topCustomers.filter((customer) => customer.orders > 1).length;
   const totalItemsSold = sum(itemRows, (item) => item.quantity);
   const uniqueItemsSold = itemRows.filter((item) => item.quantity > 0).length;
+  const couponReport = getCouponReport(input.couponRedemptions);
   const primaryGrossSales = dishSearch.active ? dishSearch.itemSales : grossSales;
   const primaryNetRevenue = dishSearch.active ? dishSearch.itemSales : netRevenue;
   const primaryOrders = dishSearch.active ? dishSearch.orders : input.orders.length;
@@ -323,8 +359,53 @@ function buildSnapshot(input: {
       best: [...itemRows].filter((row) => row.quantity > 0).sort((a, b) => b.netSales - a.netSales || b.quantity - a.quantity).slice(0, 8),
       worst: [...itemRows].sort((a, b) => a.quantity - b.quantity || a.netSales - b.netSales || a.label.localeCompare(b.label)).slice(0, 8),
     },
+    coupons: couponReport,
     dishSearch,
     timeline: getTimelineRows(input.period, input.date, revenueOrders, input.fromDate, input.toDate),
+  };
+}
+
+function getCouponReport(redemptions: ReportCouponRedemption[]): AdminReportsSnapshot["coupons"] {
+  const rows = new Map<string, CouponReportRow & { memberIds: Set<string> }>();
+
+  for (const redemption of redemptions) {
+    const row = rows.get(redemption.couponCode) ?? {
+      code: redemption.couponCode,
+      label: redemption.coupon?.label ?? redemption.couponCode,
+      redemptions: 0,
+      members: 0,
+      sales: 0,
+      discount: 0,
+      averageOrderValue: 0,
+      delivery: 0,
+      takeaway: 0,
+      website: 0,
+      memberIds: new Set<string>(),
+    };
+    row.redemptions += 1;
+    row.memberIds.add(redemption.customerId);
+    row.sales += redemption.orderTotal;
+    row.discount += redemption.discount;
+    if (redemption.fulfillmentMethod === "PICKUP") row.takeaway += 1;
+    else row.delivery += 1;
+    if (redemption.orderSource === "WEBSITE") row.website += 1;
+    rows.set(redemption.couponCode, row);
+  }
+
+  const normalizedRows = [...rows.values()].map(({ memberIds, ...row }) => ({
+    ...row,
+    members: memberIds.size,
+    averageOrderValue: row.redemptions ? Math.round(row.sales / row.redemptions) : 0,
+  })).sort((a, b) => b.redemptions - a.redemptions || b.sales - a.sales || a.code.localeCompare(b.code));
+
+  return {
+    totalRedemptions: redemptions.length,
+    uniqueMembers: new Set(redemptions.map((redemption) => redemption.customerId)).size,
+    couponSales: sum(redemptions, (redemption) => redemption.orderTotal),
+    discountOffered: sum(redemptions, (redemption) => redemption.discount),
+    averageCouponOrder: redemptions.length ? Math.round(sum(redemptions, (redemption) => redemption.orderTotal) / redemptions.length) : 0,
+    popularCoupon: normalizedRows[0],
+    rows: normalizedRows,
   };
 }
 
@@ -655,6 +736,7 @@ function emptySnapshot(period: ReportPeriod, date: string, fromDate: string, toD
     products: [],
     totalCustomers: 0,
     newCustomers: 0,
+    couponRedemptions: [],
     searchQuery,
   });
 }

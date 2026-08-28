@@ -41,7 +41,7 @@ import { formatRupees, getPricableCartLines, getProductPrice, getProductUnitPric
 import { getStoreOrderingStatus } from "@/lib/store-hours";
 import { useStoredCart } from "@/lib/use-stored-cart";
 import { useStoredWishlist } from "@/lib/use-stored-wishlist";
-import type { CartLine, CategoryOfferMap, Coupon, HomeSlide, Product, RestaurantSettings } from "@/lib/types";
+import type { CartLine, CategoryOfferMap, CategoryOption, Coupon, HomeSlide, Product, RestaurantSettings } from "@/lib/types";
 import { writeStoredWishlist } from "@/lib/wishlist-storage";
 
 function getVariantQuantity(lines: CartLine[], productId: string, variantId: string) {
@@ -507,7 +507,7 @@ function DesktopSearchPage({
           {searchGroups.length ? searchGroups.map((group) => (
             <section key={group.category}>
               <div className="mb-5 flex items-center gap-4">
-                <h2 className="text-[26px] font-black text-[#111827]">{shortCategoryName(group.category)}</h2>
+                <h2 className="text-[26px] font-black text-[#111827]">{group.category}</h2>
                 <span className="rounded-full bg-[#fff4f5] px-3 py-1 text-xs font-black text-maroon">{group.items.length} {group.items.length === 1 ? "item" : "items"}</span>
               </div>
               <div className="grid grid-cols-4 gap-5">
@@ -560,7 +560,7 @@ function DesktopTrustFooter({ categories }: { categories: string[] }) {
           <FooterColumn title="Top Categories">
             {topCategories.map((category) => (
               <Link key={category} href={`/?category=${encodeURIComponent(category)}`} className="text-sm font-bold text-muted hover:text-maroon">
-                {shortCategoryName(category)}
+                {category}
               </Link>
             ))}
           </FooterColumn>
@@ -943,6 +943,7 @@ function DishDetailSheet({
 
 export function MenuExperience({
   initialCategories = fallbackCategories,
+  initialCategoryOptions = [],
   initialProducts = fallbackProducts,
   initialSlides,
   initialCategoryImages = {},
@@ -953,6 +954,7 @@ export function MenuExperience({
   initialHomeDishCategories = [],
 }: {
   initialCategories?: string[];
+  initialCategoryOptions?: CategoryOption[];
   initialProducts?: Product[];
   initialSlides?: HomeSlide[];
   initialCategoryImages?: Record<string, string>;
@@ -962,6 +964,16 @@ export function MenuExperience({
   initialActiveCategory?: string;
   initialHomeDishCategories?: string[];
 }) {
+  const categoryOptions = useMemo(
+    () => initialCategoryOptions.length
+      ? initialCategoryOptions
+      : initialCategories.map((name, index) => ({ id: name, name, parentId: null, sortOrder: index + 1, visible: true })),
+    [initialCategories, initialCategoryOptions],
+  );
+  const topLevelCategories = useMemo(
+    () => categoryOptions.filter((category) => !category.parentId).map((category) => category.name),
+    [categoryOptions],
+  );
   const categories = initialCategories;
   const products = initialProducts;
   const categoryOffers = initialCategoryOffers;
@@ -981,7 +993,9 @@ export function MenuExperience({
   const [activeSlide, setActiveSlide] = useState(0);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [mobileMenuView, setMobileMenuView] = useState<"home" | "categories" | "category">("home");
+  const [showMoreCategories, setShowMoreCategories] = useState(false);
   const [mobileCategory, setMobileCategory] = useState("All");
+  const [expandedMobileCategories, setExpandedMobileCategories] = useState<Set<string>>(() => new Set());
   const [hiddenCartCount, setHiddenCartCount] = useState(0);
   const [cartBarClosing, setCartBarClosing] = useState(false);
   const deferredQuery = useDeferredValue(query);
@@ -1016,8 +1030,8 @@ export function MenuExperience({
   const visibleProducts = useMemo(() => {
     const needle = deferredQuery.trim().toLowerCase();
     return products.filter((product) => {
-      const categoryMatch = activeCategory === "All" || product.category === activeCategory;
-      const textMatch = !needle || `${product.name} ${product.category} ${product.description}`.toLowerCase().includes(needle);
+      const categoryMatch = activeCategory === "All" || productMatchesCategory(product, activeCategory);
+      const textMatch = !needle || `${product.name} ${product.category} ${product.parentCategory ?? ""} ${product.description}`.toLowerCase().includes(needle);
       const filterMatch = productMatchesMenuFilters(product, activeFilters, categoryOffers);
       return categoryMatch && textMatch && filterMatch;
     }).sort(compareProductsForAvailability);
@@ -1054,7 +1068,7 @@ export function MenuExperience({
 
   function openPromoSlide(slide?: HomeSlide) {
     const targetCategory = slide?.targetCategory && categories.includes(slide.targetCategory) ? slide.targetCategory : "All";
-    selectHomeCategory(targetCategory);
+    openMenuCategory(targetCategory);
   }
 
   useEffect(() => {
@@ -1175,6 +1189,7 @@ export function MenuExperience({
     setActiveCategory(category);
     setMobileCategory(category);
     setMobileMenuView("home");
+    setShowMoreCategories(false);
 
     if (isHomePage) {
       const params = new URLSearchParams();
@@ -1182,6 +1197,31 @@ export function MenuExperience({
       router.replace(`/${params.toString() ? `?${params.toString()}` : ""}`, { scroll: false });
       window.requestAnimationFrame(() => document.getElementById("menu-items")?.scrollIntoView({ block: "start", behavior: "smooth" }));
     }
+  }
+
+  function openMenuCategory(category: string) {
+    setShowMoreCategories(false);
+
+    if (isSearchPage) {
+      selectHomeCategory(category);
+      return;
+    }
+
+    const params = new URLSearchParams();
+    if (category !== "All") params.set("category", category);
+    router.push(`/menu${params.toString() ? `?${params.toString()}` : ""}`);
+  }
+
+  function toggleMobileCategoryGroup(category: string) {
+    setExpandedMobileCategories((current) => {
+      const next = new Set(current);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
   }
 
   function closeCartBarWithFlyout() {
@@ -1193,15 +1233,19 @@ export function MenuExperience({
     }, 240);
   }
 
-  const categoryItems = ["All", ...categories];
+  const categoryItems = useMemo(
+    () => ["All", ...(topLevelCategories.length ? topLevelCategories : categories)],
+    [categories, topLevelCategories],
+  );
+  const mobileCategoryGroups = useMemo(() => getCategoryGroups(categoryOptions), [categoryOptions]);
   const allProductCategories = useMemo(
-    () => Array.from(new Set([...categories, ...products.map((product) => product.category)])),
-    [categories, products],
+    () => Array.from(new Set([...categoryItems.filter((category) => category !== "All"), ...products.map((product) => product.category)])),
+    [categoryItems, products],
   );
   const mobileCategoryProducts = useMemo(() => {
     const source = mobileCategory === "All"
       ? products
-      : products.filter((product) => product.category === mobileCategory);
+      : products.filter((product) => productMatchesCategory(product, mobileCategory));
     return [...source].sort(compareProductsForAvailability);
   }, [mobileCategory, products]);
   const searchGroups = useMemo(() => {
@@ -1209,8 +1253,8 @@ export function MenuExperience({
     return allProductCategories
       .map((category) => {
         const items = products.filter((product) => {
-          const matchesCategory = product.category === category;
-          const matchesText = !needle || `${product.name} ${product.category} ${product.description}`.toLowerCase().includes(needle);
+          const matchesCategory = productMatchesCategory(product, category);
+          const matchesText = !needle || `${product.name} ${product.category} ${product.parentCategory ?? ""} ${product.description}`.toLowerCase().includes(needle);
           const filterMatch = productMatchesMenuFilters(product, activeFilters, categoryOffers);
           return matchesCategory && matchesText && filterMatch;
         }).sort(compareProductsForAvailability);
@@ -1225,6 +1269,7 @@ export function MenuExperience({
   );
   const showCartBar = cartCount > 0 && hiddenCartCount !== cartCount;
   const homeOfferCards = getHomeOfferCards(initialCoupons);
+  const mobileCategoryScreenOpen = mobileMenuView === "categories" || mobileMenuView === "category";
 
   if (!serviceable) {
     return (
@@ -1250,7 +1295,7 @@ export function MenuExperience({
   }
 
   return (
-    <main className={`wt-soft-type min-h-screen bg-white text-charcoal ${isSearchPage ? "pb-0" : "pb-24 lg:pb-0"}`}>
+    <main className={`wt-soft-type min-h-screen text-charcoal ${mobileCategoryScreenOpen ? "bg-[#f7f8fc] pb-0" : `bg-white ${isSearchPage ? "pb-0" : "pb-24 lg:pb-0"}`}`}>
       <div className={mobileMenuView === "category" || isSearchPage ? "hidden lg:block" : undefined}>
         <Header showLocation={isHomePage && mobileMenuView === "home"} />
       </div>
@@ -1289,7 +1334,7 @@ export function MenuExperience({
             {searchGroups.length ? searchGroups.map((group) => (
               <section key={group.category}>
                 <div className="mb-4 flex items-center justify-between">
-                  <h2 className="text-[22px] font-black text-[#111827]">{shortCategoryName(group.category)}</h2>
+                  <h2 className="text-[22px] font-black text-[#111827]">{group.category}</h2>
                   <span className="text-[14px] font-black text-maroon">{group.items.length} {group.items.length === 1 ? "item" : "items"}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -1355,7 +1400,7 @@ export function MenuExperience({
       ) : null}
 
       {mobileMenuView === "categories" ? (
-        <section className="min-h-[calc(100vh-72px)] bg-[#f7f8fc] px-5 pb-24 pt-6 lg:hidden">
+        <section className="min-h-screen bg-[#f7f8fc] px-5 pb-20 pt-6 lg:hidden">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -1367,27 +1412,13 @@ export function MenuExperience({
             </button>
             <h1 className="text-[22px] font-black leading-tight text-[#111827]">All Categories</h1>
           </div>
-          <div className="mt-6 grid grid-cols-3 gap-x-3 gap-y-5">
-            {categoryItems.map((category) => (
-              <button
-                key={category}
-                onClick={() => {
-                  selectHomeCategory(category);
-                }}
-                className="group grid h-[86px] place-items-center rounded-[16px] bg-[#f8f1f3] px-1 text-center shadow-[inset_0_0_0_1px_#eadfe3] transition duration-200 hover:-translate-y-1 hover:bg-[#fff4f5] hover:shadow-[inset_0_0_0_1px_rgba(141,0,33,0.2),0_14px_28px_rgba(34,31,32,0.08)]"
-              >
-                <span className="grid h-[42px] w-[42px] place-items-center overflow-hidden rounded-full bg-white text-charcoal shadow-[0_8px_18px_rgba(34,31,32,0.08)] ring-1 ring-transparent transition duration-200 group-hover:scale-110 group-hover:bg-maroon group-hover:text-white group-hover:ring-maroon/25">
-                  {category === "All" ? (
-                    <Grid3X3 size={21} strokeWidth={3} />
-                  ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[82%] w-[82%] rounded-full object-cover transition duration-300 group-hover:scale-110 group-hover:saturate-[1.08]" loading="lazy" decoding="async" />
-                  )}
-                </span>
-                <span className="max-w-[70px] truncate text-[11px] font-black leading-tight text-[#1f2937] transition-colors group-hover:text-maroon">{shortCategoryName(category)}</span>
-              </button>
-            ))}
-          </div>
+          <CategoryListPanel
+            groups={mobileCategoryGroups}
+            expandedCategories={expandedMobileCategories}
+            onToggleGroup={toggleMobileCategoryGroup}
+            onChoose={openMenuCategory}
+            className="mt-6"
+          />
         </section>
       ) : null}
 
@@ -1397,7 +1428,7 @@ export function MenuExperience({
             <button className="grid h-10 w-10 place-items-center text-maroon" onClick={() => setMobileMenuView("categories")} aria-label="Back to categories">
               <ArrowLeft size={25} strokeWidth={2.7} />
             </button>
-            <h1 className="text-center text-[21px] font-black leading-none text-maroon">{shortCategoryName(mobileCategory)}</h1>
+            <h1 className="min-w-0 text-center text-[19px] font-black leading-tight text-maroon">{mobileCategory}</h1>
             <Link href="/cart" className="relative grid h-10 w-10 place-items-center text-maroon" aria-label="Cart">
               <ShoppingCart size={27} strokeWidth={2.6} />
               {cartCount ? <span className="absolute right-0.5 top-0 rounded-full bg-maroon px-1.5 text-[10px] font-black text-white">{cartCount}</span> : null}
@@ -1405,7 +1436,7 @@ export function MenuExperience({
           </div>
           <div className="px-6 pt-11">
             <div className="mb-7 flex items-center justify-between">
-              <h2 className="text-[18px] font-bold text-[#111827]">{shortCategoryName(mobileCategory)} Products</h2>
+              <h2 className="min-w-0 text-[18px] font-bold leading-tight text-[#111827]">{mobileCategory} Products</h2>
               <span className="text-[18px] font-bold text-[#111827]">{mobileCategoryProducts.length} {mobileCategoryProducts.length === 1 ? "item" : "items"}</span>
             </div>
             <div className="grid grid-cols-2 gap-5">
@@ -1439,7 +1470,7 @@ export function MenuExperience({
               {categoryItems.slice(0, 9).map((category) => (
               <button
                 key={category}
-                onClick={() => selectHomeCategory(category)}
+                onClick={() => openMenuCategory(category)}
                 className={`group grid h-[46px] grid-cols-[32px_1fr] items-center gap-3 rounded-xl px-3 text-left text-xs font-black transition duration-200 ${
                   activeCategory === category ? "bg-[#fff4f5] text-maroon shadow-sm" : "text-charcoal hover:bg-[#fff4f5] hover:text-maroon"
                 }`}
@@ -1452,7 +1483,7 @@ export function MenuExperience({
                     <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-110 group-hover:saturate-[1.08]" loading="lazy" decoding="async" onError={useFallbackImage} />
                   )}
                 </span>
-                <span className="truncate">{shortCategoryName(category)}</span>
+                <span className="break-words leading-tight">{category}</span>
               </button>
             ))}
           </div>
@@ -1562,9 +1593,9 @@ export function MenuExperience({
                 <button
                   key={category}
                   onClick={() => {
-                    selectHomeCategory(category);
+                    openMenuCategory(category);
                   }}
-                  className="group grid min-w-[48px] place-items-center gap-2 text-center"
+                  className="group grid w-[68px] shrink-0 place-items-center gap-2 text-center sm:w-24"
                 >
                   <span className={`grid h-[52px] w-[52px] place-items-center overflow-hidden rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] transition duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06] group-hover:shadow-[0_14px_30px_rgba(34,31,32,0.12)] sm:h-20 sm:w-20 lg:h-20 lg:w-20 ${
                     activeCategory === category ? "border-maroon bg-maroon text-white" : "border-[#f1e7e4] bg-white text-charcoal group-hover:border-maroon/30 group-hover:bg-[#fff4f5] group-hover:text-maroon"
@@ -1576,22 +1607,62 @@ export function MenuExperience({
                       <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[72%] w-[72%] rounded-full object-cover transition duration-300 group-hover:scale-110 group-hover:saturate-[1.08]" loading="lazy" decoding="async" onError={useFallbackImage} />
                     )}
                   </span>
-                  <span className={`max-w-[54px] truncate text-[10px] font-black transition-colors sm:max-w-20 sm:text-[12px] ${activeCategory === category ? "text-maroon" : "text-charcoal group-hover:text-maroon"}`}>
-                    {shortCategoryName(category)}
+                  <span className={`w-full break-words text-[10px] font-black leading-tight transition-colors sm:text-[12px] ${activeCategory === category ? "text-maroon" : "text-charcoal group-hover:text-maroon"}`}>
+                    {category}
                   </span>
                 </button>
               ))}
               <button
                 type="button"
-                onClick={() => setMobileMenuView("categories")}
-                className="group grid min-w-[48px] place-items-center gap-2 text-center"
+                onClick={() => {
+                  setMobileMenuView("categories");
+                  setShowMoreCategories((current) => !current);
+                }}
+                aria-expanded={showMoreCategories}
+                className="group grid w-[68px] shrink-0 place-items-center gap-2 text-center sm:w-24 lg:hidden"
               >
-                <span className="grid h-[52px] w-[52px] place-items-center rounded-full border border-[#f1e7e4] bg-[#f8fafc] text-charcoal shadow-[0_8px_22px_rgba(34,31,32,0.06)] transition duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06] group-hover:border-maroon/30 group-hover:bg-maroon group-hover:text-white group-hover:shadow-[0_14px_30px_rgba(141,0,33,0.18)] sm:h-20 sm:w-20 lg:h-20 lg:w-20">
+                <span className={`grid h-[52px] w-[52px] place-items-center rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] transition duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06] group-hover:border-maroon/30 group-hover:bg-maroon group-hover:text-white group-hover:shadow-[0_14px_30px_rgba(141,0,33,0.18)] sm:h-20 sm:w-20 lg:h-20 lg:w-20 ${showMoreCategories ? "border-maroon bg-maroon text-white" : "border-[#f1e7e4] bg-[#f8fafc] text-charcoal"}`}>
                   <Grid3X3 size={21} />
                 </span>
-                <span className="max-w-[54px] truncate text-[10px] font-black text-charcoal transition-colors group-hover:text-maroon sm:max-w-20 sm:text-[12px]">More</span>
+                <span className={`max-w-[54px] truncate text-[10px] font-black transition-colors group-hover:text-maroon sm:max-w-20 sm:text-[12px] ${showMoreCategories ? "text-maroon" : "text-charcoal"}`}>
+                  {showMoreCategories ? "Less" : "More"}
+                </span>
               </button>
+              <Link
+                href="/menu"
+                className="group hidden w-24 shrink-0 place-items-center gap-2 text-center lg:grid"
+                aria-label="Open full menu search page"
+              >
+                <span className="grid h-20 w-20 place-items-center rounded-full border border-[#f1e7e4] bg-[#f8fafc] text-charcoal shadow-[0_8px_22px_rgba(34,31,32,0.06)] transition duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06] group-hover:border-maroon/30 group-hover:bg-maroon group-hover:text-white group-hover:shadow-[0_14px_30px_rgba(141,0,33,0.18)]">
+                  <Search size={22} strokeWidth={2.7} />
+                </span>
+                <span className="max-w-20 text-[12px] font-black leading-tight text-charcoal transition-colors group-hover:text-maroon">
+                  Full Menu
+                </span>
+              </Link>
             </div>
+            {showMoreCategories && categoryItems.length > 5 ? (
+              <div className="mt-2 hidden max-w-[430px] lg:block">
+                <div className="flex items-center gap-3 rounded-t-[20px] border border-b-0 border-[#edf0f5] bg-[#f7f8fc] px-4 py-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowMoreCategories(false)}
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-maroon shadow-[0_8px_18px_rgba(17,24,39,0.06)] ring-1 ring-[#e8edf3]"
+                    aria-label="Close all categories"
+                  >
+                    <ArrowLeft size={20} strokeWidth={3} />
+                  </button>
+                  <h3 className="text-[18px] font-black leading-tight text-[#111827]">All Categories</h3>
+                </div>
+                <CategoryListPanel
+                  groups={mobileCategoryGroups}
+                  expandedCategories={expandedMobileCategories}
+                  onToggleGroup={toggleMobileCategoryGroup}
+                  onChoose={openMenuCategory}
+                  className="rounded-t-none"
+                />
+              </div>
+            ) : null}
           </section>
 
           <section id="menu-items" className="mt-6 border-t-[5px] border-[#c8c8c8] pt-7 pb-16 lg:mt-5 lg:border-t-0 lg:pt-0 lg:pb-8">
@@ -1603,11 +1674,11 @@ export function MenuExperience({
                 <h2 className="mt-1 font-sans text-[20px] font-semibold leading-tight text-charcoal lg:text-[20px]">
                   {activeCategory === "All"
                     ? usingConfiguredHomeDishes && configuredHomeCategories.length === 1
-                      ? `${shortCategoryName(configuredHomeCategories[0])} Dishes`
+                      ? `${configuredHomeCategories[0]} Dishes`
                       : usingConfiguredHomeDishes
                         ? "Today's Dishes"
                         : "Best Sellers"
-                    : `${shortCategoryName(activeCategory)} Dishes`}
+                    : `${activeCategory} Dishes`}
                 </h2>
               </div>
               {activeCategory !== "All" || activeFilters.length || query ? (
@@ -1867,6 +1938,95 @@ function compareProductsForAvailability(a: Product, b: Product) {
   return Number(b.available) - Number(a.available) || a.name.localeCompare(b.name);
 }
 
+function CategoryListPanel({
+  groups,
+  expandedCategories,
+  onToggleGroup,
+  onChoose,
+  className = "",
+}: {
+  groups: { category: CategoryOption; children: CategoryOption[] }[];
+  expandedCategories: Set<string>;
+  onToggleGroup: (category: string) => void;
+  onChoose: (category: string) => void;
+  className?: string;
+}) {
+  return (
+    <div className={`${className} overflow-hidden rounded-[18px] border border-[#edf0f5] bg-white shadow-[0_10px_28px_rgba(17,24,39,0.04)]`}>
+      <button
+        type="button"
+        onClick={() => onChoose("All")}
+        className="flex min-h-14 w-full items-center justify-between gap-3 border-b border-[#edf0f5] px-4 py-3 text-left"
+      >
+        <span className="text-[17px] font-black text-[#111827]">All</span>
+        <Grid3X3 size={18} className="text-maroon" />
+      </button>
+      {groups.map((group) => {
+        const expanded = expandedCategories.has(group.category.name);
+        if (!group.children.length) {
+          return (
+            <button
+              key={group.category.id}
+              type="button"
+              onClick={() => onChoose(group.category.name)}
+              className="flex min-h-14 w-full items-center justify-between gap-3 border-b border-[#edf0f5] px-4 py-3 text-left last:border-b-0"
+            >
+              <span className="break-words text-[17px] font-black leading-tight text-[#111827]">{group.category.name}</span>
+              <ChevronRight size={19} className="text-[#334155]" />
+            </button>
+          );
+        }
+
+        return (
+          <div key={group.category.id} className="border-b border-[#edf0f5] last:border-b-0">
+            <button
+              type="button"
+              onClick={() => onToggleGroup(group.category.name)}
+              className="flex min-h-14 w-full items-center justify-between gap-3 px-4 py-3 text-left"
+              aria-expanded={expanded}
+            >
+              <span className="break-words text-[18px] font-black leading-tight text-[#111827]">{group.category.name}</span>
+              <ChevronRight size={20} className={`shrink-0 text-[#334155] transition-transform ${expanded ? "rotate-90" : ""}`} />
+            </button>
+            {expanded ? (
+              <div className="border-t border-[#f3f5f8] bg-[#fbfcfe]">
+                {group.children.map((child) => (
+                  <button
+                    key={child.id}
+                    type="button"
+                    onClick={() => onChoose(child.name)}
+                    className="flex min-h-[52px] w-full items-center justify-between gap-3 border-b border-[#edf0f5] px-4 py-3 pl-7 text-left last:border-b-0"
+                  >
+                    <span className="break-words text-[15px] font-bold leading-tight text-[#667085]">{child.name}</span>
+                    <ChevronRight size={18} className="shrink-0 text-[#334155]" />
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function productMatchesCategory(product: Product, category: string) {
+  return product.category === category || product.parentCategory === category;
+}
+
+function getCategoryGroups(categories: CategoryOption[]) {
+  const byParent = new Map<string | null, CategoryOption[]>();
+  for (const category of categories) {
+    const parentId = category.parentId ?? null;
+    byParent.set(parentId, [...(byParent.get(parentId) ?? []), category]);
+  }
+
+  return (byParent.get(null) ?? []).map((category) => ({
+    category,
+    children: byParent.get(category.id) ?? [],
+  }));
+}
+
 function getHomeOfferCards(coupons: Coupon[]) {
   const classes = [
     "bg-[#e8f7ed] text-[#16833d]",
@@ -1899,16 +2059,6 @@ function getCouponOfferSubtitle(coupon: Coupon) {
   if (coupon.type === "PERCENT" && coupon.maxDiscount) return `up to ${formatRupees(coupon.maxDiscount)}`;
   if (coupon.minOrder > 0) return `on orders above ${formatRupees(coupon.minOrder)}`;
   return "on your order";
-}
-
-function shortCategoryName(category: string) {
-  const compact = category
-    .replace("Chef's Recommendations", "Chef")
-    .replace("Exclusive ", "")
-    .replace("Kolkata ", "")
-    .replace(" Combo", "");
-
-  return compact.length > 14 ? compact.split(" ")[0] : compact;
 }
 
 function foodieCategoryLabel(category: string) {

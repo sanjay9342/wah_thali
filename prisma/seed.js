@@ -317,7 +317,14 @@ async function main() {
     await prisma.coupon.upsert({
       where: { code: coupon.code },
       create: {
-        ...coupon,
+        code: coupon.code,
+        label: coupon.label,
+        type: coupon.type,
+        value: coupon.value,
+        minOrder: coupon.minOrder,
+        maxDiscount: coupon.maxDiscount,
+        audience: coupon.audience ?? "ALL",
+        minCustomerOrders: coupon.minPoints ?? 0,
         startsAt: new Date("2026-01-01"),
         endsAt: new Date("2028-01-01"),
         active: true,
@@ -328,6 +335,8 @@ async function main() {
         value: coupon.value,
         minOrder: coupon.minOrder,
         maxDiscount: coupon.maxDiscount,
+        audience: coupon.audience ?? "ALL",
+        minCustomerOrders: coupon.minPoints ?? 0,
         active: true,
       },
     });

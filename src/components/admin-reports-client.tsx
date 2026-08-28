@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, CalendarDays, Download, FileText, IndianRupee, ReceiptText, Search, TrendingDown, TrendingUp, Users, Utensils } from "lucide-react";
+import { BarChart3, CalendarDays, Download, FileText, IndianRupee, ReceiptText, Search, TicketPercent, TrendingDown, TrendingUp, Users, Utensils } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -22,6 +22,7 @@ const reportKinds = [
   { key: "sales", label: "Sales PDF", icon: IndianRupee },
   { key: "orders", label: "Orders PDF", icon: ReceiptText },
   { key: "customers", label: "Customer PDF", icon: Users },
+  { key: "coupons", label: "Coupon PDF", icon: TicketPercent },
   { key: "items", label: "Items PDF", icon: Utensils },
   { key: "best", label: "Best items PDF", icon: TrendingUp },
   { key: "worst", label: "Worst items PDF", icon: TrendingDown },
@@ -306,6 +307,58 @@ export function AdminReportsClient({ snapshot }: { snapshot: AdminReportsSnapsho
           <ReportPanel title="Items report" detail={`${snapshot.items.uniqueItemsSold} unique sold`} kind="items" onDownload={download}>
             <ItemsTable rows={snapshot.items.rows.slice(0, 12)} emptyLabel="No item sales in this period." />
           </ReportPanel>
+        </section>
+
+        <section className="mt-6 surface overflow-hidden rounded-2xl">
+          <div className="flex flex-col gap-3 border-b border-border p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="flex items-center gap-2 text-xl font-black text-maroon">
+                <TicketPercent className="text-red" size={22} /> Coupon report
+              </h2>
+              <p className="text-sm font-semibold text-muted">Successful transactions only: popularity, coupon sales, members, and discount offered.</p>
+            </div>
+            <ReportButton kind="coupons" onClick={download} />
+          </div>
+          <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-5">
+            {[
+              ["Coupon sales", formatRupees(snapshot.coupons.couponSales)],
+              ["Discount offered", formatRupees(snapshot.coupons.discountOffered)],
+              ["Redemptions", snapshot.coupons.totalRedemptions],
+              ["Members used", snapshot.coupons.uniqueMembers],
+              ["Popular coupon", snapshot.coupons.popularCoupon?.code ?? "-"],
+            ].map(([label, value]) => (
+              <div key={String(label)} className="rounded-xl border border-border bg-cream p-4">
+                <p className="text-xs font-bold text-muted">{String(label)}</p>
+                <p className="mt-1 text-xl font-black text-maroon">{String(value)}</p>
+              </div>
+            ))}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] text-left text-sm">
+              <thead className="bg-cream text-maroon">
+                <tr>
+                  {["Coupon", "Offer", "Used", "Members", "Sales", "Discount", "Avg order", "Delivery", "Takeaway", "Website"].map((head) => <th key={head} className="p-3">{head}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {snapshot.coupons.rows.map((coupon) => (
+                  <tr key={coupon.code} className="border-t border-border">
+                    <td className="p-3 font-black text-maroon">{coupon.code}</td>
+                    <td className="p-3 font-bold">{coupon.label}</td>
+                    <td className="p-3 font-black">{coupon.redemptions}</td>
+                    <td className="p-3 font-black">{coupon.members}</td>
+                    <td className="p-3 font-black">{formatRupees(coupon.sales)}</td>
+                    <td className="p-3 text-red">{formatRupees(coupon.discount)}</td>
+                    <td className="p-3">{formatRupees(coupon.averageOrderValue)}</td>
+                    <td className="p-3">{coupon.delivery}</td>
+                    <td className="p-3">{coupon.takeaway}</td>
+                    <td className="p-3">{coupon.website}</td>
+                  </tr>
+                ))}
+                {!snapshot.coupons.rows.length ? <EmptyTableRow colSpan={10} label="No successful coupon redemptions in this period." /> : null}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <section className="mt-6 grid gap-5 lg:grid-cols-2">
@@ -699,6 +752,27 @@ function buildPdfSections(snapshot: AdminReportsSnapshot): PdfSection[] {
       kind: "customers",
       heading: "Top Customers",
       rows: [["Customer", "Mobile", "Orders", "Spend"], ...snapshot.customers.topCustomers.map((row) => [row.name, row.mobile, String(row.orders), money(row.spend)])],
+    },
+    {
+      kind: "coupons",
+      heading: "Coupon Report",
+      rows: [
+        ["Metric", "Value"],
+        ["Coupon sales", money(snapshot.coupons.couponSales)],
+        ["Discount offered", money(snapshot.coupons.discountOffered)],
+        ["Redemptions", String(snapshot.coupons.totalRedemptions)],
+        ["Members used", String(snapshot.coupons.uniqueMembers)],
+        ["Average coupon order", money(snapshot.coupons.averageCouponOrder)],
+        ["Popular coupon", snapshot.coupons.popularCoupon?.code ?? "-"],
+      ],
+    },
+    {
+      kind: "coupons",
+      heading: "Coupon Performance",
+      rows: [
+        ["Coupon", "Offer", "Used", "Members", "Sales", "Discount", "Delivery", "Takeaway"],
+        ...snapshot.coupons.rows.map((row) => [row.code, row.label, String(row.redemptions), String(row.members), money(row.sales), money(row.discount), String(row.delivery), String(row.takeaway)]),
+      ],
     },
     {
       kind: "items",

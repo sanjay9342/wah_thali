@@ -1,6 +1,6 @@
 import { AdminInventoryClient } from "@/components/admin-inventory-client";
 import { requireAdminPagePermission } from "@/lib/admin-page-auth";
-import { getAdminProductsFromDb, getCategoriesFromDb } from "@/lib/db";
+import { getAdminProductsFromDb, getCategoryOptionsFromDb, getCategoriesFromDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,11 @@ export default async function AdminInventoryPage({
 }) {
   await requireAdminPagePermission("inventory", "/admin/inventory");
   const resolvedSearchParams = await searchParams;
-  const [categories, products] = await Promise.all([getCategoriesFromDb(), getAdminProductsFromDb()]);
+  const [categories, categoryOptions, products] = await Promise.all([
+    getCategoriesFromDb(),
+    getCategoryOptionsFromDb({ visibleOnly: false }),
+    getAdminProductsFromDb(),
+  ]);
 
-  return <AdminInventoryClient initialCategories={categories} initialProducts={products} initialEditId={resolvedSearchParams?.edit} />;
+  return <AdminInventoryClient initialCategories={categories} initialCategoryOptions={categoryOptions} initialProducts={products} initialEditId={resolvedSearchParams?.edit} />;
 }

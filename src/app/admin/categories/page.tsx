@@ -26,10 +26,11 @@ export default async function AdminCategoriesPage() {
       initialCategories={categories.map((category) => ({
         id: category.id,
         name: category.name,
+        parentId: category.parentId,
         visible: category.visible,
         sortOrder: category.sortOrder,
         _count: category._count,
-        image: categoryImages[category.slug] ?? "/wah-thali-meal-cutout-v2.png",
+        image: categoryImages[category.slug] ?? "",
         offer: categoryOffers[category.slug] ?? "",
       }))}
       initialCartSuggestionCategories={cartSuggestionCategories}

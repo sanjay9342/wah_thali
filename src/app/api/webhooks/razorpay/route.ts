@@ -1,4 +1,5 @@
 import { withApiErrorHandling } from "@/lib/api-error";
+import type { Prisma } from "@prisma/client";
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
@@ -123,6 +124,16 @@ async function postHandler(request: NextRequest) {
               },
             },
           });
+          if (payment.order.couponCode && payment.order.discount > 0) {
+            await redeemCouponForSuccessfulOrder(tx, {
+              couponCode: payment.order.couponCode,
+              orderId: payment.orderId,
+              customerId: payment.order.customerId,
+              discount: payment.order.discount,
+              orderTotal: payment.order.grandTotal,
+              fulfillmentMethod: payment.order.fulfillmentMethod === "PICKUP" ? "PICKUP" : "DELIVERY",
+            });
+          }
           notifiedStatus = nextStatus;
           notificationNote = `Razorpay webhook confirmed payment: ${paymentId}`;
         }
@@ -257,3 +268,39 @@ async function postHandler(request: NextRequest) {
 }
 
 export const POST = withApiErrorHandling(postHandler, "POST /api/webhooks/razorpay");
+
+async function redeemCouponForSuccessfulOrder(
+  tx: Prisma.TransactionClient,
+  input: {
+    couponCode: string;
+    orderId: string;
+    customerId: string;
+    discount: number;
+    orderTotal: number;
+    fulfillmentMethod: "DELIVERY" | "PICKUP";
+  },
+) {
+  const coupon = await tx.coupon.findUnique({ where: { code: input.couponCode }, select: { id: true } });
+  await tx.couponRedemption.upsert({
+    where: { orderId: input.orderId },
+    create: {
+      couponCode: input.couponCode,
+      couponId: coupon?.id,
+      orderId: input.orderId,
+      customerId: input.customerId,
+      discount: input.discount,
+      orderTotal: input.orderTotal,
+      orderSource: "WEBSITE",
+      fulfillmentMethod: input.fulfillmentMethod,
+    },
+    update: {
+      couponCode: input.couponCode,
+      couponId: coupon?.id,
+      customerId: input.customerId,
+      discount: input.discount,
+      orderTotal: input.orderTotal,
+      orderSource: "WEBSITE",
+      fulfillmentMethod: input.fulfillmentMethod,
+    },
+  });
+}

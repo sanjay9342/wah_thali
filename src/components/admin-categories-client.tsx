@@ -1,7 +1,7 @@
 "use client";
 
-import { type DragEvent, useEffect, useState, useTransition } from "react";
-import { ArrowDown, ArrowUp, CheckCircle2, Edit3, EyeOff, GripVertical, ImagePlus, Plus, Tag, Trash2, Upload, X } from "lucide-react";
+import { type DragEvent, useEffect, useMemo, useState, useTransition } from "react";
+import { ArrowDown, ArrowUp, CheckCircle2, Edit3, EyeOff, GripVertical, ImageOff, ImagePlus, Plus, Tag, Trash2, Upload, X } from "lucide-react";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { adminFetch } from "@/lib/admin-client-auth";
@@ -9,6 +9,7 @@ import { adminFetch } from "@/lib/admin-client-auth";
 type AdminCategory = {
   id: string;
   name: string;
+  parentId?: string | null;
   image?: string;
   offer?: string;
   visible: boolean;
@@ -41,7 +42,10 @@ export function AdminCategoriesClient({
 }) {
   const [categories, setCategories] = useState(initialCategories);
   const [cartSuggestionCategories, setCartSuggestionCategories] = useState(initialCartSuggestionCategories);
+  const [categoryListView, setCategoryListView] = useState<"categories" | "subcategories">("categories");
+  const [newCategoryKind, setNewCategoryKind] = useState<"main" | "sub">("main");
   const [newCategory, setNewCategory] = useState("");
+  const [newCategoryParentId, setNewCategoryParentId] = useState("");
   const [newCategoryImage, setNewCategoryImage] = useState("");
   const [newCategoryOffer, setNewCategoryOffer] = useState<OfferDraft>(emptyOfferDraft);
   const [message, setMessage] = useState("");
@@ -52,6 +56,13 @@ export function AdminCategoriesClient({
   const [dragOverCategoryId, setDragOverCategoryId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const adminAccess = useAdminAccess();
+  const parentCategoryOptions = useMemo(() => categories.filter((category) => !category.parentId), [categories]);
+  const categoryRows = useMemo(
+    () => categoryListView === "categories"
+      ? categories.filter((category) => !category.parentId).map((category) => ({ category, depth: 0 }))
+      : categories.filter((category) => category.parentId).map((category) => ({ category, depth: 1 })),
+    [categories, categoryListView],
+  );
 
   useEffect(() => {
     if (!message) return;
@@ -113,7 +124,8 @@ export function AdminCategoriesClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: newCategory.trim(),
-          image: newCategoryImage.trim(),
+          parentId: newCategoryParentId || null,
+          image: newCategoryKind === "main" ? newCategoryImage.trim() : "",
           offer: offerDraftToText(newCategoryOffer),
           visible: true,
           sortOrder: categories.length + 1,
@@ -121,7 +133,9 @@ export function AdminCategoriesClient({
       });
       const data = await response.json();
       if (!response.ok) throw new Error(getApiErrorMessage(data, "Category save failed."));
+      setNewCategoryKind("main");
       setNewCategory("");
+      setNewCategoryParentId("");
       setNewCategoryImage("");
       setNewCategoryOffer(emptyOfferDraft);
       await refreshCategories();
@@ -193,6 +207,16 @@ export function AdminCategoriesClient({
     saveCategoryOrder(moveItem(categories, fromIndex, toIndex));
   }
 
+  function moveCategoryInCurrentView(categoryId: string, direction: -1 | 1) {
+    const currentIndex = categoryRows.findIndex((row) => row.category.id === categoryId);
+    const target = categoryRows[currentIndex + direction]?.category;
+    if (!target) return;
+
+    const fromIndex = categories.findIndex((category) => category.id === categoryId);
+    const toIndex = categories.findIndex((category) => category.id === target.id);
+    moveCategory(fromIndex, toIndex);
+  }
+
   function handleDragStart(event: DragEvent<HTMLElement>, categoryId: string) {
     setDraggingCategoryId(categoryId);
     event.dataTransfer.effectAllowed = "move";
@@ -220,9 +244,10 @@ export function AdminCategoriesClient({
 
   function deleteCategory(category: AdminCategory) {
     const productCount = category._count?.products ?? 0;
+    const childCount = categories.filter((item) => item.parentId === category.id).length;
     const confirmed = window.confirm(
-      productCount > 0
-        ? `Delete ${category.name}? This category has ${productCount} ${productCount === 1 ? "dish" : "dishes"}, so it will be hidden to protect the menu and order history.`
+      productCount > 0 || childCount > 0
+        ? `Delete ${category.name}? This category has ${productCount} ${productCount === 1 ? "dish" : "dishes"} and ${childCount} ${childCount === 1 ? "subcategory" : "subcategories"}, so it will be hidden to protect the menu.`
         : `Delete ${category.name}? This category will be removed permanently.`,
     );
     if (!confirmed) return;
@@ -253,43 +278,82 @@ export function AdminCategoriesClient({
         <section className="mt-6 grid gap-5 lg:grid-cols-[360px_1fr]">
           <aside className="surface rounded-2xl p-5">
             <h2 className="flex items-center gap-2 text-xl font-black text-maroon">
-              <ImagePlus className="text-red" /> Add category
+              <ImagePlus className="text-red" /> Create menu group
             </h2>
             <div className="mt-4 grid gap-3 rounded-xl border border-border bg-cream p-4">
-              <input value={newCategory} onChange={(event) => setNewCategory(event.target.value)} className="h-11 rounded-lg border border-border bg-white px-3 text-sm font-bold" placeholder="New category name" />
-              <input value={newCategoryImage} onChange={(event) => setNewCategoryImage(event.target.value)} className="h-11 rounded-lg border border-border bg-white px-3 text-sm font-bold" placeholder="Image URL or /public path" />
+              <div className="grid grid-cols-2 gap-2 rounded-lg bg-white p-1 ring-1 ring-border">
+                {[
+                  ["main", "Main category"],
+                  ["sub", "Subcategory"],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => {
+                      setNewCategoryKind(value as "main" | "sub");
+                      if (value === "main") {
+                        setNewCategoryParentId("");
+                      } else {
+                        setNewCategoryImage("");
+                      }
+                    }}
+                    className={`h-10 rounded-md text-xs font-black ${newCategoryKind === value ? "bg-maroon text-white" : "text-charcoal"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {newCategoryKind === "sub" ? (
+                <select value={newCategoryParentId} onChange={(event) => setNewCategoryParentId(event.target.value)} className="h-11 rounded-lg border border-border bg-white px-3 text-sm font-black text-charcoal">
+                  <option value="">Choose parent category</option>
+                  {parentCategoryOptions.map((category) => (
+                    <option key={category.id} value={category.id}>{category.name}</option>
+                  ))}
+                </select>
+              ) : null}
+              <input value={newCategory} onChange={(event) => setNewCategory(event.target.value)} className="h-11 rounded-lg border border-border bg-white px-3 text-sm font-bold" placeholder={newCategoryKind === "sub" ? "Subcategory name, e.g. Indian Combo" : "Category name, e.g. Combos"} />
+              {newCategoryKind === "main" ? (
+                <input value={newCategoryImage} onChange={(event) => setNewCategoryImage(event.target.value)} className="h-11 rounded-lg border border-border bg-white px-3 text-sm font-bold" placeholder="Image URL or /public path" />
+              ) : null}
               <div className="grid gap-1.5">
                 <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-maroon">
                   <Tag size={14} /> Category offer
                 </span>
                 <OfferControls value={newCategoryOffer} onChange={setNewCategoryOffer} surface="light" />
               </div>
-              {newCategoryImage ? (
+              {newCategoryKind === "main" && newCategoryImage ? (
                 <div className="h-32 overflow-hidden rounded-xl bg-white ring-1 ring-border">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={safeImage(newCategoryImage)} alt="" className="h-full w-full object-cover" />
                 </div>
               ) : null}
-              <label className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-maroon px-4 text-sm font-black text-white">
-                <Upload size={17} /> Upload image
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={async (event) => {
-                    const file = event.target.files?.[0];
-                    if (!file) return;
-                    try {
-                      setNewCategoryImage(await uploadImage(file));
-                      showSuccess("Category image uploaded successfully.");
-                    } catch (error) {
-                      showError(error instanceof Error ? error.message : "Image upload failed.");
-                    }
-                  }}
-                />
-              </label>
-              <button disabled={isPending || uploading || !newCategory.trim()} onClick={addCategory} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-red px-4 font-black text-white disabled:opacity-60">
-                <Plus size={18} /> Add category
+              {newCategoryKind === "main" && newCategoryImage ? (
+                <button type="button" onClick={() => setNewCategoryImage("")} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-white px-3 text-sm font-black text-red">
+                  <ImageOff size={16} /> Remove image
+                </button>
+              ) : null}
+              {newCategoryKind === "main" ? (
+                <label className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-maroon px-4 text-sm font-black text-white">
+                  <Upload size={17} /> Upload image
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      try {
+                        setNewCategoryImage(await uploadImage(file));
+                        showSuccess("Category image uploaded successfully.");
+                      } catch (error) {
+                        showError(error instanceof Error ? error.message : "Image upload failed.");
+                      }
+                    }}
+                  />
+                </label>
+              ) : null}
+              <button disabled={isPending || uploading || !newCategory.trim() || (newCategoryKind === "sub" && !newCategoryParentId)} onClick={addCategory} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-red px-4 font-black text-white disabled:opacity-60">
+                <Plus size={18} /> {newCategoryKind === "sub" ? "Create subcategory" : "Create category"}
               </button>
             </div>
 
@@ -309,7 +373,7 @@ export function AdminCategoriesClient({
                         onChange={() => toggleCartSuggestionCategory(category.name)}
                         className="h-4 w-4 accent-maroon"
                       />
-                      <span className="min-w-0 flex-1 truncate">{category.name}</span>
+                      <span className="min-w-0 flex-1 break-words">{category.name}</span>
                       <span className="shrink-0 text-[10px] text-muted">{category._count?.products ?? 0}</span>
                     </label>
                   );
@@ -326,11 +390,34 @@ export function AdminCategoriesClient({
 
           <section className="surface overflow-hidden rounded-2xl">
             <div className="border-b border-border p-5">
-              <h2 className="text-xl font-black text-maroon">Live category list</h2>
-              <p className="text-sm font-semibold text-muted">{categories.length} categories numbered first to last for customer filters, product forms, and recommendations.</p>
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                <div>
+                  <h2 className="text-xl font-black text-maroon">{categoryListView === "categories" ? "Categories" : "Subcategories"}</h2>
+                  <p className="text-sm font-semibold text-muted">
+                    {categoryListView === "categories"
+                      ? `${parentCategoryOptions.length} main categories shown.`
+                      : `${categories.length - parentCategoryOptions.length} subcategories shown.`}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 rounded-lg bg-cream p-1 ring-1 ring-border">
+                  {[
+                    ["categories", "Categories"],
+                    ["subcategories", "Subcategories"],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setCategoryListView(value as "categories" | "subcategories")}
+                      className={`h-10 rounded-md px-4 text-sm font-black ${categoryListView === value ? "bg-maroon text-white" : "text-charcoal"}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="grid gap-3 p-4 sm:p-5">
-              {categories.map((category, index) => (
+              {categoryRows.length ? categoryRows.map(({ category, depth }, index) => (
                 <article
                   key={category.id}
                   onDragOver={(event) => handleDragOver(event, category.id)}
@@ -340,7 +427,7 @@ export function AdminCategoriesClient({
                     setDraggingCategoryId(null);
                     setDragOverCategoryId(null);
                   }}
-                  className={`grid min-w-0 gap-4 rounded-xl border bg-white p-4 transition sm:grid-cols-[64px_minmax(0,1fr)] ${dragOverCategoryId === category.id ? "border-maroon shadow-md" : "border-border"} ${draggingCategoryId === category.id ? "opacity-60" : ""}`}
+                  className={`grid min-w-0 gap-4 rounded-xl border bg-white p-4 transition sm:grid-cols-[64px_minmax(0,1fr)] ${depth ? "ml-4 border-dashed sm:ml-8" : ""} ${dragOverCategoryId === category.id ? "border-maroon shadow-md" : "border-border"} ${draggingCategoryId === category.id ? "opacity-60" : ""}`}
                 >
                   <div className="flex items-center gap-2 sm:grid sm:content-start sm:gap-2">
                     <span className="grid h-12 w-12 place-items-center rounded-xl bg-maroon text-xl font-black text-white" aria-label={`Position ${index + 1}`}>
@@ -350,7 +437,7 @@ export function AdminCategoriesClient({
                       <button
                         type="button"
                         disabled={isPending || index === 0}
-                        onClick={() => moveCategory(index, index - 1)}
+                        onClick={() => moveCategoryInCurrentView(category.id, -1)}
                         className="grid h-9 w-9 place-items-center rounded-lg border border-border text-maroon disabled:opacity-40"
                         aria-label={`Move ${category.name} up`}
                       >
@@ -358,8 +445,8 @@ export function AdminCategoriesClient({
                       </button>
                       <button
                         type="button"
-                        disabled={isPending || index === categories.length - 1}
-                        onClick={() => moveCategory(index, index + 1)}
+                        disabled={isPending || index === categoryRows.length - 1}
+                        onClick={() => moveCategoryInCurrentView(category.id, 1)}
                         className="grid h-9 w-9 place-items-center rounded-lg border border-border text-maroon disabled:opacity-40"
                         aria-label={`Move ${category.name} down`}
                       >
@@ -369,22 +456,32 @@ export function AdminCategoriesClient({
                   </div>
 
                   <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
-                    <div className="grid min-w-0 grid-cols-[88px_minmax(0,1fr)] gap-4">
-                      <div className="h-[88px] w-[88px] overflow-hidden rounded-xl bg-cream ring-1 ring-border">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={safeImage(category.image)} alt="" className="h-full w-full object-cover" />
-                      </div>
+                    <div className={`grid min-w-0 gap-4 ${depth ? "" : "grid-cols-[88px_minmax(0,1fr)]"}`}>
+                      {!depth ? (
+                        <div className="grid h-[88px] w-[88px] place-items-center overflow-hidden rounded-xl bg-cream ring-1 ring-border">
+                          {category.image ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={safeImage(category.image)} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <ImagePlus size={24} className="text-muted" />
+                          )}
+                        </div>
+                      ) : null}
                       <div className="min-w-0">
                         <div className="grid grid-cols-[minmax(0,1fr)_84px] items-start gap-3">
                         <div className="min-w-0">
-                          <h3 className="truncate text-lg font-black text-charcoal">{category.name}</h3>
-                          <p className="mt-1 text-xs font-bold text-muted">No. {index + 1} - {category._count?.products ?? 0} products</p>
+                          <h3 className="break-words text-lg font-black leading-tight text-charcoal">{category.name}</h3>
+                          <p className="mt-1 text-xs font-bold text-muted">
+                            {depth ? `Parent: ${getParentCategoryName(category, categories)} - ` : ""}No. {index + 1} - {category._count?.products ?? 0} products
+                          </p>
                         </div>
                         <span className={`inline-flex h-8 w-full items-center justify-center rounded-lg px-2.5 text-[11px] font-black ${category.visible ? "bg-[#effaf4] text-[#0f7a45]" : "bg-[#f2f4f7] text-[#4b5563]"}`}>
                           {category.visible ? "Online" : "Offline"}
                         </span>
                         </div>
-                        <p className="mt-3 truncate rounded-lg bg-cream px-3 py-2 text-xs font-bold text-muted">{category.image || "No image set"}</p>
+                        {!depth ? (
+                          <p className="mt-3 truncate rounded-lg bg-cream px-3 py-2 text-xs font-bold text-muted">{category.image || "No image set"}</p>
+                        ) : null}
                       </div>
                     </div>
 
@@ -414,23 +511,30 @@ export function AdminCategoriesClient({
                       <button type="button" onClick={() => setEditingCategory(category)} className="inline-flex h-9 w-[94px] items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-black text-maroon">
                         <Edit3 size={15} /> Edit
                       </button>
-                      <label className="inline-flex h-9 w-[132px] min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-maroon px-2.5 text-xs font-black text-white">
-                        <Upload size={15} /> Upload image
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={async (event) => {
-                            const file = event.target.files?.[0];
-                            if (!file) return;
-                            try {
-                              updateCategory(category, { image: await uploadImage(file) });
-                            } catch (error) {
-                              showError(error instanceof Error ? error.message : "Image upload failed.");
-                            }
-                          }}
-                        />
-                      </label>
+                      {!depth ? (
+                        <>
+                          <label className="inline-flex h-9 w-[132px] min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-maroon px-2.5 text-xs font-black text-white">
+                            <Upload size={15} /> Upload image
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={async (event) => {
+                                const file = event.target.files?.[0];
+                                if (!file) return;
+                                try {
+                                  updateCategory(category, { image: await uploadImage(file) });
+                                } catch (error) {
+                                  showError(error instanceof Error ? error.message : "Image upload failed.");
+                                }
+                              }}
+                            />
+                          </label>
+                          <button type="button" disabled={isPending || !category.image} onClick={() => updateCategory(category, { image: "" })} className="inline-flex h-9 w-[128px] items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-black text-red disabled:opacity-45">
+                            <ImageOff size={15} /> Remove image
+                          </button>
+                        </>
+                      ) : null}
                       <button disabled={isPending} onClick={() => updateCategory(category, { visible: !category.visible })} className={`inline-flex h-9 w-[96px] items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-black disabled:opacity-60 ${category.visible ? "bg-maroon text-white" : "border border-border bg-white text-maroon"}`}>
                         {category.visible ? <CheckCircle2 size={15} /> : <EyeOff size={15} />}
                         {category.visible ? "Online" : "Offline"}
@@ -441,7 +545,14 @@ export function AdminCategoriesClient({
                     </div>
                   </div>
                 </article>
-              ))}
+              )) : (
+                <div className="rounded-xl border border-dashed border-border bg-cream p-8 text-center">
+                  <p className="text-lg font-black text-charcoal">No {categoryListView === "categories" ? "categories" : "subcategories"} found</p>
+                  <p className="mt-1 text-sm font-semibold text-muted">
+                    {categoryListView === "categories" ? "Create a main category first." : "Use the Subcategory mode in the create panel to add one."}
+                  </p>
+                </div>
+              )}
             </div>
           </section>
         </section>
@@ -449,6 +560,7 @@ export function AdminCategoriesClient({
       {editingCategory ? (
         <CategoryEditModal
           category={editingCategory}
+          categories={categories}
           isPending={isPending || uploading}
           onClose={() => setEditingCategory(null)}
           onSave={(patch) => {
@@ -495,6 +607,33 @@ function withPositionNumbers(categories: AdminCategory[]) {
   return categories.map((category, index) => ({ ...category, sortOrder: index + 1 }));
 }
 
+function isCategoryDescendant(categories: AdminCategory[], categoryId: string, ancestorId: string): boolean {
+  const category = categories.find((item) => item.id === categoryId);
+  if (!category?.parentId) return false;
+  if (category.parentId === ancestorId) return true;
+  return isCategoryDescendant(categories, category.parentId, ancestorId);
+}
+
+function getParentCategoryName(category: AdminCategory, categories: AdminCategory[]) {
+  return categories.find((item) => item.id === category.parentId)?.name ?? "Main category";
+}
+
+function getCategoryPath(category: AdminCategory, categories: AdminCategory[]) {
+  const names = [category.name];
+  let parentId = category.parentId;
+  const visited = new Set<string>([category.id]);
+
+  while (parentId && !visited.has(parentId)) {
+    visited.add(parentId);
+    const parent = categories.find((item) => item.id === parentId);
+    if (!parent) break;
+    names.unshift(parent.name);
+    parentId = parent.parentId;
+  }
+
+  return names.join(" / ");
+}
+
 function getApiErrorMessage(data: unknown, fallback: string) {
   if (!data || typeof data !== "object") return fallback;
   const payload = data as { error?: unknown; issues?: { fieldErrors?: Record<string, string[]>; formErrors?: string[] } };
@@ -509,12 +648,14 @@ function getApiErrorMessage(data: unknown, fallback: string) {
 
 function CategoryEditModal({
   category,
+  categories,
   isPending,
   onClose,
   onSave,
   uploadImage,
 }: {
   category: AdminCategory;
+  categories: AdminCategory[];
   isPending: boolean;
   onClose: () => void;
   onSave: (patch: Partial<AdminCategory>) => void;
@@ -522,12 +663,15 @@ function CategoryEditModal({
 }) {
   const [draft, setDraft] = useState({
     name: category.name,
+    parentId: category.parentId ?? "",
     image: category.image ?? "",
     offer: parseOfferText(category.offer),
     visible: category.visible,
     sortOrder: String(category.sortOrder),
   });
   const [error, setError] = useState("");
+  const parentOptions = categories.filter((item) => item.id !== category.id && !isCategoryDescendant(categories, item.id, category.id));
+  const editingSubcategory = Boolean(draft.parentId);
 
   async function handleImage(file: File | undefined) {
     if (!file) return;
@@ -555,22 +699,38 @@ function CategoryEditModal({
             <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className="h-11 rounded-lg border border-border bg-cream px-3 text-charcoal" />
           </label>
           <label className="grid gap-2 text-sm font-black text-maroon">
-            Image
-            <div className="grid gap-2 rounded-xl border border-border bg-cream p-3">
-              {draft.image ? (
-                <div className="flex min-w-0 items-center gap-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={safeImage(draft.image)} alt="" className="h-16 w-16 shrink-0 rounded-lg object-cover" />
-                  <span className="min-w-0 truncate text-xs font-bold text-muted">{draft.image}</span>
-                </div>
-              ) : null}
-              <input value={draft.image} onChange={(event) => setDraft({ ...draft, image: event.target.value })} className="h-10 rounded-lg border border-border bg-white px-3 text-xs font-bold text-charcoal" placeholder="Image URL or /public path" />
-              <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg bg-maroon px-3 text-sm font-black text-white">
-                <Upload size={16} /> Upload image
-                <input type="file" accept="image/*" className="hidden" onChange={(event) => handleImage(event.target.files?.[0])} />
-              </label>
-            </div>
+            Parent category
+            <select value={draft.parentId} onChange={(event) => setDraft({ ...draft, parentId: event.target.value })} className="h-11 rounded-lg border border-border bg-cream px-3 text-charcoal">
+              <option value="">Main category</option>
+              {parentOptions.map((option) => (
+                <option key={option.id} value={option.id}>{getCategoryPath(option, categories)}</option>
+              ))}
+            </select>
           </label>
+          {!editingSubcategory ? (
+            <label className="grid gap-2 text-sm font-black text-maroon">
+              Image
+              <div className="grid gap-2 rounded-xl border border-border bg-cream p-3">
+                {draft.image ? (
+                  <div className="flex min-w-0 items-center gap-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={safeImage(draft.image)} alt="" className="h-16 w-16 shrink-0 rounded-lg object-cover" />
+                    <span className="min-w-0 truncate text-xs font-bold text-muted">{draft.image}</span>
+                  </div>
+                ) : null}
+                <input value={draft.image} onChange={(event) => setDraft({ ...draft, image: event.target.value })} className="h-10 rounded-lg border border-border bg-white px-3 text-xs font-bold text-charcoal" placeholder="Image URL or /public path" />
+                <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg bg-maroon px-3 text-sm font-black text-white">
+                  <Upload size={16} /> Upload image
+                  <input type="file" accept="image/*" className="hidden" onChange={(event) => handleImage(event.target.files?.[0])} />
+                </label>
+                {draft.image ? (
+                  <button type="button" onClick={() => setDraft((current) => ({ ...current, image: "" }))} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-white px-3 text-sm font-black text-red">
+                    <ImageOff size={16} /> Remove image
+                  </button>
+                ) : null}
+              </div>
+            </label>
+          ) : null}
           <div className="grid gap-2 text-sm font-black text-maroon">
             Category offer
             <OfferControls value={draft.offer} onChange={(offer) => setDraft({ ...draft, offer })} surface="cream" />
@@ -594,7 +754,8 @@ function CategoryEditModal({
             disabled={isPending || !draft.name.trim()}
             onClick={() => onSave({
               name: draft.name.trim(),
-              image: draft.image.trim(),
+              parentId: draft.parentId || null,
+              image: draft.parentId ? "" : draft.image.trim(),
               offer: offerDraftToText(draft.offer),
               visible: draft.visible,
               sortOrder: Number(draft.sortOrder || 0),

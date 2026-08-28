@@ -13,6 +13,7 @@ const imagePathSchema = z.string().trim().refine((value) => value.startsWith("/"
 
 const productSchema = z.object({
   category: z.string().min(1),
+  categoryId: z.string().min(1).optional(),
   name: z.string().min(1),
   displayName: nullableTrimmedText(120),
   kitchenName: nullableTrimmedText(120),
@@ -60,7 +61,7 @@ async function postHandler(request: Request) {
     return NextResponse.json({ error: "Invalid product payload", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { category, image, prepTimeMinutes, stock, reorderAt, margin, addons, variants, ...product } = parsed.data;
+  const { category, categoryId, image, prepTimeMinutes, stock, reorderAt, margin, addons, variants, ...product } = parsed.data;
   const slug = product.slug ?? slugify(product.name);
   if (product.reportCode) {
     const duplicate = await prisma.product.findFirst({
@@ -76,19 +77,21 @@ async function postHandler(request: Request) {
       ...product,
       slug,
       prepMinutes: prepTimeMinutes,
-      category: {
-        connectOrCreate: {
-          where: { slug: slugify(category) },
-          create: { name: category, slug: slugify(category) },
-        },
-      },
+      category: categoryId
+        ? { connect: { id: categoryId } }
+        : {
+            connectOrCreate: {
+              where: { slug: slugify(category) },
+              create: { name: category, slug: slugify(category) },
+            },
+          },
       images: image ? { create: { url: image, alt: product.name, sortOrder: 0 } } : undefined,
       variants: variants.length ? { create: variants } : undefined,
       addons: addons.length ? { create: addons } : undefined,
       inventory: { create: { stock, reorderAt, margin } },
     },
     include: {
-      category: true,
+      category: { include: { parent: true } },
       images: { orderBy: { sortOrder: "asc" } },
       variants: true,
       addons: true,

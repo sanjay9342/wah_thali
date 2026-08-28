@@ -61,7 +61,11 @@ const storeModeOptions: { mode: StoreMode; label: string; helper: string }[] = [
   { mode: "CLOSED", label: "Close now", helper: "Stop orders" },
 ];
 
-const defaultDeliveryDistanceSlabsText = "1=20\n2=30\n3=40\n4=50\n5=60";
+const deliveryFeeModeOptions: { mode: "FLAT" | "PERCENT" | "DISTANCE"; label: string; helper: string }[] = [
+  { mode: "FLAT", label: "Flat fee", helper: "Same charge for every delivery order" },
+  { mode: "PERCENT", label: "Percentage", helper: "Charge a percent of the item total" },
+  { mode: "DISTANCE", label: "Distance slabs", helper: "Set fees by customer distance in km" },
+];
 
 export function AdminSettingsClient({
   initialSettings,
@@ -131,6 +135,8 @@ export function AdminSettingsClient({
   const soundPreviewTimer = useRef<number | null>(null);
   const adminAccess = useAdminAccess();
   const kitchenCoordinatesReady = hasValidCoordinate(settings.kitchenLatitude, 90) && hasValidCoordinate(settings.kitchenLongitude, 180);
+  const deliverySlabRows = parseDeliveryDistanceSlabRows(settings.deliveryDistanceSlabs);
+  const deliverySlabCount = parseDeliveryDistanceSlabs(settings.deliveryDistanceSlabs).length;
 
   function run(task: () => Promise<void>) {
     setMessage("");
@@ -210,21 +216,14 @@ export function AdminSettingsClient({
 
   function applyDeliveryDistanceFormat() {
     const currentSlabs = parseDeliveryDistanceSlabs(settings.deliveryDistanceSlabs);
+    const fallbackFee = Number(settings.deliveryFee);
+    const starterFee = Number.isFinite(fallbackFee) && fallbackFee >= 0 ? fallbackFee : 20;
     setSettings({
       ...settings,
       deliveryFeeMode: "DISTANCE",
-      deliveryDistanceSlabs: currentSlabs.length ? formatDeliveryDistanceSlabs(currentSlabs) : defaultDeliveryDistanceSlabsText,
+      deliveryDistanceSlabs: currentSlabs.length ? formatDeliveryDistanceSlabs(currentSlabs) : `1=${starterFee}`,
     });
-    setMessage("Distance wise delivery format is ready. Review the charges, then save delivery rules.");
-  }
-
-  function applyDefaultDeliverySlabs() {
-    setSettings({
-      ...settings,
-      deliveryFeeMode: "DISTANCE",
-      deliveryDistanceSlabs: defaultDeliveryDistanceSlabsText,
-    });
-    setMessage("Default distance slabs added. Click Save delivery rules to publish them.");
+    setMessage("Distance wise delivery is ready. Add each km slab and fee, then save delivery rules.");
   }
 
   function addNextDeliverySlab() {
@@ -243,24 +242,16 @@ export function AdminSettingsClient({
     setMessage(`Added ${nextKm} km delivery slab. Update the fee if needed, then save.`);
   }
 
-  function formatDeliverySlabs() {
-    const currentSlabs = parseDeliveryDistanceSlabs(settings.deliveryDistanceSlabs);
-    if (!currentSlabs.length) {
-      setMessage("Add delivery slabs like 1=20, 2=30 before formatting.");
-      return;
-    }
-
-    setSettings({
-      ...settings,
-      deliveryFeeMode: "DISTANCE",
-      deliveryDistanceSlabs: formatDeliveryDistanceSlabs(currentSlabs),
-    });
-    setMessage("Delivery slabs formatted as km=fee. Click Save delivery rules to publish.");
+  function updateDeliverySlabRow(index: number, field: "upToKm" | "fee", value: string) {
+    const rows = deliverySlabRows.length ? deliverySlabRows : [{ upToKm: "1", fee: "" }];
+    const nextRows = rows.map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row);
+    setSettings({ ...settings, deliveryFeeMode: "DISTANCE", deliveryDistanceSlabs: formatDeliveryDistanceSlabRows(nextRows) });
   }
 
-  function clearDeliverySlabs() {
-    setSettings({ ...settings, deliveryDistanceSlabs: "" });
-    setMessage("Distance slabs cleared. Add slabs or choose another delivery charge type before saving.");
+  function removeDeliverySlabRow(index: number) {
+    const nextRows = deliverySlabRows.filter((_, rowIndex) => rowIndex !== index);
+    setSettings({ ...settings, deliveryFeeMode: "DISTANCE", deliveryDistanceSlabs: formatDeliveryDistanceSlabRows(nextRows) });
+    setMessage(nextRows.length ? "Delivery slab removed. Review the remaining fees, then save." : "All distance slabs removed. Add at least one slab before saving.");
   }
 
   function stopOrderSoundPreview() {
@@ -544,9 +535,9 @@ export function AdminSettingsClient({
         let kitchenAddress = settings.kitchenAddress;
 
         try {
-          const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&lat=${latitude}&lon=${longitude}`);
+          const response = await fetch(`/api/maps/reverse?lat=${encodeURIComponent(latitude)}&lng=${encodeURIComponent(longitude)}`, { cache: "no-store" });
           const data = await response.json();
-          kitchenAddress = data.display_name || kitchenAddress;
+          kitchenAddress = data.result?.formattedAddress || data.result?.area || kitchenAddress;
         } catch {
           kitchenAddress = kitchenAddress || "Detected kitchen location";
         }
@@ -579,18 +570,19 @@ export function AdminSettingsClient({
     setGeocodingKitchen(true);
     setMessage("Finding kitchen coordinates from address...");
     try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(address)}`);
+      const response = await fetch(`/api/maps/geocode?address=${encodeURIComponent(address)}`, { cache: "no-store" });
       const data = await response.json();
-      const first = Array.isArray(data) ? data[0] : null;
-      if (!first?.lat || !first?.lon) {
+      const result = data.result;
+      if (!result?.latitude || !result?.longitude) {
         setMessage("Could not find coordinates for this address. Use device location or enter latitude and longitude manually.");
         return;
       }
 
       setSettings((current) => ({
         ...current,
-        kitchenLatitude: Number(first.lat).toFixed(6),
-        kitchenLongitude: Number(first.lon).toFixed(6),
+        kitchenLatitude: result.latitude,
+        kitchenLongitude: result.longitude,
+        kitchenAddress: result.formattedAddress || current.kitchenAddress,
         locationRestrictionEnabled: true,
       }));
       setMessage("Kitchen coordinates found. Click Save settings to publish the delivery radius.");
@@ -764,14 +756,13 @@ export function AdminSettingsClient({
               onChange={(value) => setSettings({ ...settings, deliveryFee: value })}
               helper="Used for flat delivery, and as fallback if distance cannot be calculated."
             />
-            <div className="grid gap-2 text-sm font-bold text-charcoal">
-              <p>Delivery charge type</p>
-              <div className="grid gap-2 sm:grid-cols-3">
-                {[
-                  { mode: "FLAT", label: "Flat fee" },
-                  { mode: "PERCENT", label: "Percentage" },
-                  { mode: "DISTANCE", label: "Distance slabs" },
-                ].map((option) => {
+            <div className="grid gap-3 text-sm font-bold text-charcoal">
+              <div>
+                <p>Delivery charge type</p>
+                <p className="mt-1 text-xs font-bold leading-5 text-muted">Choose how customers are charged for delivery.</p>
+              </div>
+              <div className="grid gap-2 md:grid-cols-3">
+                {deliveryFeeModeOptions.map((option) => {
                   const active = settings.deliveryFeeMode === option.mode;
 
                   return (
@@ -786,13 +777,14 @@ export function AdminSettingsClient({
                         setSettings({ ...settings, deliveryFeeMode: option.mode as "FLAT" | "PERCENT" | "DISTANCE" });
                       }}
                       aria-pressed={active}
-                      className={`min-h-11 rounded-lg px-3 text-sm font-black transition ${
+                      className={`grid min-h-20 content-center gap-1 rounded-lg px-4 py-3 text-left transition ${
                         active
                           ? "bg-maroon text-white"
-                          : "border border-border bg-cream text-maroon hover:border-maroon/40"
+                          : "border border-border bg-cream text-charcoal hover:border-maroon/40 hover:bg-white"
                       }`}
                     >
-                      {option.label}
+                      <span className={`text-sm font-black ${active ? "text-white" : "text-maroon"}`}>{option.label}</span>
+                      <span className={`text-xs font-bold leading-5 ${active ? "text-white/85" : "text-muted"}`}>{option.helper}</span>
                     </button>
                   );
                 })}
@@ -807,50 +799,77 @@ export function AdminSettingsClient({
               />
             ) : null}
             {settings.deliveryFeeMode === "DISTANCE" ? (
-              <div className="grid gap-2 text-sm font-bold text-charcoal">
-                <span className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <span>Distance wise delivery charges</span>
-                  <span className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={applyDefaultDeliverySlabs}
-                      className="min-h-9 rounded-lg border border-maroon/25 bg-white px-3 text-xs font-black text-maroon"
-                    >
-                      Use sample
-                    </button>
-                    <button
-                      type="button"
-                      onClick={addNextDeliverySlab}
-                      className="min-h-9 rounded-lg border border-maroon/25 bg-cream px-3 text-xs font-black text-maroon"
-                    >
-                      Add slab
-                    </button>
-                    <button
-                      type="button"
-                      onClick={formatDeliverySlabs}
-                      className="min-h-9 rounded-lg border border-maroon/25 bg-white px-3 text-xs font-black text-maroon"
-                    >
-                      Format
-                    </button>
-                    <button
-                      type="button"
-                      onClick={clearDeliverySlabs}
-                      className="min-h-9 rounded-lg border border-border bg-white px-3 text-xs font-black text-muted"
-                    >
-                      Clear
-                    </button>
-                  </span>
-                </span>
-                <textarea
-                  aria-label="Distance wise delivery charges"
-                  value={settings.deliveryDistanceSlabs}
-                  onChange={(event) => setSettings({ ...settings, deliveryDistanceSlabs: event.target.value })}
-                  className="min-h-32 rounded-lg border border-border bg-cream p-3 font-mono text-xs leading-5"
-                  placeholder={"1=20\n2=30\n3=40\n4=50\n5=60"}
-                />
-                <span className="text-xs font-bold leading-5 text-muted">
-                  One slab per line: up to km = fee. Example 3=40 means orders up to 3 km charge Rs 40.
-                </span>
+              <div className="grid gap-4 rounded-xl border border-border bg-white p-4 text-sm font-bold text-charcoal">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-base font-black text-charcoal">Distance wise delivery charges</p>
+                    <p className="mt-1 max-w-xl text-xs font-bold leading-5 text-muted">
+                      Set the delivery fee for each distance range. Customers are charged from the first slab that covers their distance.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addNextDeliverySlab}
+                    className="min-h-10 rounded-lg bg-maroon px-4 text-xs font-black text-white sm:min-w-28"
+                  >
+                    Add slab
+                  </button>
+                </div>
+
+                {deliverySlabRows.length ? (
+                  <div className="grid gap-3">
+                    <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_44px] gap-3 px-1 text-xs font-black uppercase text-muted sm:grid">
+                      <span>Up to distance</span>
+                      <span>Delivery fee</span>
+                      <span />
+                    </div>
+                    {deliverySlabRows.map((slab, index) => (
+                      <div key={index} className="grid gap-2 rounded-lg border border-border bg-cream p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_44px] sm:items-end">
+                        <label className="grid gap-2">
+                          <span className="text-xs font-black text-muted">Up to km</span>
+                          <input
+                            type="number"
+                            min="0.1"
+                            step="0.1"
+                            value={slab.upToKm}
+                            onChange={(event) => updateDeliverySlabRow(index, "upToKm", event.target.value)}
+                            className="h-11 rounded-lg border border-border bg-white px-3 text-sm font-black text-charcoal"
+                            aria-label={`Delivery slab ${index + 1} up to km`}
+                          />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-xs font-black text-muted">Fee Rs</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={slab.fee}
+                            onChange={(event) => updateDeliverySlabRow(index, "fee", event.target.value)}
+                            className="h-11 rounded-lg border border-border bg-white px-3 text-sm font-black text-charcoal"
+                            aria-label={`Delivery slab ${index + 1} fee`}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => removeDeliverySlabRow(index)}
+                          className="grid h-11 w-full place-items-center rounded-lg border border-border bg-white text-red sm:w-11"
+                          aria-label={`Remove delivery slab ${index + 1}`}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-maroon/25 bg-cream px-4 py-5 text-sm font-bold leading-6 text-muted">
+                    No distance charges added yet. Add a slab to start delivery pricing.
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-2 text-xs font-bold leading-5 text-muted sm:flex-row sm:items-center sm:justify-between">
+                  <span>Example: up to 3 km with fee Rs 40 means a 2.8 km order pays Rs 40.</span>
+                  <span className="w-fit rounded-full bg-cream px-3 py-1 font-black text-maroon">{deliverySlabCount} valid slabs</span>
+                </div>
               </div>
             ) : null}
             <Input
@@ -1115,6 +1134,21 @@ function formatPercentInput(rate: number) {
 
 function formatDeliveryDistanceSlabs(slabs: BusinessSettings["deliveryDistanceSlabs"]) {
   return slabs.map((slab) => `${slab.upToKm}=${slab.fee}`).join("\n");
+}
+
+function formatDeliveryDistanceSlabRows(rows: { upToKm: string; fee: string }[]) {
+  return rows.map((row) => `${row.upToKm}=${row.fee}`).join("\n");
+}
+
+function parseDeliveryDistanceSlabRows(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((line) => {
+      const [upToKm = "", fee = ""] = line.split(/[=,:\-]/).map((part) => part.trim());
+      return { upToKm, fee };
+    })
+    .filter((item) => item.upToKm || item.fee)
+    .slice(0, 20);
 }
 
 function parseDeliveryDistanceSlabs(value: string) {

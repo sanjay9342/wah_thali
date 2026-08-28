@@ -24,9 +24,19 @@ const couponSchema = z.object({
   startsAt: istDateSchema("start").optional(),
   endsAt: istDateSchema("end").optional(),
   active: z.boolean().optional(),
-  audience: z.enum(["ALL", "VIP", "POINTS", "TAGS"]).optional(),
+  audience: z.enum(["ALL", "NEW", "EXISTING", "VIP", "POINTS", "TAGS"]).optional(),
   minPoints: z.coerce.number().int().nonnegative().optional(),
+  minCustomerOrders: z.coerce.number().int().nonnegative().optional(),
+  redemptionLimit: z.coerce.number().int().positive().nullable().optional(),
+  customerUsageLimit: z.coerce.number().int().nonnegative().optional(),
+  productIds: z.array(z.string().min(1)).optional(),
+  categoryIds: z.array(z.string().min(1)).optional(),
+  channels: z.array(z.enum(["WEBSITE"])).optional(),
+  fulfillmentMethods: z.array(z.enum(["DELIVERY", "PICKUP"])).optional(),
   tagNames: z.array(z.string().min(1)).optional(),
+}).refine((coupon) => coupon.type !== "PERCENT" || coupon.value === undefined || coupon.value <= 100, {
+  path: ["value"],
+  message: "Percentage coupons cannot be more than 100%.",
 });
 
 async function patchHandler(request: Request, { params }: { params: Promise<{ code: string }> }) {
@@ -42,13 +52,23 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ co
     return NextResponse.json({ error: "Invalid coupon update", issues: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { audience, minPoints, tagNames, ...couponData } = parsed.data;
+  const { minPoints, tagNames, ...couponData } = parsed.data;
+  const normalizedCouponData = {
+    ...couponData,
+    ...(couponData.audience === "POINTS" ? { minCustomerOrders: Math.max(1, Number(minPoints ?? couponData.minCustomerOrders ?? 1)) } : {}),
+    ...(couponData.audience === "EXISTING" ? { minCustomerOrders: Math.max(1, Number(couponData.minCustomerOrders ?? 1)) } : {}),
+    ...(couponData.audience && !["POINTS", "EXISTING"].includes(couponData.audience) ? { minCustomerOrders: 0 } : {}),
+    ...(couponData.productIds ? { productIds: normalizeIds(couponData.productIds) } : {}),
+    ...(couponData.categoryIds ? { categoryIds: normalizeIds(couponData.categoryIds) } : {}),
+    ...(couponData.channels ? { channels: couponData.channels.length ? couponData.channels : ["WEBSITE"] } : {}),
+    ...(couponData.fulfillmentMethods ? { fulfillmentMethods: couponData.fulfillmentMethods.length ? couponData.fulfillmentMethods : ["DELIVERY", "PICKUP"] } : {}),
+  };
   const coupon = await prisma.coupon.update({
     where: { code: code.toUpperCase() },
-    data: couponData,
+    data: normalizedCouponData,
   });
-  if (audience !== undefined || minPoints !== undefined || tagNames !== undefined) {
-    await saveCouponRule(coupon.code, { audience: audience ?? "ALL", minPoints: minPoints ?? 0, tagNames: tagNames ?? [] });
+  if (couponData.audience !== undefined || minPoints !== undefined || tagNames !== undefined) {
+    await saveCouponRule(coupon.code, { audience: coupon.audience as never, minPoints: coupon.minCustomerOrders, minCustomerOrders: coupon.minCustomerOrders, tagNames: tagNames ?? [] });
   }
 
   await logActivity({
@@ -76,3 +96,7 @@ async function deleteHandler(request: Request, { params }: { params: Promise<{ c
 
 export const PATCH = withApiErrorHandling(patchHandler, "PATCH /api/coupons/[code]");
 export const DELETE = withApiErrorHandling(deleteHandler, "DELETE /api/coupons/[code]");
+
+function normalizeIds(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).slice(0, 80);
+}

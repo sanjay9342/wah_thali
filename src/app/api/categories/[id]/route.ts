@@ -9,6 +9,7 @@ import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
 const categorySchema = z.object({
   name: z.string().min(1).optional(),
+  parentId: nullableParentId(),
   image: z.string().optional(),
   offer: z.string().optional(),
   visible: z.boolean().optional(),
@@ -30,6 +31,9 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ id
 
   const { image, offer, ...categoryData } = parsed.data;
   const previous = await prisma.category.findUniqueOrThrow({ where: { id } });
+  if (categoryData.parentId === id) {
+    return NextResponse.json({ error: "A category cannot be its own parent." }, { status: 400 });
+  }
   const category = await prisma.category.update({
     where: { id },
     data: {
@@ -91,6 +95,13 @@ function getTextMap(value: unknown): Record<string, string> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, string>) : {};
 }
 
+function nullableParentId() {
+  return z.preprocess(
+    (value) => value === "" ? null : value,
+    z.string().min(1).nullable().optional(),
+  );
+}
+
 async function deleteHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
@@ -99,9 +110,12 @@ async function deleteHandler(request: Request, { params }: { params: Promise<{ i
   if (!access.ok) return access.response;
 
   const { id } = await params;
-  const products = await prisma.product.count({ where: { categoryId: id } });
+  const [products, children] = await Promise.all([
+    prisma.product.count({ where: { categoryId: id } }),
+    prisma.category.count({ where: { parentId: id } }),
+  ]);
 
-  if (products > 0) {
+  if (products > 0 || children > 0) {
     const category = await prisma.category.update({ where: { id }, data: { visible: false } });
     revalidateTag("storefront", { expire: 0 });
     return NextResponse.json({ deleted: false, archived: true, category });
