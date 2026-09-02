@@ -721,15 +721,15 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
   }
 
   return (
-    <section className="mx-auto min-h-screen w-full max-w-[430px] bg-white text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-5 sm:overflow-hidden sm:rounded-[28px] lg:max-w-[1248px]">
+    <section className="wt-soft-type mx-auto min-h-screen w-full max-w-[430px] bg-white text-charcoal shadow-[0_18px_60px_rgba(34,31,32,0.08)] sm:my-5 sm:overflow-hidden sm:rounded-[28px] lg:max-w-[1248px]">
       {mode === "select" ? (
-        <div className="px-5 pb-28 pt-7 lg:grid lg:min-h-[560px] lg:grid-cols-[390px_minmax(0,1fr)] lg:gap-7 lg:px-7 lg:py-7">
+        <div className="px-5 pb-24 pt-5 lg:grid lg:min-h-[560px] lg:grid-cols-[390px_minmax(0,1fr)] lg:gap-7 lg:px-7 lg:py-7">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
-              <button type="button" onClick={goBack} className="grid h-9 w-9 place-items-center rounded-full text-charcoal" aria-label="Back">
-                <ArrowLeft size={27} strokeWidth={3} />
+              <button type="button" onClick={goBack} className="grid h-8 w-8 place-items-center rounded-full text-charcoal" aria-label="Back">
+                <ArrowLeft size={23} strokeWidth={2.7} />
               </button>
-              <h1 className="text-[21px] font-black leading-none text-charcoal lg:text-[19px]">Select a location</h1>
+              <h1 className="text-[17px] font-bold leading-none text-charcoal lg:text-[19px]">Select a location</h1>
             </div>
 
             <SearchBox
@@ -739,20 +739,20 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
             />
             <SearchResults searching={searching} results={searchResults} onChoose={chooseSearchResult} />
 
-            <div className="mt-8 overflow-hidden rounded-[22px] bg-white shadow-sm ring-1 ring-black/5 lg:mt-6 lg:rounded-[18px]">
+            <div className="mt-6 overflow-hidden rounded-[18px] bg-white shadow-sm ring-1 ring-black/5 lg:mt-6 lg:rounded-[18px]">
               <button
                 type="button"
                 onClick={() => void detectLocation(true)}
-                className="grid min-h-24 w-full grid-cols-[46px_1fr_auto] items-center gap-3 px-5 py-5 text-left lg:min-h-[74px] lg:grid-cols-[36px_1fr_auto] lg:px-4 lg:py-4"
+                className="grid min-h-[72px] w-full grid-cols-[34px_1fr_22px] items-center gap-3 px-4 py-4 text-left lg:min-h-[74px] lg:grid-cols-[36px_1fr_auto] lg:px-4 lg:py-4"
               >
-                <LocateFixed className={`h-[30px] w-[30px] text-maroon lg:h-6 lg:w-6 ${locating ? "animate-spin" : ""}`} strokeWidth={2.7} />
+                <LocateFixed className={`h-[22px] w-[22px] text-maroon lg:h-6 lg:w-6 ${locating ? "animate-spin" : ""}`} strokeWidth={2.6} />
                 <span className="min-w-0">
-                  <span className="block text-[16px] font-black text-maroon lg:text-[14px]">{locating ? "Detecting location" : "Use current location"}</span>
-                  <span className="mt-1 block truncate text-[14px] font-black text-muted lg:text-[12px]">
+                  <span className="block text-[13px] font-bold text-maroon lg:text-[14px]">{locating ? "Detecting location" : "Use current location"}</span>
+                  <span className="mt-1 block truncate text-[11px] font-medium text-muted lg:text-[12px]">
                     {currentArea || "Detect with GPS"}
                   </span>
                 </span>
-                <ChevronRight className="h-[25px] w-[25px] text-muted lg:h-5 lg:w-5" />
+                <ChevronRight className="h-5 w-5 text-muted" />
               </button>
 
               <button
@@ -761,18 +761,18 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
                   setEditingAddressId(null);
                   setMode("add");
                 }}
-                className="grid h-[86px] w-full grid-cols-[46px_1fr_auto] items-center gap-3 border-t border-border px-5 text-left lg:h-[68px] lg:grid-cols-[36px_1fr_auto] lg:px-4"
+                className="grid h-[64px] w-full grid-cols-[34px_1fr_22px] items-center gap-3 border-t border-border px-4 text-left lg:h-[68px] lg:grid-cols-[36px_1fr_auto] lg:px-4"
               >
-                <Plus className="h-[30px] w-[30px] text-maroon lg:h-6 lg:w-6" strokeWidth={3} />
-                <span className="text-[16px] font-black text-maroon lg:text-[14px]">Add Address</span>
-                <ChevronRight className="h-[25px] w-[25px] text-muted lg:h-5 lg:w-5" />
+                <Plus className="h-[22px] w-[22px] text-maroon lg:h-6 lg:w-6" strokeWidth={2.8} />
+                <span className="text-[13px] font-bold text-maroon lg:text-[14px]">Add Address</span>
+                <ChevronRight className="h-5 w-5 text-muted" />
               </button>
             </div>
           </div>
 
-          <aside className="mt-8 min-w-0 lg:mt-0">
-            <h2 className="text-[15px] font-black uppercase tracking-[0.18em] text-muted lg:text-[13px] lg:tracking-[0.16em]">Recent Locations</h2>
-            <div className="mt-5 grid gap-4 lg:mt-4 lg:grid-cols-2 lg:gap-3">
+          <aside className="mt-7 min-w-0 lg:mt-0">
+            <h2 className="text-[12px] font-bold uppercase tracking-[0.18em] text-muted lg:text-[13px] lg:tracking-[0.16em]">Recent Locations</h2>
+            <div className="mt-4 grid gap-3 lg:mt-4 lg:grid-cols-2 lg:gap-3">
               {recentAddresses.length ? (
                 recentAddresses.map((item) => (
                   <SavedAddressCard
@@ -788,25 +788,25 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
               ) : (
                 <div className="rounded-[22px] bg-white p-6 text-center shadow-sm ring-1 ring-black/5 lg:col-span-2 lg:p-5">
                   <Clock3 className="mx-auto text-muted" size={32} />
-                  <p className="mt-3 text-[14px] font-black text-charcoal lg:text-[13px]">No recent locations</p>
-                  <p className="mt-1 text-[13px] font-bold leading-5 text-muted lg:text-[12px]">Use current location to save it automatically here.</p>
+                  <p className="mt-3 text-[13px] font-bold text-charcoal lg:text-[13px]">No recent locations</p>
+                  <p className="mt-1 text-[12px] font-medium leading-5 text-muted lg:text-[12px]">Use current location to save it automatically here.</p>
                 </div>
               )}
             </div>
             <div className="mt-5 hidden rounded-[18px] bg-white p-5 shadow-sm ring-1 ring-black/5 lg:block">
-              <p className="text-[14px] font-black text-maroon">Fast delivery starts with the right location</p>
-              <p className="mt-2 text-[12px] font-bold leading-5 text-muted">Search, detect GPS, or add complete delivery details. Logged-in customer details sync automatically.</p>
+              <p className="text-[14px] font-bold text-maroon">Fast delivery starts with the right location</p>
+              <p className="mt-2 text-[12px] font-medium leading-5 text-muted">Search, detect GPS, or add complete delivery details. Logged-in customer details sync automatically.</p>
             </div>
-            <p className="mt-7 text-center text-[15px] font-bold text-muted lg:text-[13px]">
-              powered by <span className="font-black text-maroon">Google Maps</span>
+            <p className="mt-6 text-center text-[12px] font-medium text-muted lg:text-[13px]">
+              powered by <span className="font-bold text-maroon">Google Maps</span>
             </p>
           </aside>
         </div>
       ) : (
         <div className="min-h-screen bg-white lg:grid lg:h-[calc(100vh-40px)] lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_400px] lg:grid-rows-[82px_minmax(0,1fr)] lg:overflow-hidden">
-          <div className="relative z-20 flex items-center gap-3 bg-white px-5 pb-5 pt-7 shadow-[0_5px_18px_rgba(34,31,32,0.08)] lg:col-span-2 lg:px-6 lg:py-4">
-            <button type="button" onClick={goBack} className="grid h-10 w-10 shrink-0 place-items-center text-charcoal lg:h-9 lg:w-9" aria-label="Back">
-              <ArrowLeft size={27} className="lg:h-6 lg:w-6" strokeWidth={3} />
+          <div className="relative z-20 flex items-center gap-2 bg-white px-4 pb-4 pt-5 shadow-[0_5px_18px_rgba(34,31,32,0.08)] lg:col-span-2 lg:px-6 lg:py-4">
+            <button type="button" onClick={goBack} className="grid h-9 w-9 shrink-0 place-items-center text-charcoal" aria-label="Back">
+              <ArrowLeft size={23} className="lg:h-6 lg:w-6" strokeWidth={2.7} />
             </button>
             <div className="min-w-0 flex-1">
               <SearchBox
@@ -828,77 +828,77 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
             onPinDrop={(position) => void updateLocationFromMovedPin(position)}
           />
 
-          <div className="relative -mt-9 rounded-t-[28px] bg-white px-5 pb-28 pt-7 shadow-[0_-8px_24px_rgba(34,31,32,0.08)] lg:mt-0 lg:min-h-0 lg:overflow-y-auto lg:rounded-none lg:px-5 lg:pb-5 lg:pt-5 lg:shadow-none">
-            <p className="text-[13px] font-black text-muted lg:text-xs">Delivery details</p>
+          <div className="relative -mt-8 rounded-t-[24px] bg-white px-5 pb-24 pt-5 shadow-[0_-8px_24px_rgba(34,31,32,0.08)] lg:mt-0 lg:min-h-0 lg:overflow-y-auto lg:rounded-none lg:px-5 lg:pb-5 lg:pt-5 lg:shadow-none">
+            <p className="text-[12px] font-bold text-muted lg:text-xs">Delivery details</p>
             <button
               type="button"
               onClick={() => void detectLocation(true)}
-              className="mt-4 grid h-[78px] w-full grid-cols-[50px_1fr_auto] items-center gap-3 rounded-2xl border border-border bg-white px-4 text-left lg:mt-3 lg:h-16 lg:grid-cols-[42px_1fr_auto] lg:rounded-xl lg:px-3"
+              className="mt-3 grid h-[64px] w-full grid-cols-[42px_1fr_20px] items-center gap-3 rounded-xl border border-border bg-white px-3 text-left lg:mt-3 lg:h-16 lg:grid-cols-[42px_1fr_auto] lg:rounded-xl lg:px-3"
             >
-              <span className="grid h-11 w-11 place-items-center rounded-full bg-maroon text-white lg:h-9 lg:w-9">
-                <MapPin size={25} className="lg:h-5 lg:w-5" fill="currentColor" />
+              <span className="grid h-10 w-10 place-items-center rounded-full bg-maroon text-white lg:h-9 lg:w-9">
+                <MapPin size={21} className="lg:h-5 lg:w-5" fill="currentColor" />
               </span>
               <span className="min-w-0">
-                <span className="block truncate text-[16px] font-black text-charcoal lg:text-sm">{currentArea || "Use current location"}</span>
-                {address.latitude ? <span className="mt-0.5 block truncate text-[12px] font-bold text-muted lg:text-[11px]">{address.latitude}, {address.longitude}</span> : null}
+                <span className="block truncate text-[13px] font-bold text-charcoal lg:text-sm">{currentArea || "Use current location"}</span>
+                {address.latitude ? <span className="mt-0.5 block truncate text-[11px] font-medium text-muted lg:text-[11px]">{address.latitude}, {address.longitude}</span> : null}
               </span>
-              <ChevronRight size={25} className="text-muted lg:h-5 lg:w-5" />
+              <ChevronRight size={20} className="text-muted" />
             </button>
 
-            <label className="mt-8 block lg:mt-5">
+            <label className="mt-5 block lg:mt-5">
               <textarea
                 value={address.details}
                 onChange={(event) => setAddress({ ...address, details: event.target.value })}
-                className="min-h-24 w-full resize-none rounded-2xl border border-border bg-white px-5 py-6 text-[14px] font-bold text-charcoal outline-none placeholder:text-muted/70 focus:border-maroon lg:min-h-20 lg:rounded-xl lg:px-4 lg:py-4 lg:text-[13px]"
+                className="min-h-[84px] w-full resize-none rounded-xl border border-border bg-white px-4 py-4 text-[13px] font-medium text-charcoal outline-none placeholder:text-muted/70 focus:border-maroon lg:min-h-20 lg:rounded-xl lg:px-4 lg:py-4 lg:text-[13px]"
                 placeholder="Address details*"
               />
-              <span className="mt-2 block text-[12px] font-black text-muted lg:text-[11px]">E.g. Floor, House no.</span>
+              <span className="mt-2 block text-[11px] font-semibold text-muted lg:text-[11px]">E.g. Floor, House no.</span>
             </label>
 
-            <label className="mt-5 block lg:mt-4">
+            <label className="mt-4 block lg:mt-4">
               <input
                 value={address.pinCode}
                 onChange={(event) => setAddress({ ...address, pinCode: event.target.value.replace(/\D/g, "").slice(0, 6) })}
                 inputMode="numeric"
-                className="h-14 w-full rounded-2xl border border-border bg-white px-5 text-[14px] font-black text-charcoal outline-none placeholder:text-muted/70 focus:border-maroon lg:h-12 lg:rounded-xl lg:px-4 lg:text-[13px]"
+                className="h-12 w-full rounded-xl border border-border bg-white px-4 text-[13px] font-semibold text-charcoal outline-none placeholder:text-muted/70 focus:border-maroon lg:h-12 lg:rounded-xl lg:px-4 lg:text-[13px]"
                 placeholder="PIN code*"
               />
             </label>
 
-            <p className="mt-6 text-[13px] font-black text-muted lg:mt-5 lg:text-xs">Receiver details for this address <span className="font-bold">(optional)</span></p>
-            <div className="mt-3 grid gap-3 lg:gap-2">
-              <label className="grid h-14 grid-cols-[34px_1fr] items-center gap-3 rounded-2xl border border-border bg-white px-4 lg:h-12 lg:rounded-xl">
-                <Phone size={21} className="text-charcoal lg:h-5 lg:w-5" />
+            <p className="mt-5 text-[12px] font-bold text-muted lg:mt-5 lg:text-xs">Receiver details for this address <span className="font-medium">(optional)</span></p>
+            <div className="mt-3 grid gap-2 lg:gap-2">
+              <label className="grid h-12 grid-cols-[30px_1fr] items-center gap-2 rounded-xl border border-border bg-white px-4 lg:h-12 lg:rounded-xl">
+                <Phone size={18} className="text-charcoal lg:h-5 lg:w-5" />
                 <input
                   value={address.receiver}
                   onChange={(event) => setAddress({ ...address, receiver: event.target.value })}
-                  className="min-w-0 bg-transparent text-[13px] font-black text-charcoal outline-none placeholder:text-muted/70 lg:text-xs"
+                  className="min-w-0 bg-transparent text-[12px] font-semibold text-charcoal outline-none placeholder:text-muted/70 lg:text-xs"
                   placeholder="Receiver name"
                 />
               </label>
-              <label className="grid h-14 grid-cols-[34px_1fr] items-center gap-3 rounded-2xl border border-border bg-white px-4 lg:h-12 lg:rounded-xl">
-                <Phone size={21} className="text-charcoal lg:h-5 lg:w-5" />
+              <label className="grid h-12 grid-cols-[30px_1fr] items-center gap-2 rounded-xl border border-border bg-white px-4 lg:h-12 lg:rounded-xl">
+                <Phone size={18} className="text-charcoal lg:h-5 lg:w-5" />
                 <input
                   value={address.phone}
                   onChange={(event) => setAddress({ ...address, phone: event.target.value.replace(/\D/g, "").slice(0, 10) })}
                   inputMode="tel"
-                  className="min-w-0 bg-transparent text-[13px] font-black text-charcoal outline-none placeholder:text-muted/70 lg:text-xs"
+                  className="min-w-0 bg-transparent text-[12px] font-semibold text-charcoal outline-none placeholder:text-muted/70 lg:text-xs"
                   placeholder="Receiver mobile number"
                 />
               </label>
             </div>
             {customerSession ? (
-              <p className="mt-2 text-[12px] font-bold text-muted">Using logged-in customer: {customerSession.name}</p>
+              <p className="mt-2 text-[11px] font-medium text-muted">Using logged-in customer: {customerSession.name}</p>
             ) : null}
 
-            <p className="mt-7 text-[13px] font-black text-muted lg:mt-5 lg:text-xs">Save address as</p>
-            <div className="mt-4 grid grid-cols-3 gap-3 lg:mt-3 lg:gap-2">
+            <p className="mt-5 text-[12px] font-bold text-muted lg:mt-5 lg:text-xs">Save address as</p>
+            <div className="mt-3 grid grid-cols-3 gap-2 lg:mt-3 lg:gap-2">
               {(["Home", "Work", "Other"] as const).map((tag) => (
                 <button
                   key={tag}
                   type="button"
                   onClick={() => setAddress({ ...address, tag, customLabel: tag === "Other" ? address.customLabel : "" })}
-                  className={`inline-flex h-12 min-w-0 items-center justify-center gap-2 rounded-xl border px-2 text-[13px] font-black lg:h-10 lg:text-xs ${
+                  className={`inline-flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2 text-[12px] font-semibold lg:h-10 lg:text-xs ${
                     address.tag === tag ? "border-maroon bg-[#fff4f5] text-maroon" : "border-border bg-white text-charcoal"
                   }`}
                 >
@@ -912,13 +912,13 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
               <input
                 value={address.customLabel}
                 onChange={(event) => setAddress({ ...address, customLabel: event.target.value })}
-                className="mt-4 h-12 w-full rounded-xl border border-border bg-white px-4 text-[13px] font-bold text-charcoal outline-none placeholder:text-muted focus:border-maroon lg:h-10 lg:text-xs"
+                className="mt-3 h-11 w-full rounded-xl border border-border bg-white px-4 text-[12px] font-semibold text-charcoal outline-none placeholder:text-muted focus:border-maroon lg:h-10 lg:text-xs"
                 placeholder="Name this address"
               />
             ) : null}
 
             <div className="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-[430px] border-t border-border bg-white px-5 pb-[calc(env(safe-area-inset-bottom)+14px)] pt-3 lg:static lg:mt-5 lg:max-w-none lg:border-t-0 lg:px-0 lg:pb-0 lg:pt-0">
-              <button type="button" onClick={saveAddress} className="h-16 w-full rounded-xl bg-maroon text-[18px] font-black text-white shadow-[0_14px_28px_rgba(141,0,33,0.2)] lg:h-12 lg:text-base">
+              <button type="button" onClick={saveAddress} className="h-12 w-full rounded-xl bg-maroon text-[14px] font-bold text-white shadow-[0_14px_28px_rgba(141,0,33,0.2)] lg:h-12 lg:text-base">
                 {editingAddressId ? "Update address" : "Save address"}
               </button>
             </div>
@@ -928,7 +928,7 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
 
       {message ? (
         <div className="fixed inset-x-0 bottom-24 z-40 mx-auto w-full max-w-[430px] px-5">
-          <p className="rounded-2xl bg-charcoal px-4 py-3 text-center text-xs font-black leading-5 text-white shadow-xl">{message}</p>
+          <p className="rounded-2xl bg-charcoal px-4 py-3 text-center text-xs font-semibold leading-5 text-white shadow-xl">{message}</p>
         </div>
       ) : null}
     </section>
@@ -947,15 +947,15 @@ function SearchBox({
   compact?: boolean;
 }) {
   return (
-    <label className={`${compact ? "mt-0 h-[58px] lg:h-12" : "mt-7 h-20 lg:mt-6 lg:h-16"} flex items-center gap-3 rounded-2xl bg-white px-4 shadow-sm ring-1 ring-black/10 lg:rounded-[18px]`}>
-      <Search className={`${compact ? "h-[27px] w-[27px] lg:h-6 lg:w-6" : "h-[33px] w-[33px] lg:h-7 lg:w-7"} shrink-0 text-maroon`} strokeWidth={3.2} />
+    <label className={`${compact ? "mt-0 h-12 lg:h-12" : "mt-5 h-[54px] lg:mt-6 lg:h-16"} flex items-center gap-2.5 rounded-[14px] bg-white px-4 shadow-sm ring-1 ring-black/10 lg:rounded-[18px]`}>
+      <Search className={`${compact ? "h-5 w-5 lg:h-6 lg:w-6" : "h-[22px] w-[22px] lg:h-7 lg:w-7"} shrink-0 text-maroon`} strokeWidth={3} />
       <input
         value={query}
         onChange={(event) => {
           setQuery(event.target.value);
           onTyped(event.target.value);
         }}
-        className="min-w-0 flex-1 bg-transparent text-[14px] font-black text-charcoal outline-none placeholder:text-muted/80 lg:text-[13px]"
+        className="min-w-0 flex-1 bg-transparent text-[12px] font-semibold text-charcoal outline-none placeholder:text-muted/80 lg:text-[13px]"
         placeholder="Search for area, street name..."
       />
     </label>
@@ -977,18 +977,18 @@ function SearchResults({
 
   return (
     <div className={`${overlay ? "absolute left-5 right-5 top-[92px] z-30" : "mt-3"} overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-black/10`}>
-      {searching ? <p className="px-4 py-3 text-sm font-black text-muted">Searching locations...</p> : null}
+      {searching ? <p className="px-4 py-3 text-[12px] font-semibold text-muted">Searching locations...</p> : null}
       {results.map((result) => (
         <button
           key={result.id}
           type="button"
           onClick={() => onChoose(result)}
-          className="grid w-full grid-cols-[34px_1fr] gap-3 border-t border-border px-4 py-3 text-left first:border-t-0"
+          className="grid w-full grid-cols-[28px_1fr] gap-3 border-t border-border px-4 py-3 text-left first:border-t-0"
         >
-          <MapPin size={22} className="mt-0.5 text-maroon" />
+          <MapPin size={19} className="mt-0.5 text-maroon" />
           <span className="min-w-0">
-            <span className="block truncate text-[13px] font-black text-charcoal">{result.title}</span>
-            <span className="mt-0.5 block line-clamp-2 text-[11px] font-bold leading-4 text-muted">{result.subtitle}</span>
+            <span className="block truncate text-[12px] font-semibold text-charcoal">{result.title}</span>
+            <span className="mt-0.5 block line-clamp-2 text-[11px] font-medium leading-4 text-muted">{result.subtitle}</span>
           </span>
         </button>
       ))}
@@ -1014,17 +1014,17 @@ function SavedAddressCard({
   const Icon = item.tag === "Home" ? Home : item.tag === "Work" ? BriefcaseBusiness : MapPin;
 
   return (
-    <div className="relative rounded-[22px] bg-white shadow-sm ring-1 ring-black/5 lg:rounded-[18px]">
-      <button type="button" onClick={onChoose} className="grid w-full grid-cols-[48px_1fr_32px] gap-4 p-5 pr-3 text-left lg:grid-cols-[38px_1fr_30px] lg:gap-3 lg:p-4 lg:pr-3">
+    <div className="relative rounded-[18px] bg-white shadow-sm ring-1 ring-black/5 lg:rounded-[18px]">
+      <button type="button" onClick={onChoose} className="grid w-full grid-cols-[40px_1fr_30px] gap-3 p-4 pr-3 text-left lg:grid-cols-[38px_1fr_30px] lg:gap-3 lg:p-4 lg:pr-3">
         <span className="grid justify-items-center">
-          <Icon className="h-[31px] w-[31px] text-muted lg:h-7 lg:w-7" />
-          <span className="mt-1 text-[11px] font-black text-muted lg:text-[10px]">{item.distance}</span>
+          <Icon className="h-6 w-6 text-muted lg:h-7 lg:w-7" />
+          <span className="mt-1 text-[9px] font-medium text-muted lg:text-[10px]">{item.distance}</span>
         </span>
         <span className="min-w-0">
-          <span className="line-clamp-3 text-[16px] font-black leading-snug text-charcoal lg:text-[13px]">{item.area}</span>
-          <span className="mt-1 line-clamp-2 text-[14px] font-bold leading-snug text-muted lg:text-[12px]">{item.details === item.area ? "India" : item.details}</span>
+          <span className="line-clamp-2 text-[13px] font-bold leading-snug text-charcoal lg:text-[13px]">{item.area}</span>
+          <span className="mt-1 line-clamp-2 text-[11px] font-medium leading-snug text-muted lg:text-[12px]">{item.details === item.area ? "India" : item.details}</span>
           {item.receiver || item.phone ? (
-            <span className="mt-2 block truncate text-[11px] font-black text-muted lg:text-[10px]">
+            <span className="mt-1.5 block truncate text-[10px] font-medium text-muted lg:text-[10px]">
               {[item.receiver, item.phone].filter(Boolean).join(", ")}
             </span>
           ) : null}
@@ -1035,19 +1035,19 @@ function SavedAddressCard({
       <button
         type="button"
         onClick={onToggleActions}
-        className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-[#fff4f5] text-maroon ring-1 ring-maroon/10"
+        className="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded-full bg-[#fff4f5] text-maroon ring-1 ring-maroon/10"
         aria-label={`Actions for ${item.label || item.tag} address`}
         aria-expanded={actionsOpen}
       >
-        <MoreHorizontal size={18} strokeWidth={2.8} />
+        <MoreHorizontal size={16} strokeWidth={2.7} />
       </button>
 
       {actionsOpen ? (
-        <div className="absolute right-3 top-12 z-20 w-36 overflow-hidden rounded-2xl bg-white text-sm font-black shadow-xl ring-1 ring-black/10">
-          <button type="button" onClick={onEdit} className="flex h-11 w-full items-center gap-2 px-4 text-left text-charcoal hover:bg-[#fff4f5]">
+        <div className="absolute right-3 top-11 z-20 w-32 overflow-hidden rounded-2xl bg-white text-[12px] font-semibold shadow-xl ring-1 ring-black/10">
+          <button type="button" onClick={onEdit} className="flex h-10 w-full items-center gap-2 px-4 text-left text-charcoal hover:bg-[#fff4f5]">
             <Pencil size={15} className="text-maroon" /> Edit
           </button>
-          <button type="button" onClick={onDelete} className="flex h-11 w-full items-center gap-2 border-t border-border px-4 text-left text-red hover:bg-[#fff4f5]">
+          <button type="button" onClick={onDelete} className="flex h-10 w-full items-center gap-2 border-t border-border px-4 text-left text-red hover:bg-[#fff4f5]">
             <Trash2 size={15} /> Delete
           </button>
         </div>
@@ -1151,21 +1151,21 @@ function MapPreview({
   }, [latitude, longitude]);
 
   return (
-    <div className="relative h-[330px] overflow-hidden bg-[#eef1f6] lg:h-full lg:min-h-0">
+    <div className="relative h-[300px] overflow-hidden bg-[#eef1f6] lg:h-full lg:min-h-0">
       <div ref={mapRef} className="absolute inset-0" aria-label="Google delivery location map" />
       {mapError ? (
-        <div className="absolute inset-0 grid place-items-center bg-white px-8 text-center text-sm font-black leading-6 text-muted">
+        <div className="absolute inset-0 grid place-items-center bg-white px-8 text-center text-[12px] font-semibold leading-5 text-muted">
           {mapError}
         </div>
       ) : null}
       <button
         type="button"
         onClick={onLocate}
-        className="absolute bottom-14 left-1/2 z-20 inline-flex h-12 -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-2xl bg-white px-5 text-[13px] font-black text-maroon shadow-xl lg:bottom-12 lg:h-10 lg:rounded-xl lg:text-xs"
+        className="absolute bottom-12 left-1/2 z-20 inline-flex h-10 -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-xl bg-white px-4 text-[11px] font-bold text-maroon shadow-xl lg:bottom-12 lg:h-10 lg:rounded-xl lg:text-xs"
       >
-        <LocateFixed size={19} className={locating ? "animate-spin" : ""} /> Use current location
+        <LocateFixed size={16} className={locating ? "animate-spin" : ""} /> Use current location
       </button>
-      <div className="absolute bottom-3 left-4 right-4 rounded-2xl bg-white/90 px-4 py-2 text-center text-[11px] font-bold leading-4 text-muted shadow-sm lg:rounded-xl">
+      <div className="absolute bottom-3 left-4 right-4 rounded-xl bg-white/90 px-3 py-2 text-center text-[10px] font-medium leading-4 text-muted shadow-sm lg:rounded-xl">
         {latitude && longitude ? `${area} (${latitude}, ${longitude})` : area}
       </div>
     </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CheckCircle2, Copy, Edit3, ExternalLink, EyeOff, Plus, Send, Sparkles, Tag, TicketPercent, Trash2 } from "lucide-react";
+import { CheckCircle2, Copy, Edit3, ExternalLink, EyeOff, Plus, Send, Sparkles, Tag, TicketPercent, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
@@ -334,20 +334,30 @@ export function AdminCouponsClient({
       </div>
 
       {editing ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-charcoal/45 p-4">
-          <div className="w-full max-w-5xl rounded-2xl bg-white p-5 shadow-2xl">
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-charcoal/45 p-3 sm:p-4">
+          <div className="flex max-h-[calc(100vh-24px)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:max-h-[calc(100vh-32px)]">
+            <div className="flex shrink-0 flex-col gap-3 border-b border-border bg-white p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5">
               <div>
                 <h2 className="text-xl font-black text-maroon">{coupons.some((coupon) => coupon.code === editing.code) ? "Edit coupon" : "New coupon"}</h2>
                 <p className="text-sm font-semibold text-muted">Saved active coupons appear automatically on the Offers page.</p>
               </div>
-              <label className="inline-flex items-center gap-2 rounded-lg bg-[#fff4f5] px-3 py-2 text-sm font-black text-maroon">
-                <input type="checkbox" checked={editing.active} onChange={(event) => setEditing({ ...editing, active: event.target.checked })} />
-                Active
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#fff4f5] px-3 text-sm font-black text-maroon">
+                  <input type="checkbox" checked={editing.active} onChange={(event) => setEditing({ ...editing, active: event.target.checked })} />
+                  Active
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setEditing(null)}
+                  className="grid h-10 w-10 place-items-center rounded-lg border border-border bg-white text-maroon transition hover:bg-[#fff4f5]"
+                  aria-label="Close coupon editor"
+                >
+                  <X size={18} strokeWidth={2.8} />
+                </button>
+              </div>
             </div>
 
-            <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
+            <div className="grid flex-1 gap-5 overflow-y-auto p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_420px]">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Code" value={editing.code} onChange={(value) => setEditing({ ...editing, code: value.toUpperCase().replace(/\s/g, "") })} />
                 <Field label="Label" value={editing.label} onChange={(value) => setEditing({ ...editing, label: value })} />
@@ -452,7 +462,7 @@ export function AdminCouponsClient({
               </div>
             </div>
 
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="flex shrink-0 justify-end gap-2 border-t border-border bg-white p-4 sm:p-5">
               <button onClick={() => setEditing(null)} className="h-10 rounded-lg border border-border px-4 font-black">Cancel</button>
               <button disabled={isPending || !canSaveCoupon(editing)} onClick={saveCoupon} className="h-10 rounded-lg bg-red px-4 font-black text-white disabled:opacity-60">Save coupon</button>
             </div>

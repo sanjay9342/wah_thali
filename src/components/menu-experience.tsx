@@ -1019,7 +1019,7 @@ export function MenuExperience({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState(() => {
     if (!initialActiveCategory || initialActiveCategory === "All") return "All";
-    return categories.includes(initialActiveCategory) ? initialActiveCategory : "All";
+    return categoryOptions.some((category) => category.name === initialActiveCategory) ? initialActiveCategory : "All";
   });
   const [activeSlide, setActiveSlide] = useState(0);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -1229,10 +1229,10 @@ export function MenuExperience({
     setMobileMenuView("home");
     setShowMoreCategories(false);
 
-    if (isHomePage) {
+    if (isHomePage || isSearchPage) {
       const params = new URLSearchParams();
       if (category !== "All") params.set("category", category);
-      router.replace(`/${params.toString() ? `?${params.toString()}` : ""}`, { scroll: false });
+      router.replace(`${isSearchPage ? "/menu" : "/"}${params.toString() ? `?${params.toString()}` : ""}`, { scroll: false });
       window.requestAnimationFrame(() => document.getElementById("menu-items")?.scrollIntoView({ block: "start", behavior: "smooth" }));
     }
   }
@@ -1276,7 +1276,7 @@ export function MenuExperience({
     [categories, topLevelCategories],
   );
   const homeCategoryItems = useMemo(
-    () => (topLevelCategories.length ? topLevelCategories : categories).filter((category) => category !== "All").slice(0, 4),
+    () => (topLevelCategories.length ? topLevelCategories : categories).filter((category) => category !== "All"),
     [categories, topLevelCategories],
   );
   const mobileCategoryGroups = useMemo(() => getCategoryGroups(categoryOptions), [categoryOptions]);
@@ -1515,25 +1515,13 @@ export function MenuExperience({
             Categories
           </div>
           <div className="grid gap-2">
-              {categoryItems.slice(0, 9).map((category) => (
-              <button
-                key={category}
-                onClick={() => openMenuCategory(category)}
-                className={`group grid h-[46px] grid-cols-[32px_1fr] items-center gap-3 rounded-xl px-3 text-left text-xs font-black transition duration-200 ${
-                  activeCategory === category ? "bg-[#fff4f5] text-maroon shadow-sm" : "text-charcoal hover:bg-[#fff4f5] hover:text-maroon"
-                }`}
-              >
-                <span className={`grid h-7 w-7 place-items-center overflow-hidden rounded-full ring-1 ring-transparent transition duration-200 group-hover:scale-110 group-hover:ring-maroon/25 ${activeCategory === category ? "bg-maroon text-white" : "bg-[#fff4f5] group-hover:bg-maroon group-hover:text-white"}`}>
-                  {category === "All" ? (
-                    <Grid3X3 size={17} />
-                  ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-110 group-hover:saturate-[1.08]" loading="lazy" decoding="async" onError={useFallbackImage} />
-                  )}
-                </span>
-                <span className="break-words leading-tight">{category}</span>
-              </button>
-            ))}
+            <DesktopCategorySidebar
+              groups={mobileCategoryGroups}
+              activeCategory={activeCategory}
+              categoryImages={initialCategoryImages}
+              products={products}
+              onChoose={openMenuCategory}
+            />
           </div>
         </aside>
 
@@ -1637,15 +1625,16 @@ export function MenuExperience({
             </section>
           ) : null}
 
-          <section className="mt-5 lg:mt-6">
-            <div className="grid grid-cols-5 gap-2 pb-3">
+          <section className="mt-5 lg:mt-6" aria-label="Menu categories">
+            <div className="wt-scrollbar-none flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain scroll-smooth px-1 py-1 pb-3 sm:gap-4">
               {homeCategoryItems.map((category) => (
                 <button
                   key={category}
+                  type="button"
                   onClick={() => {
                     openMenuCategory(category);
                   }}
-                  className="group grid min-w-0 place-items-center gap-1.5 text-center"
+                  className="group grid w-[66px] shrink-0 snap-start place-items-center gap-1.5 text-center sm:w-[90px]"
                 >
                   <span className={`grid h-[52px] w-[52px] place-items-center overflow-hidden rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] transition duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06] group-hover:shadow-[0_14px_30px_rgba(34,31,32,0.12)] sm:h-20 sm:w-20 ${
                     activeCategory === category ? "border-maroon bg-maroon text-white" : "border-[#f1e7e4] bg-white text-charcoal group-hover:border-maroon/30 group-hover:bg-[#fff4f5] group-hover:text-maroon"
@@ -1654,7 +1643,7 @@ export function MenuExperience({
                     <img src={getCategoryImage(category, initialCategoryImages, products)} alt="" className="h-[72%] w-[72%] rounded-full object-cover transition duration-300 group-hover:scale-110 group-hover:saturate-[1.08]" loading="lazy" decoding="async" onError={useFallbackImage} />
                   </span>
                   <span
-                    className={`w-full whitespace-nowrap px-0.5 text-center font-black transition-colors ${activeCategory === category ? "text-maroon" : "text-charcoal group-hover:text-maroon"}`}
+                    className={`w-full whitespace-normal break-words px-0.5 text-center font-black transition-colors ${activeCategory === category ? "text-maroon" : "text-charcoal group-hover:text-maroon"}`}
                     style={getCompactCategoryLabelStyle(category)}
                     title={category}
                   >
@@ -1669,7 +1658,7 @@ export function MenuExperience({
                   setShowMoreCategories((current) => !current);
                 }}
                 aria-expanded={showMoreCategories}
-                className="group grid min-w-0 place-items-center gap-1.5 text-center"
+                className="group grid w-[66px] shrink-0 snap-start place-items-center gap-1.5 text-center sm:w-[90px]"
               >
                 <span className={`grid h-[52px] w-[52px] place-items-center rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] transition duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06] group-hover:border-maroon/30 group-hover:bg-maroon group-hover:text-white group-hover:shadow-[0_14px_30px_rgba(141,0,33,0.18)] sm:h-20 sm:w-20 ${showMoreCategories ? "border-maroon bg-maroon text-white" : "border-[#f1e7e4] bg-[#f8fafc] text-charcoal"}`}>
                   <Grid3X3 size={21} />
@@ -1680,26 +1669,16 @@ export function MenuExperience({
               </button>
             </div>
             {showMoreCategories && categoryItems.length > 5 ? (
-              <div className="mt-2 hidden max-w-[430px] lg:block">
-                <div className="flex items-center gap-3 rounded-t-[20px] border border-b-0 border-[#edf0f5] bg-[#f7f8fc] px-4 py-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowMoreCategories(false)}
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-maroon shadow-[0_8px_18px_rgba(17,24,39,0.06)] ring-1 ring-[#e8edf3]"
-                    aria-label="Close all categories"
-                  >
-                    <ArrowLeft size={20} strokeWidth={3} />
-                  </button>
-                  <h3 className="text-[18px] font-black leading-tight text-[#111827]">All Categories</h3>
-                </div>
-                <CategoryListPanel
+              <>
+                <DesktopCategoryPanel
                   groups={mobileCategoryGroups}
-                  expandedCategories={expandedMobileCategories}
-                  onToggleGroup={toggleMobileCategoryGroup}
+                  activeCategory={activeCategory}
+                  categoryImages={initialCategoryImages}
+                  products={products}
+                  onClose={() => setShowMoreCategories(false)}
                   onChoose={openMenuCategory}
-                  className="rounded-t-none"
                 />
-              </div>
+              </>
             ) : null}
           </section>
 
@@ -2040,6 +2019,189 @@ function CategoryListPanel({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function DesktopCategorySidebar({
+  groups,
+  activeCategory,
+  categoryImages,
+  products,
+  onChoose,
+}: {
+  groups: { category: CategoryOption; children: CategoryOption[] }[];
+  activeCategory: string;
+  categoryImages: Record<string, string>;
+  products: Product[];
+  onChoose: (category: string) => void;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => onChoose("All")}
+        className={`group grid min-h-[58px] grid-cols-[34px_1fr] items-center gap-3 rounded-xl px-3 text-left text-[13px] font-black transition duration-200 ${
+          activeCategory === "All" ? "bg-[#fff4f5] text-maroon shadow-sm" : "text-charcoal hover:bg-[#fff4f5] hover:text-maroon"
+        }`}
+      >
+        <span className={`grid h-8 w-8 place-items-center rounded-full transition duration-200 ${activeCategory === "All" ? "bg-maroon text-white" : "bg-[#fff4f5] group-hover:bg-maroon group-hover:text-white"}`}>
+          <Grid3X3 size={17} />
+        </span>
+        <span className="min-w-0 leading-tight">All</span>
+      </button>
+
+      {groups.map((group) => {
+        const selected = activeCategory === group.category.name;
+        const childSelected = group.children.some((child) => child.name === activeCategory);
+        return (
+          <div key={group.category.id} className="grid gap-1">
+            <button
+              type="button"
+              onClick={() => onChoose(group.category.name)}
+              className={`group grid min-h-[52px] grid-cols-[34px_1fr] items-center gap-3 rounded-xl px-3 text-left text-[13px] font-black transition duration-200 ${
+                selected || childSelected ? "bg-[#fff4f5] text-maroon shadow-sm" : "text-charcoal hover:bg-[#fff4f5] hover:text-maroon"
+              }`}
+            >
+              <span className={`grid h-8 w-8 place-items-center overflow-hidden rounded-full ring-1 ring-transparent transition duration-200 group-hover:scale-110 group-hover:ring-maroon/25 ${selected || childSelected ? "bg-[#fff4f5]" : "bg-[#fff4f5]"}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={getCategoryImage(group.category.name, categoryImages, products)} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-110 group-hover:saturate-[1.08]" loading="lazy" decoding="async" onError={useFallbackImage} />
+              </span>
+              <span className="min-w-0 break-words leading-tight">{group.category.name}</span>
+            </button>
+
+            {group.children.length ? (
+              <div className="ml-[34px] grid gap-1 border-l border-[#f1e7e4] pl-3">
+                {group.children.map((child) => {
+                  const childActive = activeCategory === child.name;
+                  return (
+                    <button
+                      key={child.id}
+                      type="button"
+                      onClick={() => onChoose(child.name)}
+                      className={`min-h-9 rounded-lg px-2 text-left text-[11px] font-black leading-tight transition ${
+                        childActive ? "bg-maroon text-white shadow-sm" : "text-[#667085] hover:bg-[#fff4f5] hover:text-maroon"
+                      }`}
+                    >
+                      {child.name}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function DesktopCategoryPanel({
+  groups,
+  activeCategory,
+  categoryImages,
+  products,
+  onClose,
+  onChoose,
+}: {
+  groups: { category: CategoryOption; children: CategoryOption[] }[];
+  activeCategory: string;
+  categoryImages: Record<string, string>;
+  products: Product[];
+  onClose: () => void;
+  onChoose: (category: string) => void;
+}) {
+  const visibleGroups = groups.filter((group) => group.category.name !== "All");
+
+  return (
+    <div className="mt-3 hidden overflow-hidden rounded-[18px] border border-[#edf0f5] bg-white shadow-[0_16px_40px_rgba(17,24,39,0.07)] lg:block">
+      <div className="flex items-center justify-between gap-4 border-b border-[#edf0f5] bg-[#f8fafc] px-5 py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-maroon shadow-[0_8px_18px_rgba(17,24,39,0.06)] ring-1 ring-[#e8edf3] transition hover:bg-[#fff4f5]"
+            aria-label="Close all categories"
+          >
+            <ArrowLeft size={20} strokeWidth={3} />
+          </button>
+          <span className="min-w-0">
+            <h3 className="text-[22px] font-black leading-tight text-[#111827]">All Categories</h3>
+            <span className="mt-1 block text-[12px] font-bold text-muted">{visibleGroups.length} menu categories</span>
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => onChoose("All")}
+          className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-full px-4 text-[12px] font-black transition ${
+            activeCategory === "All" ? "bg-maroon text-white" : "bg-white text-maroon ring-1 ring-[#eadfe5] hover:bg-[#fff4f5]"
+          }`}
+        >
+          <Grid3X3 size={16} strokeWidth={2.8} />
+          All dishes
+        </button>
+      </div>
+
+      <div className="grid gap-3 p-4 xl:grid-cols-3 lg:grid-cols-2">
+        {visibleGroups.map((group) => {
+          const selected = activeCategory === group.category.name;
+          return (
+            <div key={group.category.id} className={`overflow-hidden rounded-[14px] border bg-white transition ${selected ? "border-maroon shadow-[0_12px_28px_rgba(141,0,33,0.08)]" : "border-[#edf0f5]"}`}>
+              <button
+                type="button"
+                onClick={() => onChoose(group.category.name)}
+                className={`group grid min-h-[74px] w-full grid-cols-[48px_minmax(0,1fr)_20px] items-center gap-3 px-4 py-3 text-left transition ${
+                  selected ? "bg-[#fff4f5]" : "hover:bg-[#fff4f5]"
+                }`}
+              >
+                <span className="relative grid h-12 w-12 place-items-center overflow-hidden rounded-full bg-[#fff4f5] ring-1 ring-[#f0e4df]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={getCategoryImage(group.category.name, categoryImages, products)}
+                    alt=""
+                    className="h-full w-full object-cover transition duration-300 group-hover:scale-110 group-hover:saturate-[1.08]"
+                    loading="lazy"
+                    decoding="async"
+                    onError={useFallbackImage}
+                  />
+                </span>
+                <span className="min-w-0">
+                  <span className={`block text-[15px] font-black leading-tight ${selected ? "text-maroon" : "text-[#111827] group-hover:text-maroon"}`}>
+                    {group.category.name}
+                  </span>
+                  <span className="mt-1 block text-[11px] font-bold leading-4 text-muted">
+                    {group.children.length ? `${group.children.length} subcategories` : "View dishes"}
+                  </span>
+                </span>
+                <ChevronRight size={18} className="text-[#334155]" />
+              </button>
+
+              {group.children.length ? (
+                <div className="grid border-t border-[#edf0f5] bg-[#fbfcfe]">
+                  {group.children.map((child) => {
+                    const childActive = activeCategory === child.name;
+                    return (
+                      <button
+                        key={child.id}
+                        type="button"
+                        onClick={() => onChoose(child.name)}
+                        className={`flex min-h-[44px] items-center justify-between gap-3 px-5 py-2.5 pl-[76px] text-left text-[13px] font-bold transition ${
+                          childActive ? "bg-maroon text-white" : "text-[#667085] hover:bg-[#fff4f5] hover:text-maroon"
+                        }`}
+                      >
+                        <span className="min-w-0 break-words leading-tight">
+                        {child.name}
+                        </span>
+                        <ChevronRight size={16} className="shrink-0" />
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

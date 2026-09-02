@@ -59,6 +59,15 @@ body {
   letter-spacing: 0;
 }
 
+.wt-scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.wt-scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 .wt-soft-type .text-sm {
   font-size: 0.8125rem;
   line-height: 1.2rem;
