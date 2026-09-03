@@ -16,11 +16,14 @@ import {
   Mail,
   MapPin,
   MessageCircle,
+  MoreHorizontal,
   PackageCheck,
   Phone,
+  Pencil,
   ShieldCheck,
   Star,
   TicketPercent,
+  Trash2,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -77,6 +80,8 @@ export function AccountClient() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [activeAddressActionsId, setActiveAddressActionsId] = useState<string | null>(null);
+  const [deletingAddressId, setDeletingAddressId] = useState<string | null>(null);
   const [notificationSaving, setNotificationSaving] = useState(false);
   const notificationPreferences = useNotificationPreferences(session?.mobile);
 
@@ -156,6 +161,29 @@ export function AccountClient() {
       setMessage(error instanceof Error ? error.message : "Could not save notification settings.");
     } finally {
       setNotificationSaving(false);
+    }
+  }
+
+  async function deleteAddress(address: CustomerAddress) {
+    if (!session?.mobile || deletingAddressId) return;
+
+    setDeletingAddressId(address.id);
+    setActiveAddressActionsId(null);
+    try {
+      const response = await fetch(`/api/customers/addresses?mobile=${encodeURIComponent(session.mobile)}&id=${encodeURIComponent(address.id)}`, {
+        method: "DELETE",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not delete address.");
+
+      setProfile((current) => current
+        ? { ...current, addresses: current.addresses.filter((item) => item.id !== address.id) }
+        : current);
+      setMessage(`${address.label || "Saved"} address deleted.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not delete address. Please try again.");
+    } finally {
+      setDeletingAddressId(null);
     }
   }
 
@@ -299,9 +327,9 @@ export function AccountClient() {
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {addresses.length ? addresses.map((address) => (
-            <article key={address.id} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-border">
+            <article key={address.id} className="relative rounded-2xl bg-white p-4 pr-12 shadow-sm ring-1 ring-border">
               <div className="flex items-start gap-3">
-              <span className="grid h-11 w-11 place-items-center rounded-2xl bg-[#fff4f5] text-maroon">
+                <span className="grid h-11 w-11 place-items-center rounded-2xl bg-[#fff4f5] text-maroon">
                   <Home size={20} />
                 </span>
                 <div className="min-w-0">
@@ -314,6 +342,34 @@ export function AccountClient() {
                   </p>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setActiveAddressActionsId((current) => current === address.id ? null : address.id)}
+                className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-[#fff4f5] text-maroon ring-1 ring-[#f1dce1]"
+                aria-label={`Actions for ${address.label} address`}
+                aria-expanded={activeAddressActionsId === address.id}
+              >
+                <MoreHorizontal size={17} strokeWidth={2.7} />
+              </button>
+              {activeAddressActionsId === address.id ? (
+                <div className="absolute right-3 top-12 z-20 w-36 overflow-hidden rounded-2xl bg-white text-[12px] font-semibold shadow-xl ring-1 ring-black/10">
+                  <button
+                    type="button"
+                    onClick={() => router.push("/address")}
+                    className="flex h-10 w-full items-center gap-2 px-4 text-left text-charcoal hover:bg-[#fff4f5]"
+                  >
+                    <Pencil size={15} className="text-maroon" /> Modify
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteAddress(address)}
+                    disabled={deletingAddressId === address.id}
+                    className="flex h-10 w-full items-center gap-2 border-t border-border px-4 text-left text-red hover:bg-[#fff4f5] disabled:cursor-wait disabled:opacity-60"
+                  >
+                    <Trash2 size={15} /> Delete
+                  </button>
+                </div>
+              ) : null}
             </article>
           )) : (
             <div className="rounded-2xl bg-white p-4 text-center text-[12px] font-medium text-muted shadow-sm ring-1 ring-border sm:col-span-2">

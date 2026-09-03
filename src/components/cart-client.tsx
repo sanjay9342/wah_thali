@@ -388,15 +388,7 @@ export function CartClient({
   }
 
   function openLocationSheet() {
-    setLocationDraft({
-      area: deliveryLocation.address === "Select delivery location" ? "" : deliveryLocation.address,
-      details: "",
-      pinCode: deliveryLocation.pinCode ?? extractPinCode(deliveryLocation.address),
-      latitude: deliveryLocation.latitude ?? "",
-      longitude: deliveryLocation.longitude ?? "",
-      tag: deliveryLocation.label === "Work" || deliveryLocation.label === "Other" ? deliveryLocation.label : "Home",
-    });
-    setShowLocationSheet(true);
+    router.push("/address?next=/cart");
   }
 
   function saveLocationDetails() {
@@ -1483,10 +1475,12 @@ function BottomSheet({
   title,
   onClose,
   children,
+  titleClassName = "text-[22px] font-black leading-tight",
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  titleClassName?: string;
 }) {
   return (
     <div className="fixed inset-0 z-[72] flex items-end bg-charcoal/60" onClick={onClose}>
@@ -1497,7 +1491,7 @@ function BottomSheet({
         aria-modal="true"
       >
         <div className="grid grid-cols-[minmax(0,1fr)_40px] items-start gap-3 bg-[#f6f7fb] px-4 pb-3 pt-5">
-          <h2 className="min-w-0 text-[22px] font-black leading-tight text-charcoal">{title}</h2>
+          <h2 className={`min-w-0 text-charcoal ${titleClassName}`}>{title}</h2>
           <button
             type="button"
             className="grid h-10 w-10 place-items-center rounded-full bg-white text-charcoal shadow-sm ring-1 ring-border"
@@ -1807,21 +1801,21 @@ function CookingNoteSheet({
   const [note, setNote] = useState(initialNote);
 
   return (
-    <BottomSheet title="Add a note for the restaurant" onClose={onClose}>
+    <BottomSheet title="Add a note for the restaurant" onClose={onClose} titleClassName="text-[18px] font-semibold leading-6">
       <textarea
         value={note}
         onChange={(event) => setNote(event.target.value)}
-        className="mt-8 h-28 w-full resize-none rounded-xl border border-border bg-white p-4 text-[18px] font-bold leading-6 text-charcoal outline-none placeholder:text-muted"
+        className="mt-6 h-28 w-full resize-none rounded-xl border border-border bg-white p-4 text-[14px] font-medium leading-5 text-charcoal outline-none placeholder:text-muted/80"
         placeholder="e.g. Note for the entire order"
       />
-      <p className="mt-8 text-[15px] font-bold leading-6 text-muted">
+      <p className="mt-6 text-[13px] font-medium leading-6 text-muted">
         The restaurant will try its best to fulfil your requests. However, refunds or cancellations related to such requests won&apos;t be possible.
       </p>
-      <div className="mt-8 grid grid-cols-[1fr_1.7fr] gap-3">
-        <button type="button" onClick={() => setNote("")} className="h-14 rounded-xl bg-white text-[18px] font-black text-muted">
+      <div className="mt-7 grid grid-cols-[1fr_1.7fr] gap-3">
+        <button type="button" onClick={() => setNote("")} className="h-12 rounded-xl bg-white text-[14px] font-semibold text-muted">
           Clear
         </button>
-        <button type="button" onClick={() => onSave(note)} className="h-14 rounded-xl bg-maroon text-[18px] font-black text-white">
+        <button type="button" onClick={() => onSave(note)} className="h-12 rounded-xl bg-maroon text-[14px] font-semibold text-white">
           Save
         </button>
       </div>

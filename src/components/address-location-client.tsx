@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   BriefcaseBusiness,
@@ -282,6 +282,7 @@ function toSavedAddress(address: DbCustomerAddress): SavedAddress {
 
 export function AddressLocationClient({ restaurantSettings }: { restaurantSettings: RestaurantSettings }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const deliveryLocation = useDeliveryLocation();
   const supportMobile = cleanPhone(restaurantSettings.supportPhone);
   const supportMobileRef = useRef(supportMobile);
@@ -309,6 +310,7 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
 
   const currentArea = address.area || (deliveryLocation.address === defaultArea ? "" : deliveryLocation.address);
   const recentAddresses = useMemo(() => savedAddresses.slice(0, 5), [savedAddresses]);
+  const returnPath = searchParams.get("next") === "/cart" ? "/cart" : "";
 
   useEffect(() => {
     supportMobileRef.current = supportMobile;
@@ -652,6 +654,10 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
     });
     void syncAddressToCustomer(next, true);
     setEditingAddressId(null);
+    if (returnPath) {
+      router.push(returnPath);
+      return;
+    }
     setMode("select");
   }
 
@@ -671,6 +677,7 @@ export function AddressLocationClient({ restaurantSettings }: { restaurantSettin
       longitude: item.longitude || "",
     }));
     setMessage(`${label} selected.`);
+    if (returnPath) router.push(returnPath);
   }
 
   function editAddress(item: SavedAddress) {
