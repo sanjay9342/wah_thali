@@ -34,6 +34,9 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ id
   if (categoryData.parentId === id) {
     return NextResponse.json({ error: "A category cannot be its own parent." }, { status: 400 });
   }
+  if (categoryData.parentId && await wouldCreateCategoryCycle(id, categoryData.parentId)) {
+    return NextResponse.json({ error: "A category cannot use one of its own subcategories as a parent." }, { status: 400 });
+  }
   const category = await prisma.category.update({
     where: { id },
     data: {
@@ -100,6 +103,25 @@ function nullableParentId() {
     (value) => value === "" ? null : value,
     z.string().min(1).nullable().optional(),
   );
+}
+
+async function wouldCreateCategoryCycle(categoryId: string, parentId: string) {
+  const visited = new Set<string>();
+  let currentParentId: string | null = parentId;
+
+  while (currentParentId) {
+    if (currentParentId === categoryId) return true;
+    if (visited.has(currentParentId)) return true;
+    visited.add(currentParentId);
+
+    const parent: { parentId: string | null } | null = await prisma.category.findUnique({
+      where: { id: currentParentId },
+      select: { parentId: true },
+    });
+    currentParentId = parent?.parentId ?? null;
+  }
+
+  return false;
 }
 
 async function deleteHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {

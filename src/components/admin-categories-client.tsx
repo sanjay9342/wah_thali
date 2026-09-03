@@ -4,7 +4,7 @@ import { type DragEvent, useEffect, useMemo, useState, useTransition } from "rea
 import { ArrowDown, ArrowUp, CheckCircle2, Edit3, EyeOff, GripVertical, ImageOff, ImagePlus, Plus, Tag, Trash2, Upload, X } from "lucide-react";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
-import { adminFetch } from "@/lib/admin-client-auth";
+import { adminFetch, readAdminApiJson } from "@/lib/admin-client-auth";
 
 type AdminCategory = {
   id: string;
@@ -32,6 +32,8 @@ const emptyOfferDraft: OfferDraft = {
   cap: "",
   amount: "",
 };
+
+const maxUploadBytes = 4.5 * 1024 * 1024;
 
 export function AdminCategoriesClient({
   initialCategories,
@@ -72,11 +74,11 @@ export function AdminCategoriesClient({
 
   async function refreshCategories() {
     const response = await fetch("/api/categories", { cache: "no-store" });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error ?? "Could not reload categories.");
-    setCategories(data.categories);
+    const data = await readAdminApiJson(response);
+    if (!response.ok) throw new Error(getApiErrorMessage(data, "Could not reload categories."));
+    setCategories(Array.isArray(data.categories) ? data.categories as AdminCategory[] : []);
     if (Array.isArray(data.cartSuggestionCategories)) {
-      setCartSuggestionCategories(data.cartSuggestionCategories);
+      setCartSuggestionCategories(data.cartSuggestionCategories.filter((item): item is string => typeof item === "string"));
     }
   }
 
@@ -102,15 +104,25 @@ export function AdminCategoriesClient({
   }
 
   async function uploadImage(file: File) {
+    if (!file.type.startsWith("image/")) {
+      throw new Error("Please choose a valid image file.");
+    }
+    if (file.size > maxUploadBytes) {
+      throw new Error("Please upload an image under 4.5 MB. Compress this photo and try again.");
+    }
+
     setUploading(true);
     try {
       const body = new FormData();
       body.append("file", file);
       body.append("folder", "categories");
       const response = await adminFetch(adminAccess?.session, "/api/storage/upload", { method: "POST", body });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Image upload failed.");
-      return data.publicUrl as string;
+      const data = await readAdminApiJson(response);
+      if (!response.ok) throw new Error(getApiErrorMessage(data, "Image upload failed."));
+      if (typeof data.publicUrl !== "string" || !data.publicUrl) {
+        throw new Error("Image upload finished but no image URL was returned.");
+      }
+      return data.publicUrl;
     } finally {
       setUploading(false);
     }
@@ -131,7 +143,7 @@ export function AdminCategoriesClient({
           sortOrder: categories.length + 1,
         }),
       });
-      const data = await response.json();
+      const data = await readAdminApiJson(response);
       if (!response.ok) throw new Error(getApiErrorMessage(data, "Category save failed."));
       setNewCategoryKind("main");
       setNewCategory("");
@@ -150,7 +162,7 @@ export function AdminCategoriesClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
-      const data = await response.json();
+      const data = await readAdminApiJson(response);
       if (!response.ok) throw new Error(getApiErrorMessage(data, "Category update failed."));
       await refreshCategories();
       showSuccess("Category updated successfully.");
@@ -171,7 +183,7 @@ export function AdminCategoriesClient({
           })),
         }),
       });
-      const data = await response.json();
+      const data = await readAdminApiJson(response);
       if (!response.ok) throw new Error(getApiErrorMessage(data, "Category order save failed."));
       await refreshCategories();
       showSuccess("Category order saved successfully.");
@@ -197,7 +209,7 @@ export function AdminCategoriesClient({
           cartSuggestionCategories,
         }),
       });
-      const data = await response.json();
+      const data = await readAdminApiJson(response);
       if (!response.ok) throw new Error(getApiErrorMessage(data, "Cart recommendation categories save failed."));
       await refreshCategories();
       showSuccess(cartSuggestionCategories.length ? "Home showcase categories saved." : "Home showcase categories cleared.");
@@ -256,8 +268,8 @@ export function AdminCategoriesClient({
 
     run(async () => {
       const response = await adminFetch(adminAccess?.session, `/api/categories/${category.id}`, { method: "DELETE" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Category delete failed.");
+      const data = await readAdminApiJson(response);
+      if (!response.ok) throw new Error(getApiErrorMessage(data, "Category delete failed."));
       await refreshCategories();
       showSuccess(data.archived ? "Category hidden because it has products." : "Category deleted successfully.");
     });
@@ -609,11 +621,22 @@ function withPositionNumbers(categories: AdminCategory[]) {
   return categories.map((category, index) => ({ ...category, sortOrder: index + 1 }));
 }
 
-function isCategoryDescendant(categories: AdminCategory[], categoryId: string, ancestorId: string): boolean {
+function isCategoryDescendant(categories: AdminCategory[], categoryId: string, ancestorId: string, visited = new Set<string>()): boolean {
+  if (visited.has(categoryId)) return false;
+  visited.add(categoryId);
   const category = categories.find((item) => item.id === categoryId);
   if (!category?.parentId) return false;
   if (category.parentId === ancestorId) return true;
-  return isCategoryDescendant(categories, category.parentId, ancestorId);
+  return isCategoryDescendant(categories, category.parentId, ancestorId, visited);
+}
+
+function hasCategoryCycle(categories: AdminCategory[], categoryId: string, visited = new Set<string>()): boolean {
+  if (visited.has(categoryId)) return true;
+  visited.add(categoryId);
+
+  const category = categories.find((item) => item.id === categoryId);
+  if (!category?.parentId) return false;
+  return hasCategoryCycle(categories, category.parentId, visited);
 }
 
 function getParentCategoryName(category: AdminCategory, categories: AdminCategory[]) {
@@ -672,7 +695,11 @@ function CategoryEditModal({
     sortOrder: String(category.sortOrder),
   });
   const [error, setError] = useState("");
-  const parentOptions = categories.filter((item) => item.id !== category.id && !isCategoryDescendant(categories, item.id, category.id));
+  const parentOptions = categories.filter((item) =>
+    item.id !== category.id &&
+    !hasCategoryCycle(categories, item.id) &&
+    !isCategoryDescendant(categories, item.id, category.id),
+  );
   const editingSubcategory = Boolean(draft.parentId);
 
   async function handleImage(file: File | undefined) {

@@ -7,12 +7,17 @@ import { logActivity } from "@/lib/db";
 import { getSupabaseAdminClient, isSupabaseConfigured } from "@/lib/supabase";
 
 const defaultBucket = process.env.SUPABASE_STORAGE_BUCKET ?? "wah-thali-assets";
+const maxUploadBytes = 4.5 * 1024 * 1024;
 
 async function postHandler(request: Request) {
   const access = await requireAnyAdminPermission(request, ["settings", "inventory", "categories"]);
   if (!access.ok) return access.response;
 
-  const formData = await request.formData();
+  const formData = await readUploadFormData(request);
+  if (!formData) {
+    return NextResponse.json({ error: "Upload form data is required." }, { status: 400 });
+  }
+
   const file = formData.get("file");
   const folder = String(formData.get("folder") ?? "admin-images");
   const bucket = String(formData.get("bucket") ?? defaultBucket);
@@ -23,6 +28,10 @@ async function postHandler(request: Request) {
 
   if (!file.type.startsWith("image/")) {
     return NextResponse.json({ error: "Only image uploads are supported." }, { status: 400 });
+  }
+
+  if (file.size > maxUploadBytes) {
+    return NextResponse.json({ error: "Please upload an image under 4.5 MB. Compress this photo and try again." }, { status: 413 });
   }
 
   const extension = file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
@@ -68,6 +77,14 @@ async function postHandler(request: Request) {
   });
 
   return NextResponse.json({ bucket, path: storagePath, publicUrl: data.publicUrl, storage: "supabase" });
+}
+
+async function readUploadFormData(request: Request) {
+  try {
+    return await request.formData();
+  } catch {
+    return null;
+  }
 }
 
 async function uploadToPublicFolder(storagePath: string, buffer: Buffer) {
