@@ -226,82 +226,6 @@ const settings = {
 };
 
 async function main() {
-  for (const [index, name] of categories.entries()) {
-    await prisma.category.upsert({
-      where: { slug: name.toLowerCase().replaceAll(" ", "-").replaceAll("'", "") },
-      create: {
-        name,
-        slug: name.toLowerCase().replaceAll(" ", "-").replaceAll("'", ""),
-        sortOrder: index,
-      },
-      update: { name, sortOrder: index, visible: true },
-    });
-  }
-
-  for (const product of products) {
-    const category = await prisma.category.findUniqueOrThrow({
-      where: { slug: product.category.toLowerCase().replaceAll(" ", "-").replaceAll("'", "") },
-    });
-
-    await prisma.product.upsert({
-      where: { id: product.id },
-      create: {
-        id: product.id,
-        categoryId: category.id,
-        slug: product.slug,
-        name: product.name,
-        description: product.description,
-        price: product.price,
-        originalPrice: product.originalPrice,
-        dietaryType: product.dietaryType,
-        rating: product.rating,
-        ratingCount: product.ratingCount,
-        prepMinutes: product.prepMinutes,
-        bestseller: product.bestseller ?? false,
-        offer: product.offer,
-        spiceLevel: product.spiceLevel,
-        images: { create: { url: product.image, alt: product.name, sortOrder: 0 } },
-        variants: {
-          create: product.variants.map(([id, name, price]) => ({
-            id: `${product.id}-${id}`,
-            name,
-            price,
-          })),
-        },
-        addons: {
-          create: product.addons.map(([id, name, price]) => ({
-            id: `${product.id}-${id}`,
-            name,
-            price,
-          })),
-        },
-        inventory: {
-          create: { stock: product.stock, reorderAt: product.reorderAt, margin: product.margin },
-        },
-      },
-      update: {
-        categoryId: category.id,
-        name: product.name,
-        description: product.description,
-        price: product.price,
-        originalPrice: product.originalPrice,
-        dietaryType: product.dietaryType,
-        rating: product.rating,
-        ratingCount: product.ratingCount,
-        prepMinutes: product.prepMinutes,
-        bestseller: product.bestseller ?? false,
-        offer: product.offer,
-        spiceLevel: product.spiceLevel,
-        inventory: {
-          upsert: {
-            create: { stock: product.stock, reorderAt: product.reorderAt, margin: product.margin },
-            update: { stock: product.stock, reorderAt: product.reorderAt, margin: product.margin },
-          },
-        },
-      },
-    });
-  }
-
   const seededCoupons = [
     { code: "PARTY", label: "Flat 50% off", type: "PERCENT", value: 50, minOrder: 249, maxDiscount: 120 },
     { code: "FREEDEL", label: "Free delivery offer", type: "FIXED", value: 40, minOrder: 199, maxDiscount: null },
@@ -363,6 +287,82 @@ async function main() {
   }
 
   if (process.env.WAH_SEED_DEMO_DATA === "true") {
+    for (const [index, name] of categories.entries()) {
+      await prisma.category.upsert({
+        where: { slug: name.toLowerCase().replaceAll(" ", "-").replaceAll("'", "") },
+        create: {
+          name,
+          slug: name.toLowerCase().replaceAll(" ", "-").replaceAll("'", ""),
+          sortOrder: index,
+        },
+        update: { name, sortOrder: index, visible: true },
+      });
+    }
+
+    for (const product of products) {
+      const category = await prisma.category.findUniqueOrThrow({
+        where: { slug: product.category.toLowerCase().replaceAll(" ", "-").replaceAll("'", "") },
+      });
+
+      await prisma.product.upsert({
+        where: { id: product.id },
+        create: {
+          id: product.id,
+          categoryId: category.id,
+          slug: product.slug,
+          name: product.name,
+          description: product.description,
+          price: product.price,
+          originalPrice: product.originalPrice,
+          dietaryType: product.dietaryType,
+          rating: product.rating,
+          ratingCount: product.ratingCount,
+          prepMinutes: product.prepMinutes,
+          bestseller: product.bestseller ?? false,
+          offer: product.offer,
+          spiceLevel: product.spiceLevel,
+          images: { create: { url: product.image, alt: product.name, sortOrder: 0 } },
+          variants: {
+            create: product.variants.map(([id, name, price]) => ({
+              id: `${product.id}-${id}`,
+              name,
+              price,
+            })),
+          },
+          addons: {
+            create: product.addons.map(([id, name, price]) => ({
+              id: `${product.id}-${id}`,
+              name,
+              price,
+            })),
+          },
+          inventory: {
+            create: { stock: product.stock, reorderAt: product.reorderAt, margin: product.margin },
+          },
+        },
+        update: {
+          categoryId: category.id,
+          name: product.name,
+          description: product.description,
+          price: product.price,
+          originalPrice: product.originalPrice,
+          dietaryType: product.dietaryType,
+          rating: product.rating,
+          ratingCount: product.ratingCount,
+          prepMinutes: product.prepMinutes,
+          bestseller: product.bestseller ?? false,
+          offer: product.offer,
+          spiceLevel: product.spiceLevel,
+          inventory: {
+            upsert: {
+              create: { stock: product.stock, reorderAt: product.reorderAt, margin: product.margin },
+              update: { stock: product.stock, reorderAt: product.reorderAt, margin: product.margin },
+            },
+          },
+        },
+      });
+    }
+
     const customer = await prisma.customer.upsert({
       where: { mobile: "919000000000" },
       create: {

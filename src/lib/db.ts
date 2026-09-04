@@ -539,41 +539,7 @@ export async function getRestaurantSettingsFromDb(): Promise<RestaurantSettings>
   return { ...businessSettings, ...advancedSettings };
 }
 
-export const defaultHomeSlides: HomeSlide[] = [
-  {
-    id: "thali-deal",
-    eyebrow: "Thali deal",
-    title: "Flat 20% OFF",
-    body: "on all Thalis Today!",
-    code: "WAHTHALI20",
-    image: "/wah-thali-meal-cutout-v2.png",
-    targetCategory: "Exclusive Thali",
-    active: true,
-    sortOrder: 1,
-  },
-  {
-    id: "family-feast",
-    eyebrow: "Family feast",
-    title: "Combo at Rs 499",
-    body: "2 thalis, dessert, and drinks.",
-    code: "FAMILY10",
-    image: "/wah-thali-meal-cutout-v2.png",
-    targetCategory: "Indian Combo",
-    active: true,
-    sortOrder: 2,
-  },
-  {
-    id: "lunch-saver",
-    eyebrow: "Lunch saver",
-    title: "Mini meals from Rs 99",
-    body: "Fast office lunch, fresh daily.",
-    code: "MINI99",
-    image: "/wah-thali-meal-cutout-v2.png",
-    targetCategory: "Meal at 99",
-    active: true,
-    sortOrder: 3,
-  },
-];
+export const defaultHomeSlides: HomeSlide[] = [];
 
 function isHomeSlides(value: unknown): value is HomeSlide[] {
   return Array.isArray(value) && value.every((slide) => {
