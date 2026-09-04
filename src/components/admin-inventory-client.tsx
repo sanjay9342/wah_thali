@@ -20,7 +20,7 @@ type ProductForm = {
   description: string;
   image: string;
   dietaryType: AdminProduct["dietaryType"];
-  spiceLevel: AdminProduct["spiceLevel"];
+  rating: string;
   price: string;
   originalPrice: string;
   offer: OfferDraft;
@@ -65,7 +65,7 @@ const emptyForm: ProductForm = {
   description: "",
   image: "",
   dietaryType: "VEG",
-  spiceLevel: "Medium",
+  rating: "4.5",
   price: "",
   originalPrice: "",
   offer: emptyOfferDraft,
@@ -76,6 +76,7 @@ const emptyForm: ProductForm = {
 };
 
 const savedAddonGroupsStorageKey = "wah-thali-admin-saved-addon-groups";
+const savedVariationSetsStorageKey = "wah-thali-admin-saved-variation-sets";
 
 export function AdminInventoryClient({
   initialCategories,
@@ -220,7 +221,7 @@ export function AdminInventoryClient({
         description: form.description.trim(),
         image: form.image.trim() || undefined,
         dietaryType: form.dietaryType,
-        spiceLevel: form.spiceLevel,
+        rating: Number(form.rating || 4.5),
         price,
         originalPrice,
         offer: offerDraftToText(form.offer) || null,
@@ -317,13 +318,14 @@ export function AdminInventoryClient({
 
   function exportCsv() {
     const rows = [
-      ["Display Name", "Internal Name", "Shortcut Code", "Category", "Parent Category", "Discount Price", "Real/Strike Price", "Available"],
+      ["Display Name", "Internal Name", "Shortcut Code", "Category", "Parent Category", "Rating", "Discount Price", "Real/Strike Price", "Available"],
       ...filteredProducts.map((product) => [
         product.name,
         product.kitchenName ?? "",
         product.reportCode ?? "",
         product.category,
         product.parentCategory ?? "",
+        String(product.rating),
         String(product.price),
         product.originalPrice ? String(product.originalPrice) : "",
         product.available ? "Available" : "Unavailable",
@@ -436,7 +438,7 @@ export function AdminInventoryClient({
               <table className="w-full min-w-[820px] text-left text-sm">
                 <thead className="bg-cream text-maroon">
                   <tr>
-                    {["Item", "Shortcut", "Price", "Offer", "Variants", "Choice groups", "Availability", "Actions"].map((head) => (
+                    {["Item", "Shortcut", "Rating", "Price", "Offer", "Variants", "Choice groups", "Availability", "Actions"].map((head) => (
                       <th key={head} className="p-3">{head}</th>
                     ))}
                   </tr>
@@ -456,7 +458,7 @@ export function AdminInventoryClient({
                             <img src={safeAdminImage(product.image)} alt="" className="h-14 w-14 rounded-xl object-cover" onError={useFallbackImage} />
                             <div>
                               <p className="font-black text-charcoal">{product.name}</p>
-                              <p className="text-xs font-bold text-muted">{product.parentCategory ? `${product.parentCategory} / ` : ""}{product.category} - {product.dietaryType} - {product.spiceLevel}</p>
+                              <p className="text-xs font-bold text-muted">{product.parentCategory ? `${product.parentCategory} / ` : ""}{product.category} - {product.dietaryType}</p>
                               {product.kitchenName ? <p className="mt-1 text-xs font-black text-maroon">Kitchen: {product.kitchenName}</p> : null}
                             </div>
                           </div>
@@ -464,6 +466,11 @@ export function AdminInventoryClient({
                         <td className="p-3">
                           <span className="inline-flex h-7 items-center rounded-lg border border-border bg-cream px-2 text-xs font-black text-maroon">
                             {product.reportCode || "-"}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <span className="inline-flex h-7 items-center rounded-lg bg-[#fff4f5] px-2 text-xs font-black text-maroon">
+                            {product.rating}
                           </span>
                         </td>
                         <td className="p-3">
@@ -583,6 +590,16 @@ function cloneAddonGroup(group: AddonGroupDraft, title = group.title): AddonGrou
   };
 }
 
+function cloneVariationSet(variants: ProductForm["variants"]) {
+  return variants
+    .filter((variant) => variant.name.trim())
+    .map((variant) => ({
+      id: createDraftId(),
+      name: variant.name.trim(),
+      price: variant.price || "0",
+    }));
+}
+
 function readSavedAddonGroups(): AddonGroupDraft[] {
   if (typeof window === "undefined") return [];
 
@@ -600,9 +617,40 @@ function readSavedAddonGroups(): AddonGroupDraft[] {
   }
 }
 
+function readSavedVariationSets(): ProductForm["variants"][] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const rawValue = window.localStorage.getItem(savedVariationSetsStorageKey);
+    const parsed = rawValue ? JSON.parse(rawValue) : [];
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((set) => Array.isArray(set) ? cloneVariationSet(set as ProductForm["variants"]) : [])
+      .filter((set) => set.length > 0)
+      .slice(0, 20);
+  } catch {
+    return [];
+  }
+}
+
 function writeSavedAddonGroups(groups: AddonGroupDraft[]) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(savedAddonGroupsStorageKey, JSON.stringify(groups.map((group) => cloneAddonGroup(group, group.title))));
+}
+
+function writeSavedVariationSets(sets: ProductForm["variants"][]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(savedVariationSetsStorageKey, JSON.stringify(sets.map(cloneVariationSet)));
+}
+
+function getVariationSetSignature(variants: ProductForm["variants"]) {
+  return cloneVariationSet(variants).map((variant) => `${variant.name}:${variant.price}`).join("|");
+}
+
+function getVariationSetLabel(variants: ProductForm["variants"]) {
+  const names = cloneVariationSet(variants).map((variant) => variant.name);
+  return names.length > 2 ? `${names.slice(0, 2).join(", ")} +${names.length - 2}` : names.join(", ");
 }
 
 function normalizeSavedAddonGroup(value: unknown): AddonGroupDraft | null {
@@ -645,7 +693,7 @@ function toProductForm(product: AdminProduct): ProductForm {
     description: product.description,
     image: product.image,
     dietaryType: product.dietaryType,
-    spiceLevel: product.spiceLevel,
+    rating: String(product.rating),
     price: String(product.price),
     originalPrice: product.originalPrice ? String(product.originalPrice) : "",
     offer: parseOfferText(product.offer),
@@ -689,6 +737,8 @@ function ProductModal({
   uploadImage: (file: File) => Promise<string>;
 }) {
   const [savedAddonGroups, setSavedAddonGroups] = useState<AddonGroupDraft[]>(() => readSavedAddonGroups());
+  const [savedVariationSets, setSavedVariationSets] = useState<ProductForm["variants"][]>(() => readSavedVariationSets());
+  const [customChoiceGroupIds, setCustomChoiceGroupIds] = useState<Set<string>>(() => new Set());
 
   function update(patch: Partial<ProductForm>) {
     setForm({ ...form, ...patch });
@@ -719,6 +769,30 @@ function ProductModal({
     update({
       variants: form.variants.map((variant, variantIndex) => (variantIndex === index ? { ...variant, ...patch } : variant)),
     });
+  }
+
+  function applySavedVariationSet(variants: ProductForm["variants"]) {
+    update({ variants: cloneVariationSet(variants) });
+  }
+
+  function saveVariationSetForReuse() {
+    const reusableSet = cloneVariationSet(form.variants);
+    if (!reusableSet.length) return;
+    const signature = getVariationSetSignature(reusableSet);
+    const nextSets = [
+      reusableSet,
+      ...savedVariationSets.filter((set) => getVariationSetSignature(set) !== signature),
+    ].slice(0, 20);
+    setSavedVariationSets(nextSets);
+    writeSavedVariationSets(nextSets);
+  }
+
+  function deleteSavedVariationSet(signature: string) {
+    const set = savedVariationSets.find((item) => getVariationSetSignature(item) === signature);
+    if (!confirmRemove(`Delete saved variation set "${set ? getVariationSetLabel(set) : "this set"}"?`)) return;
+    const nextSets = savedVariationSets.filter((set) => getVariationSetSignature(set) !== signature);
+    setSavedVariationSets(nextSets);
+    writeSavedVariationSets(nextSets);
   }
 
   function addAddonGroup(template?: Partial<AddonGroupDraft>) {
@@ -754,9 +828,29 @@ function ProductModal({
   }
 
   function deleteSavedGroup(groupTitle: string) {
+    if (!confirmRemove(`Delete saved group "${groupTitle}"?`)) return;
     const nextGroups = savedAddonGroups.filter((group) => group.title !== groupTitle);
     setSavedAddonGroups(nextGroups);
     writeSavedAddonGroups(nextGroups);
+  }
+
+  function removeVariation(index: number) {
+    const variant = form.variants[index];
+    if (!confirmRemove(`Remove variation "${variant?.name.trim() || "this variation"}"?`)) return;
+    update({ variants: form.variants.filter((_, variantIndex) => variantIndex !== index) });
+  }
+
+  function removeAddonGroup(groupIndex: number) {
+    const group = form.addonGroups[groupIndex];
+    if (!confirmRemove(`Remove choice group "${group?.title.trim() || "this group"}" from this dish?`)) return;
+    update({ addonGroups: form.addonGroups.filter((_, currentIndex) => currentIndex !== groupIndex) });
+  }
+
+  function removeAddonOption(groupIndex: number, optionIndex: number) {
+    const group = form.addonGroups[groupIndex];
+    const option = group?.options[optionIndex];
+    if (!confirmRemove(`Remove option "${option?.name.trim() || "this option"}"?`)) return;
+    updateAddonGroup(groupIndex, { options: group.options.filter((_, currentIndex) => currentIndex !== optionIndex) });
   }
 
   const parentCategories = categories.filter((category) => !category.parentId);
@@ -782,6 +876,55 @@ function ProductModal({
 
     const parent = categories.find((category) => category.id === selectedParentId);
     update({ categoryId: parent?.id ?? "", category: parent?.name ?? "" });
+  }
+
+  function getChoiceRule(group: AddonGroupDraft) {
+    if (customChoiceGroupIds.has(group.id)) return "custom";
+    if (!group.required && Number(group.max || 0) <= 0) return "optional";
+    if (group.required && group.kind === "single") return "exact-1";
+    if (group.required && group.min === group.max && ["2", "3", "4"].includes(group.min)) return `exact-${group.min}`;
+    if (!group.required && ["1", "2", "3", "4"].includes(group.max)) return `upto-${group.max}`;
+    return "custom";
+  }
+
+  function applyChoiceRule(groupIndex: number, rule: string) {
+    const groupId = form.addonGroups[groupIndex]?.id;
+    if (rule === "custom") {
+      if (groupId) {
+        setCustomChoiceGroupIds((current) => new Set(current).add(groupId));
+      }
+      return;
+    }
+
+    if (groupId) {
+      setCustomChoiceGroupIds((current) => {
+        const next = new Set(current);
+        next.delete(groupId);
+        return next;
+      });
+    }
+
+    if (rule === "optional") {
+      updateAddonGroup(groupIndex, { kind: "multi", required: false, min: "0", max: "0" });
+      return;
+    }
+
+    if (rule.startsWith("exact-")) {
+      const count = rule.replace("exact-", "");
+      updateAddonGroup(groupIndex, {
+        kind: count === "1" ? "single" : "multi",
+        required: true,
+        min: count,
+        max: count,
+      });
+      return;
+    }
+
+    if (rule.startsWith("upto-")) {
+      const count = rule.replace("upto-", "");
+      updateAddonGroup(groupIndex, { kind: "multi", required: false, min: "0", max: count });
+      return;
+    }
   }
 
   return (
@@ -865,14 +1008,17 @@ function ProductModal({
               <option value="JAIN">JAIN</option>
             </select>
           </label>
-          <label className="grid min-w-0 gap-2 text-sm font-black text-maroon">
-            Spice
-            <select value={form.spiceLevel} onChange={(event) => update({ spiceLevel: event.target.value as ProductForm["spiceLevel"] })} className="h-11 w-full min-w-0 rounded-lg border border-border bg-cream px-3 text-charcoal">
-              <option value="Mild">Mild</option>
-              <option value="Medium">Medium</option>
-              <option value="Hot">Hot</option>
-            </select>
-          </label>
+          <Field
+            label="Rating"
+            type="number"
+            min={0}
+            max={5}
+            step={0.1}
+            placeholder="4.5"
+            helper="This rating is shown on the dish card."
+            value={form.rating}
+            onChange={(value) => update({ rating: value })}
+          />
           <div className="grid min-w-0 gap-2 text-sm font-black text-maroon">
             <span>Dish offer / item discount</span>
             <OfferControls value={form.offer} onChange={(offer) => update({ offer })} surface="cream" />
@@ -881,16 +1027,56 @@ function ProductModal({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-black text-maroon">Variations</p>
-                <p className="text-xs font-bold text-muted">Optional. Add sizes/options only for dishes that need customer choices.</p>
+                <p className="text-xs font-bold text-muted">Optional. Enter the final customer price for each variation.</p>
               </div>
-              <button
-                type="button"
-                onClick={() => update({ variants: [...form.variants, { name: "", price: "0" }] })}
-                className="h-9 rounded-lg bg-maroon px-3 text-xs font-black text-white"
-              >
-                Add variation
-              </button>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={!form.variants.some((variant) => variant.name.trim())}
+                  onClick={saveVariationSetForReuse}
+                  className="h-9 rounded-lg border border-maroon/30 bg-white px-3 text-xs font-black text-maroon disabled:opacity-45"
+                >
+                  Save variations
+                </button>
+                <button
+                  type="button"
+                  onClick={() => update({ variants: [...form.variants, { name: "", price: String(Number(form.price || 0)) }] })}
+                  className="h-9 rounded-lg bg-maroon px-3 text-xs font-black text-white"
+                >
+                  Add variation
+                </button>
+              </div>
             </div>
+            {savedVariationSets.length ? (
+              <div className="grid gap-2 rounded-xl border border-border bg-white p-3">
+                <p className="text-xs font-black uppercase tracking-wide text-maroon">Saved variation sets</p>
+                <div className="flex flex-wrap gap-2">
+                  {savedVariationSets.map((set) => {
+                    const signature = getVariationSetSignature(set);
+                    return (
+                      <span key={signature} className="inline-flex max-w-full items-center gap-1 rounded-lg border border-border bg-cream p-1">
+                        <button
+                          type="button"
+                          onClick={() => applySavedVariationSet(set)}
+                          className="h-8 max-w-[220px] truncate px-2 text-xs font-black text-charcoal"
+                          title={`Use ${getVariationSetLabel(set)}`}
+                        >
+                          {getVariationSetLabel(set)}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteSavedVariationSet(signature)}
+                          className="grid h-8 w-8 place-items-center rounded-md text-red"
+                          aria-label={`Delete saved variation set ${getVariationSetLabel(set)}`}
+                        >
+                          <X size={14} />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
             {form.variants.length ? (
               <div className="grid gap-2">
                 {form.variants.map((variant, index) => (
@@ -907,11 +1093,11 @@ function ProductModal({
                     value={variant.price}
                     onChange={(event) => updateVariant(index, { price: event.target.value })}
                     className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-bold text-charcoal"
-                    placeholder="Extra price"
+                    placeholder="Variation price"
                   />
                   <button
                     type="button"
-                    onClick={() => update({ variants: form.variants.filter((_, variantIndex) => variantIndex !== index) })}
+                    onClick={() => removeVariation(index)}
                     className="h-10 rounded-lg border border-border px-3 text-xs font-black text-red"
                   >
                     Remove
@@ -968,7 +1154,7 @@ function ProductModal({
               <div className="grid gap-3">
                 {form.addonGroups.map((group, groupIndex) => (
                   <div key={group.id} className="grid gap-3 rounded-xl border border-border bg-white p-3">
-                    <div className="grid gap-2 lg:grid-cols-[minmax(180px,1fr)_128px_112px_88px_88px_auto_auto]">
+                    <div className="grid gap-2 lg:grid-cols-[minmax(180px,1fr)_190px_auto_auto]">
                       <input
                         value={group.title}
                         onChange={(event) => updateAddonGroup(groupIndex, { title: event.target.value })}
@@ -976,50 +1162,27 @@ function ProductModal({
                         placeholder="Group title"
                       />
                       <select
-                        value={group.kind}
+                        value={getChoiceRule(group)}
                         onChange={(event) => {
-                          const kind = event.target.value as AddonGroupDraft["kind"];
-                          updateAddonGroup(groupIndex, {
-                            kind,
-                            max: kind === "single" ? "1" : group.max,
-                            min: kind === "single" && group.required ? "1" : group.min,
-                          });
+                          applyChoiceRule(groupIndex, event.target.value);
                         }}
                         className="h-10 rounded-lg border border-border bg-cream px-3 text-sm font-black text-charcoal"
+                        title="How many options customers can select"
                       >
-                        <option value="single">Single</option>
-                        <option value="multi">Multiple</option>
+                        <option value="optional">Optional extras</option>
+                        <option value="exact-1">Select any 1</option>
+                        <option value="exact-2">Select any 2</option>
+                        <option value="exact-3">Select any 3</option>
+                        <option value="exact-4">Select any 4</option>
+                        <option value="upto-1">Up to 1 optional</option>
+                        <option value="upto-2">Up to 2 optional</option>
+                        <option value="upto-3">Up to 3 optional</option>
+                        <option value="upto-4">Up to 4 optional</option>
+                        <option value="custom">Custom rule</option>
                       </select>
-                      <label className="flex h-10 items-center gap-2 rounded-lg border border-border bg-cream px-3 text-xs font-black text-charcoal">
-                        <input
-                          type="checkbox"
-                          checked={group.required}
-                          onChange={(event) => updateAddonGroup(groupIndex, {
-                            required: event.target.checked,
-                            min: event.target.checked ? group.min || "1" : "0",
-                          })}
-                        />
-                        Required
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={group.min}
-                        onChange={(event) => updateAddonGroup(groupIndex, { min: event.target.value })}
-                        className="h-10 rounded-lg border border-border bg-cream px-3 text-sm font-bold text-charcoal"
-                        placeholder="Min"
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        value={group.max}
-                        onChange={(event) => updateAddonGroup(groupIndex, { max: event.target.value })}
-                        className="h-10 rounded-lg border border-border bg-cream px-3 text-sm font-bold text-charcoal"
-                        placeholder="Max"
-                      />
                       <button
                         type="button"
-                        onClick={() => update({ addonGroups: form.addonGroups.filter((_, currentIndex) => currentIndex !== groupIndex) })}
+                        onClick={() => removeAddonGroup(groupIndex)}
                         className="h-10 rounded-lg border border-border px-3 text-xs font-black text-red"
                       >
                         Remove
@@ -1033,6 +1196,42 @@ function ProductModal({
                         Save group
                       </button>
                     </div>
+                    {getChoiceRule(group) === "custom" ? (
+                      <div className="grid gap-2 rounded-lg border border-[#f0d7dd] bg-[#fff4f5] p-3 sm:grid-cols-[120px_120px_120px_minmax(0,1fr)]">
+                        <label className="flex h-10 items-center gap-2 rounded-lg border border-border bg-white px-3 text-xs font-black text-charcoal">
+                          <input
+                            type="checkbox"
+                            checked={group.required}
+                            onChange={(event) => updateAddonGroup(groupIndex, {
+                              required: event.target.checked,
+                              min: event.target.checked ? group.min || "1" : "0",
+                            })}
+                          />
+                          Required
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={group.min}
+                          onChange={(event) => updateAddonGroup(groupIndex, { min: event.target.value })}
+                          className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-bold text-charcoal"
+                          placeholder="Minimum"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          value={group.max}
+                          onChange={(event) => updateAddonGroup(groupIndex, { max: event.target.value })}
+                          className="h-10 rounded-lg border border-border bg-white px-3 text-sm font-bold text-charcoal"
+                          placeholder="Maximum"
+                        />
+                        <p className="self-center text-xs font-bold leading-5 text-muted sm:pl-2">
+                          Use this for large groups, e.g. minimum 0 and maximum 10.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="rounded-lg bg-cream px-3 py-2 text-xs font-bold text-muted">{choiceRuleDescription(group)}</p>
+                    )}
                     <div className="grid gap-2">
                       {!group.options.length ? (
                         <p className="rounded-lg border border-dashed border-border bg-cream px-3 py-2 text-xs font-bold text-muted">
@@ -1067,7 +1266,7 @@ function ProductModal({
                           </select>
                           <button
                             type="button"
-                            onClick={() => updateAddonGroup(groupIndex, { options: group.options.filter((_, currentIndex) => currentIndex !== optionIndex) })}
+                            onClick={() => removeAddonOption(groupIndex, optionIndex)}
                             className="h-10 rounded-lg border border-border px-3 text-xs font-black text-red"
                           >
                             Remove option
@@ -1290,6 +1489,8 @@ function Field({
   placeholder,
   helper,
   min,
+  max,
+  step,
 }: {
   label: string;
   value: string;
@@ -1299,12 +1500,33 @@ function Field({
   placeholder?: string;
   helper?: string;
   min?: number;
+  max?: number;
+  step?: number;
 }) {
   return (
     <label className="grid min-w-0 gap-2 text-sm font-black text-maroon">
       {label}
-      <input type={type} min={min} list={list} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} className="h-11 w-full min-w-0 rounded-lg border border-border bg-cream px-3 text-charcoal" />
+      <input type={type} min={min} max={max} step={step} list={list} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} className="h-11 w-full min-w-0 rounded-lg border border-border bg-cream px-3 text-charcoal" />
       {helper ? <span className="text-xs font-bold text-muted">{helper}</span> : null}
     </label>
   );
+}
+
+function choiceRuleDescription(group: AddonGroupDraft) {
+  const min = Number(group.min || 0);
+  const max = Number(group.max || 0);
+  if (group.required) {
+    const requiredCount = Math.max(1, min);
+    return `Customer must select ${requiredCount === 1 ? "any 1 option" : `any ${requiredCount} options`} from this group.`;
+  }
+
+  if (max > 0) {
+    return `Customer can select up to ${max} ${max === 1 ? "option" : "options"} from this group.`;
+  }
+
+  return "Customer can skip this group or select any add-ons they want.";
+}
+
+function confirmRemove(message: string) {
+  return window.confirm(`${message}\n\nThis cannot be undone until you save or recreate it.`);
 }

@@ -8,9 +8,11 @@ import {
   BadgeCheck,
   BookOpen,
   BriefcaseBusiness,
+  Check,
   ChevronLeft,
   ChevronRight,
   Clock3,
+  CreditCard,
   Gift,
   Grid2X2,
   Home,
@@ -25,6 +27,7 @@ import {
   Tag,
   Phone,
   Trash2,
+  Wallet,
   X,
 } from "lucide-react";
 import { calculateCartTotals, formatRupees, getPricableCartLines, getProductUnitPricing, isCouponEligibleForCustomer, isCouponEligibleForFulfillment } from "@/lib/pricing";
@@ -909,23 +912,14 @@ export function CartClient({
                 Your Savings {formatRupees(totalSavings)}
               </div>
             ) : null}
-            {paymentOptions.length ? (
-              <div className="mt-5 grid grid-cols-2 gap-2">
-                {paymentOptions.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setPaymentMethod(option)}
-                    className={`h-10 rounded-xl text-[13px] font-black ring-1 ${
-                      selectedPaymentMethod === option
-                        ? "bg-maroon text-white ring-maroon"
-                        : "bg-white text-charcoal ring-border"
-                    }`}
-                  >
-                    {getPaymentLabel(option, fulfillmentMethod)}
-                  </button>
-                ))}
-              </div>
+            {paymentOptions.length > 1 ? (
+              <PaymentMethodSelector
+                className="mt-5"
+                options={paymentOptions}
+                selected={selectedPaymentMethod}
+                fulfillmentMethod={fulfillmentMethod}
+                onSelect={setPaymentMethod}
+              />
             ) : null}
             {checkoutMessage ? (
               <p className="mt-4 rounded-xl bg-white px-3 py-2 text-center text-xs font-black leading-5 text-muted" aria-live="polite">
@@ -1179,20 +1173,13 @@ export function CartClient({
         </p>
       </div>
       {paymentOptions.length > 1 ? (
-        <div className="mx-3 mt-4 grid grid-cols-2 gap-2 rounded-[16px] bg-white p-2 shadow-sm ring-1 ring-[#eef1f6]">
-          {paymentOptions.map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => setPaymentMethod(option)}
-              className={`h-10 rounded-xl text-[12px] font-black ${
-                selectedPaymentMethod === option ? "bg-maroon text-white" : "bg-[#f6f7fb] text-charcoal"
-              }`}
-            >
-              {getPaymentLabel(option, fulfillmentMethod)}
-            </button>
-          ))}
-        </div>
+        <PaymentMethodSelector
+          className="mx-3 mt-4"
+          options={paymentOptions}
+          selected={selectedPaymentMethod}
+          fulfillmentMethod={fulfillmentMethod}
+          onSelect={setPaymentMethod}
+        />
       ) : null}
       {checkoutMessage ? (
         <p className="mx-3 mt-4 rounded-2xl bg-white p-3 text-center text-[11px] font-black leading-4 text-muted shadow-sm ring-1 ring-border" aria-live="polite">
@@ -1436,8 +1423,12 @@ export function CartClient({
       <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-white px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2.5 shadow-[0_-12px_30px_rgba(34,31,32,0.12)] sm:absolute sm:left-1/2 sm:max-w-[430px] sm:-translate-x-1/2 sm:rounded-t-2xl lg:hidden">
         <div className="mx-auto grid max-w-[430px] grid-cols-[1fr_1.45fr] gap-2.5 lg:max-w-4xl">
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-muted">Pay using</p>
-            <p className="mt-1 truncate text-[14px] font-bold text-charcoal">{paymentLabel}</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-muted">
+              {paymentOptions.length > 1 ? "Pay using" : "Total"}
+            </p>
+            <p className="mt-1 truncate text-[14px] font-bold text-charcoal">
+              {paymentOptions.length > 1 ? paymentLabel : formatRupees(totals.grandTotal)}
+            </p>
           </div>
           {storeOrderingDisabled ? (
             <button disabled className="h-13 cursor-not-allowed rounded-2xl bg-muted/30 text-[15px] font-black text-muted">
@@ -1559,6 +1550,56 @@ function FulfillmentSelector({
         })}
       </div>
     </section>
+  );
+}
+
+function PaymentMethodSelector({
+  options,
+  selected,
+  fulfillmentMethod,
+  onSelect,
+  className = "",
+}: {
+  options: PaymentMethod[];
+  selected?: PaymentMethod;
+  fulfillmentMethod: FulfillmentMethod;
+  onSelect: (value: PaymentMethod) => void;
+  className?: string;
+}) {
+  return (
+    <div className={`grid gap-2 rounded-[16px] bg-white p-2 shadow-sm ring-1 ring-[#eef1f6] ${className}`}>
+      {options.map((option) => {
+        const active = selected === option;
+        const Icon = option === "RAZORPAY" ? CreditCard : Wallet;
+
+        return (
+          <button
+            key={option}
+            type="button"
+            onClick={() => onSelect(option)}
+            className={`grid min-h-[58px] grid-cols-[34px_minmax(0,1fr)_20px] items-center gap-3 rounded-[13px] px-3 py-2 text-left ring-1 transition ${
+              active
+                ? "bg-[#fff4f5] text-maroon ring-maroon shadow-[0_8px_18px_rgba(141,0,33,0.12)]"
+                : "bg-[#f6f7fb] text-charcoal ring-transparent hover:bg-white hover:ring-border"
+            }`}
+            aria-pressed={active}
+          >
+            <span className={`grid h-8 w-8 place-items-center rounded-xl ${active ? "bg-maroon text-white" : "bg-white text-maroon"}`}>
+              <Icon size={17} strokeWidth={2.7} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[13px] font-black leading-4">{getPaymentLabel(option, fulfillmentMethod)}</span>
+              <span className="mt-0.5 block truncate text-[10px] font-bold leading-3 text-muted">
+                {getPaymentDescription(option, fulfillmentMethod)}
+              </span>
+            </span>
+            <span className={`grid h-5 w-5 place-items-center rounded-full ring-1 ${active ? "bg-maroon text-white ring-maroon" : "bg-white text-transparent ring-border"}`}>
+              <Check size={13} strokeWidth={3} />
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1985,4 +2026,9 @@ function getPaymentLabel(method?: PaymentMethod, fulfillmentMethod: FulfillmentM
   if (method === "RAZORPAY") return "Online Pay";
   if (method === "COD") return fulfillmentMethod === "PICKUP" ? "Cash at pickup" : "Cash on Delivery";
   return "Payment unavailable";
+}
+
+function getPaymentDescription(method: PaymentMethod, fulfillmentMethod: FulfillmentMethod) {
+  if (method === "RAZORPAY") return "Pay securely now";
+  return fulfillmentMethod === "PICKUP" ? "Pay when you collect" : "Pay on delivery";
 }

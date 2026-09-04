@@ -293,6 +293,10 @@ async function postHandler(request: Request) {
     return NextResponse.json({ error: "Online payments are not enabled right now." }, { status: 423 });
   }
 
+  if (data.paymentMethod === "COD" && !settings.codEnabled) {
+    return NextResponse.json({ error: "Cash on Delivery is not enabled right now." }, { status: 423 });
+  }
+
   const razorpayOrder = data.paymentMethod === "RAZORPAY"
     ? await createRazorpayOrder({
         amountRupees: calculated.grandTotal,

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarClock, CreditCard, LocateFixed, MapPin, ShieldCheck, Store } from "lucide-react";
+import { CalendarClock, Check, CreditCard, LocateFixed, MapPin, ShieldCheck, Store, Wallet } from "lucide-react";
 import { business } from "@/lib/business";
 import { writeStoredCart } from "@/lib/cart-storage";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
@@ -463,11 +463,25 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
                   setPaymentMethod(method);
                   setMessage(`${method} selected.`);
                 }}
-                className={`h-12 rounded-lg font-black ${
-                  paymentMethod === method ? "bg-red text-white" : "border border-border bg-white"
+                className={`grid min-h-[68px] grid-cols-[38px_minmax(0,1fr)_22px] items-center gap-3 rounded-xl px-3 py-2 text-left ring-1 transition ${
+                  paymentMethod === method
+                    ? "bg-[#fff4f5] text-maroon ring-maroon shadow-[0_10px_20px_rgba(141,0,33,0.12)]"
+                    : "bg-white text-charcoal ring-border hover:bg-[#f6f7fb]"
                 }`}
+                aria-pressed={paymentMethod === method}
               >
-                {method}
+                <span className={`grid h-9 w-9 place-items-center rounded-xl ${paymentMethod === method ? "bg-maroon text-white" : "bg-[#fff4f5] text-maroon"}`}>
+                  {method === "Online Pay" ? <CreditCard size={18} strokeWidth={2.7} /> : <Wallet size={18} strokeWidth={2.7} />}
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[14px] font-black leading-5">{method}</span>
+                  <span className="mt-0.5 block truncate text-[11px] font-bold leading-4 text-muted">
+                    {method === "Online Pay" ? "Pay securely now" : "Pay when food arrives"}
+                  </span>
+                </span>
+                <span className={`grid h-5 w-5 place-items-center rounded-full ring-1 ${paymentMethod === method ? "bg-maroon text-white ring-maroon" : "bg-white text-transparent ring-border"}`}>
+                  <Check size={13} strokeWidth={3} />
+                </span>
               </button>
             )) : (
               <p className="rounded-lg bg-cream p-3 text-sm font-bold text-maroon">

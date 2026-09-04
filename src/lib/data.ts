@@ -61,8 +61,8 @@ export const products: Product[] = [
     spiceLevel: "Medium",
     variants: [
       { id: "regular", name: "Regular", price: 0 },
-      { id: "large", name: "Large", price: 59 },
-      { id: "family", name: "Family Pack", price: 220 },
+      { id: "large", name: "Large", price: 288 },
+      { id: "family", name: "Family Pack", price: 449 },
     ],
     addons: [
       { id: "egg", name: "Boiled egg", price: 25 },
@@ -88,7 +88,7 @@ export const products: Product[] = [
     spiceLevel: "Mild",
     variants: [
       { id: "regular", name: "Regular", price: 0 },
-      { id: "large", name: "Large", price: 45 },
+      { id: "large", name: "Large", price: 144 },
     ],
     addons: [
       { id: "sweet", name: "Gulab jamun", price: 35 },
@@ -114,8 +114,8 @@ export const products: Product[] = [
     spiceLevel: "Medium",
     variants: [
       { id: "regular", name: "Regular", price: 0 },
-      { id: "large", name: "Large", price: 70 },
-      { id: "family", name: "Family Pack", price: 260 },
+      { id: "large", name: "Large", price: 319 },
+      { id: "family", name: "Family Pack", price: 509 },
     ],
     addons: [
       { id: "egg", name: "Extra egg", price: 25 },
@@ -140,7 +140,7 @@ export const products: Product[] = [
     spiceLevel: "Hot",
     variants: [
       { id: "regular", name: "Regular", price: 0 },
-      { id: "large", name: "Large", price: 55 },
+      { id: "large", name: "Large", price: 244 },
     ],
     addons: [
       { id: "momos", name: "4 pc momos", price: 69 },
@@ -164,7 +164,7 @@ export const products: Product[] = [
     spiceLevel: "Mild",
     variants: [
       { id: "regular", name: "Regular", price: 0 },
-      { id: "large", name: "Large", price: 60 },
+      { id: "large", name: "Large", price: 279 },
     ],
     addons: [
       { id: "paratha", name: "Extra paratha", price: 35 },
@@ -189,7 +189,7 @@ export const products: Product[] = [
     spiceLevel: "Medium",
     variants: [
       { id: "veg", name: "Veg plan", price: 0 },
-      { id: "mixed", name: "Mixed plan", price: 800 },
+      { id: "mixed", name: "Mixed plan", price: 3799 },
     ],
     addons: [
       { id: "dessert-weekly", name: "Weekly dessert", price: 399 },

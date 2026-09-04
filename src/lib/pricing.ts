@@ -29,15 +29,16 @@ export type ProductUnitPricing = {
 };
 
 export function getProductUnitPricing(product: Product, categoryOffers: CategoryOfferMap = {}, variantPrice = 0, addonTotal = 0): ProductUnitPricing {
-  const originalBasePrice = product.originalPrice ?? product.price;
+  const basePrice = variantPrice > 0 ? variantPrice : product.price;
+  const originalBasePrice = variantPrice > 0 ? variantPrice : product.originalPrice ?? product.price;
   const offerText = getProductOfferText(product, categoryOffers);
-  const discount = getOfferDiscount(product.price + variantPrice, offerText);
-  const unitPrice = Math.max(product.price + variantPrice - discount, 0) + addonTotal;
+  const discount = getOfferDiscount(basePrice, offerText);
+  const unitPrice = Math.max(basePrice - discount, 0) + addonTotal;
 
   return {
-    originalUnitPrice: originalBasePrice + variantPrice + addonTotal,
+    originalUnitPrice: originalBasePrice + addonTotal,
     unitPrice,
-    discountPerUnit: Math.max(originalBasePrice + variantPrice + addonTotal - unitPrice, 0),
+    discountPerUnit: Math.max(originalBasePrice + addonTotal - unitPrice, 0),
     offerText,
   };
 }

@@ -194,9 +194,9 @@ export function AdminCategoriesClient({
     setCartSuggestionCategories((current) =>
       current.includes(categoryName)
         ? current.filter((name) => name !== categoryName)
-        : current.length < 2
+        : current.length < 3
           ? [...current, categoryName]
-          : [current[1], categoryName],
+          : [...current.slice(1), categoryName],
     );
   }
 
@@ -374,7 +374,7 @@ export function AdminCategoriesClient({
             <div className="mt-4 grid gap-3 rounded-xl border border-border bg-white p-4">
               <div>
                 <h2 className="text-base font-black text-maroon">Complete your meal with</h2>
-                <p className="mt-1 text-xs font-bold leading-5 text-muted">Choose up to two categories to showcase on the home page dishes section and cart add-on strip.</p>
+                <p className="mt-1 text-xs font-bold leading-5 text-muted">Choose up to three categories to showcase on the home page dishes section and cart add-on strip.</p>
               </div>
               <div className="grid max-h-56 gap-2 overflow-y-auto pr-1">
                 {categories.map((category) => {

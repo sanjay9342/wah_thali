@@ -16,12 +16,26 @@ type DateFilter = "all" | "today" | "yesterday" | "week";
 type PriceFilter = "all" | "under500" | "500to1000" | "above1000";
 type StatusFilter = "all" | "incoming" | "active" | "completed" | "declined";
 
-const declineReasons = [
+const commonDeclineReasons = [
   "Item unavailable",
   "Kitchen closed for today",
-  "Delivery not available for this location",
   "Too many orders right now",
-  "Payment or address issue",
+  "Payment issue",
+];
+
+const deliveryDeclineReasons = [
+  ...commonDeclineReasons,
+  "Delivery not available for this location",
+  "Address is incomplete or outside service area",
+  "Customer could not be reached for delivery details",
+];
+
+const pickupDeclineReasons = [
+  ...commonDeclineReasons,
+  "Pickup counter is temporarily unavailable",
+  "Kitchen cannot prepare before the pickup time",
+  "Customer could not be reached for pickup confirmation",
+  "Pickup order details are incomplete",
 ];
 
 const statusCopy: Record<OrderStatus, { label: string; customer: string }> = {
@@ -764,15 +778,62 @@ export function AdminOrdersClient({
 
       {declineOrder ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-charcoal/45 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
-            <h2 className="text-xl font-black text-maroon">Decline {declineOrder.orderNumber}</h2>
-            <label className="mt-4 grid gap-2 text-sm font-black text-charcoal">
-              Reason
-              <select value={reason} onChange={(event) => setReason(event.target.value)} className="h-11 rounded-lg border border-border bg-cream px-3">
-                <option value="">Select reason</option>
-                {declineReasons.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-            </label>
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
+            {(() => {
+              const details = getOrderDetails(declineOrder);
+              const reasons = getDeclineReasons(details.isPickup);
+
+              return (
+                <>
+                  <div className="flex items-start gap-3">
+                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#fff4f5] text-red">
+                      <XCircle size={22} />
+                    </span>
+                    <div className="min-w-0">
+                      <h2 className="text-xl font-black text-maroon">Decline {declineOrder.orderNumber}</h2>
+                      <p className="mt-1 text-sm font-bold leading-5 text-muted">
+                        {details.isPickup ? "Choose the clearest self-pickup reason for the customer." : "Choose the clearest delivery reason for the customer."}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-2">
+                    {reasons.map((item) => {
+                      const selected = reason === item;
+
+                      return (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => setReason(item)}
+                          className={`grid min-h-11 grid-cols-[20px_minmax(0,1fr)] items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-black ring-1 ${
+                            selected
+                              ? "bg-[#fff4f5] text-maroon ring-maroon"
+                              : "bg-cream text-charcoal ring-border hover:bg-white"
+                          }`}
+                          aria-pressed={selected}
+                        >
+                          <span className={`grid h-5 w-5 place-items-center rounded-full ring-1 ${selected ? "bg-maroon text-white ring-maroon" : "bg-white text-transparent ring-border"}`}>
+                            <CheckCircle2 size={13} strokeWidth={3} />
+                          </span>
+                          <span>{item}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <label className="mt-4 grid gap-2 text-sm font-black text-charcoal">
+                    Custom reason
+                    <textarea
+                      value={reason}
+                      onChange={(event) => setReason(event.target.value)}
+                      className="min-h-20 resize-none rounded-xl border border-border bg-cream px-3 py-2 text-sm font-bold leading-5 outline-none"
+                      placeholder={details.isPickup ? "Example: Pickup time cannot be handled today." : "Example: Delivery area is not serviceable today."}
+                    />
+                  </label>
+                </>
+              );
+            })()}
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setDeclineOrder(null)} className="h-10 rounded-lg border border-border px-4 font-black">Cancel</button>
               <button
@@ -1075,6 +1136,10 @@ function getStatusActionTone(status: OrderStatus) {
   if (status === "DELIVERED") return "border-[#a8d8b8] bg-[#effaf4] text-[#0f7a45] hover:bg-[#dff6e8]";
   if (status === "CANCELLED") return "border-[#f2b6bc] bg-white text-red hover:bg-[#fff0f3]";
   return "border-border bg-white text-maroon hover:bg-cream";
+}
+
+function getDeclineReasons(isPickup: boolean) {
+  return isPickup ? pickupDeclineReasons : deliveryDeclineReasons;
 }
 
 function getOrderCardTone(status: OrderStatus) {

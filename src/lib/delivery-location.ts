@@ -22,6 +22,7 @@ export const defaultDeliveryLocation: DeliveryLocation = {
 
 let currentLocation = defaultDeliveryLocation;
 let loadedForOwner: string | null = null;
+let currentLocationReady = false;
 
 function dispatchLocationChange() {
   if (typeof window === "undefined") return;
@@ -72,12 +73,17 @@ async function loadDeliveryLocation() {
   if (typeof window === "undefined") return;
   const session = readCustomerSession();
   const owner = session?.mobile ?? null;
-  if (loadedForOwner === owner) return;
+  if (loadedForOwner === owner) {
+    currentLocationReady = true;
+    dispatchLocationChange();
+    return;
+  }
   loadedForOwner = owner;
   const storedLocation = readStoredDeliveryLocation();
 
   if (!owner) {
     currentLocation = storedLocation ?? defaultDeliveryLocation;
+    currentLocationReady = true;
     dispatchLocationChange();
     return;
   }
@@ -91,6 +97,7 @@ async function loadDeliveryLocation() {
     currentLocation = storedLocation ?? defaultDeliveryLocation;
   }
 
+  currentLocationReady = true;
   dispatchLocationChange();
 }
 
@@ -102,6 +109,7 @@ export function saveDeliveryLocation(location: DeliveryLocation) {
   if (typeof window === "undefined") return;
 
   currentLocation = location;
+  currentLocationReady = true;
   writeStoredDeliveryLocation(location);
   loadedForOwner = readCustomerSession()?.mobile ?? null;
   dispatchLocationChange();
@@ -130,16 +138,23 @@ export function getDeliveryLocationCoverage(location: DeliveryLocation, settings
 }
 
 export function useDeliveryLocation() {
+  return useDeliveryLocationState().location;
+}
+
+export function useDeliveryLocationState() {
   const [location, setLocation] = useState<DeliveryLocation>(currentLocation);
+  const [ready, setReady] = useState(currentLocationReady);
 
   useEffect(() => {
     function handleChange() {
       setLocation(currentLocation);
+      setReady(currentLocationReady);
     }
 
     const storedLocation = readStoredDeliveryLocation();
     if (storedLocation) {
       currentLocation = storedLocation;
+      currentLocationReady = true;
     }
     handleChange();
     void loadDeliveryLocation();
@@ -156,5 +171,5 @@ export function useDeliveryLocation() {
     };
   }, []);
 
-  return location;
+  return { location, ready };
 }

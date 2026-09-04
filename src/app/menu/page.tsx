@@ -17,7 +17,7 @@ export default async function MenuPage({
 }) {
   const params = await searchParams;
   const activeCategory = Array.isArray(params.category) ? params.category[0] : params.category;
-  const { categories, categoryOptions, products, slides, categoryImages, categoryOffers, restaurantSettings } = await getPublicMenuPageDataFromDb();
+  const { categories, categoryOptions, products, slides, categoryImages, categoryOffers, restaurantSettings, homeDishCategories } = await getPublicMenuPageDataFromDb();
 
-  return <MenuExperience initialCategories={categories} initialCategoryOptions={categoryOptions} initialProducts={products} initialSlides={slides} initialCategoryImages={categoryImages} initialCategoryOffers={categoryOffers} restaurantSettings={restaurantSettings} initialActiveCategory={activeCategory} />;
+  return <MenuExperience initialCategories={categories} initialCategoryOptions={categoryOptions} initialProducts={products} initialSlides={slides} initialCategoryImages={categoryImages} initialCategoryOffers={categoryOffers} restaurantSettings={restaurantSettings} initialActiveCategory={activeCategory} initialHomeDishCategories={homeDishCategories} />;
 }

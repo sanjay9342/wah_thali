@@ -24,6 +24,7 @@ const productSchema = z.object({
   originalPrice: z.coerce.number().int().nonnegative().nullable().optional(),
   image: imagePathSchema.optional(),
   dietaryType: z.string().default("VEG"),
+  rating: z.coerce.number().min(0).max(5).default(4.5),
   available: z.boolean().default(true),
   prepTimeMinutes: z.coerce.number().int().positive().default(25),
   spiceLevel: z.string().default("Medium"),

@@ -2,7 +2,7 @@ import { CartClient } from "@/components/cart-client";
 import { Header } from "@/components/header";
 import { getPublicCartPageDataFromDb } from "@/lib/db";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 export default async function CartPage() {
   const { products, coupons, restaurantSettings, categoryOffers, cartSuggestionCategories } = await getPublicCartPageDataFromDb();

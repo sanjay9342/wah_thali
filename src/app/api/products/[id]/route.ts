@@ -23,6 +23,7 @@ const updateProductSchema = z.object({
   price: z.coerce.number().int().nonnegative().optional(),
   originalPrice: z.coerce.number().int().nonnegative().nullable().optional(),
   dietaryType: z.string().optional(),
+  rating: z.coerce.number().min(0).max(5).optional(),
   available: z.boolean().optional(),
   prepTimeMinutes: z.coerce.number().int().positive().optional(),
   spiceLevel: z.string().optional(),

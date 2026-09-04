@@ -35,7 +35,7 @@ import { MobileNav } from "@/components/mobile-nav";
 import { categories as fallbackCategories, products as fallbackProducts } from "@/lib/data";
 import { writeStoredCart } from "@/lib/cart-storage";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
-import { getDeliveryLocationCoverage, useDeliveryLocation } from "@/lib/delivery-location";
+import { getDeliveryLocationCoverage, useDeliveryLocationState } from "@/lib/delivery-location";
 import { getModifierSelectionIssue, getProductModifierGroups } from "@/lib/product-modifiers";
 import { formatRupees, getPricableCartLines, getProductPrice, getProductUnitPricing } from "@/lib/pricing";
 import { getStoreOrderingStatus } from "@/lib/store-hours";
@@ -319,7 +319,6 @@ function needsDishDetail(product: Product) {
 function ProductCard({
   product,
   offer,
-  prepMinutes,
   quantity,
   saved,
   onAdd,
@@ -330,7 +329,6 @@ function ProductCard({
 }: {
   product: Product;
   offer?: string;
-  prepMinutes: number;
   quantity: number;
   saved: boolean;
   onAdd: () => void;
@@ -376,7 +374,6 @@ function ProductCard({
             <Star size={8} className="fill-red sm:h-[11px] sm:w-[11px]" />
             {product.rating}
           </span>
-          <span>{prepMinutes}-{prepMinutes + 8} min</span>
         </div>
 
         {offer ? <p className="mt-1.5 line-clamp-1 text-[8px] font-black text-maroon sm:mt-2.5 sm:text-[11px]">{offer}</p> : null}
@@ -396,7 +393,6 @@ function ProductCard({
 function FoodieProductCard({
   product,
   offer,
-  prepMinutes,
   quantity,
   saved,
   onAdd,
@@ -407,7 +403,6 @@ function FoodieProductCard({
 }: {
   product: Product;
   offer?: string;
-  prepMinutes: number;
   quantity: number;
   saved: boolean;
   onAdd: () => void;
@@ -450,8 +445,6 @@ function FoodieProductCard({
             <Star size={10} className="fill-maroon" />
             {product.rating}
           </span>
-          <span className="text-[#d8dce3]">•</span>
-          <span>{prepMinutes}-{prepMinutes + 5} min</span>
         </div>
         {offer ? (
           <div className="mt-1.5 border-t border-[#eef1f6] pt-1.5">
@@ -485,7 +478,6 @@ function DesktopSearchPage({
   onClearFilters,
   searchGroups,
   categoryOffers,
-  prepMinutes,
   quantityByProduct,
   savedProductIdSet,
   orderingDisabled,
@@ -505,7 +497,6 @@ function DesktopSearchPage({
   onClearFilters: () => void;
   searchGroups: SearchGroup[];
   categoryOffers: CategoryOfferMap;
-  prepMinutes: number;
   quantityByProduct: Map<string, number>;
   savedProductIdSet: Set<string>;
   orderingDisabled: boolean;
@@ -561,7 +552,6 @@ function DesktopSearchPage({
                           key={product.id}
                           product={product}
                           offer={getProductOffer(product, categoryOffers)}
-                          prepMinutes={prepMinutes}
                           quantity={quantityByProduct.get(product.id) ?? 0}
                           saved={savedProductIdSet.has(product.id)}
                           onAdd={() => onAdd(product)}
@@ -607,7 +597,7 @@ function DesktopTrustFooter({ categories }: { categories: string[] }) {
 
           <FooterColumn title="Top Categories">
             {topCategories.map((category) => (
-              <Link key={category} href={`/?category=${encodeURIComponent(category)}`} className="text-sm font-bold text-muted hover:text-maroon">
+              <Link key={category} href={getCategoryHref(category)} className="text-sm font-bold text-muted hover:text-maroon">
                 {category}
               </Link>
             ))}
@@ -663,7 +653,6 @@ function DishDetailSheet({
   onSelectProduct,
   orderingDisabled,
   offer,
-  prepMinutes,
   relatedProducts,
   freeDeliveryThreshold,
   cartCount,
@@ -678,7 +667,6 @@ function DishDetailSheet({
   onSelectProduct: (product: Product) => void;
   orderingDisabled: boolean;
   offer?: string;
-  prepMinutes: number;
   relatedProducts: Product[];
   freeDeliveryThreshold?: number;
   cartCount: number;
@@ -777,10 +765,6 @@ function DishDetailSheet({
             </h2>
             <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[10px] font-black text-muted">
               <span className="inline-flex items-center gap-1">
-                <TimerReset size={12} /> {prepMinutes}-{prepMinutes + 5} min
-              </span>
-              <span className="text-[#d8dce3]">•</span>
-              <span className="inline-flex items-center gap-1">
                 <BadgeCheck size={12} className="text-maroon" /> {product.rating}
               </span>
             </div>
@@ -823,7 +807,7 @@ function DishDetailSheet({
               {modifierGroups.map((group) => {
                 const selectedCount = group.options.reduce((total, option) => total + (addonQuantities[option.id] ?? 0), 0);
                 const helper = group.required
-                  ? `Required - Select ${group.min <= 1 ? "any 1 option" : `${group.min} options`}`
+                  ? `Required - Select ${Math.max(1, group.min) === 1 ? "any 1 option" : `any ${Math.max(1, group.min)} options`}`
                   : group.max > 0
                     ? `Select up to ${group.max} ${group.max === 1 ? "option" : "options"}`
                     : "Optional";
@@ -882,10 +866,6 @@ function DishDetailSheet({
           <div className="mt-4 overflow-hidden rounded-[16px] bg-white shadow-[0_10px_24px_rgba(17,24,39,0.05)] ring-1 ring-[#eef1f6]">
             <h3 className="border-b border-[#eef1f6] px-4 py-3 text-[14px] font-black text-charcoal">Product Info</h3>
             <div className="divide-y divide-[#eef1f6]">
-              <div className="grid grid-cols-[1fr_auto] px-4 py-3 text-[12px] font-black">
-                <span className="inline-flex items-center gap-2 text-muted"><TimerReset size={16} /> Restaurant prep</span>
-                <span className="text-charcoal">{prepMinutes}-{prepMinutes + 5} min</span>
-              </div>
               <div className="grid grid-cols-[1fr_auto] px-4 py-3 text-[12px] font-black">
                 <span className="text-muted">Serves</span>
                 <span className="text-charcoal">{selectedVariant.name}</span>
@@ -982,6 +962,7 @@ export function MenuExperience({
   restaurantSettings,
   initialActiveCategory,
   initialHomeDishCategories = [],
+  categoryPage = false,
 }: {
   initialCategories?: string[];
   initialCategoryOptions?: CategoryOption[];
@@ -993,6 +974,7 @@ export function MenuExperience({
   restaurantSettings?: RestaurantSettings;
   initialActiveCategory?: string;
   initialHomeDishCategories?: string[];
+  categoryPage?: boolean;
 }) {
   const categoryOptions = useMemo(
     () => initialCategoryOptions.length
@@ -1011,7 +993,8 @@ export function MenuExperience({
   const router = useRouter();
   const isHomePage = pathname === "/";
   const isSearchPage = pathname === "/menu";
-  const deliveryLocation = useDeliveryLocation();
+  const isCategoryPage = categoryPage || pathname.startsWith("/category/");
+  const { location: deliveryLocation, ready: deliveryLocationReady } = useDeliveryLocationState();
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
   const [query, setQuery] = useState("");
   const [activeFilters, setActiveFilters] = useState<MenuFilterId[]>([]);
@@ -1047,15 +1030,13 @@ export function MenuExperience({
   const outsideOrderingHours = orderingStatus?.outsideOrderingHours ?? false;
   const storeClosed = orderingStatus?.unavailable ?? false;
   const deliveryCoverage = restaurantSettings ? getDeliveryLocationCoverage(deliveryLocation, restaurantSettings) : null;
-  const serviceable = deliveryCoverage?.serviceable ?? true;
+  const serviceable = deliveryLocationReady ? deliveryCoverage?.serviceable ?? true : true;
   const orderingDisabled = storeClosed || !serviceable;
   const statusMessage = orderingStatus?.message ?? "Ordering is controlled by the restaurant.";
-  const displayPrepMinutes = restaurantSettings?.defaultPrepMinutes ?? 25;
   const configuredHomeCategories = useMemo(
     () => initialHomeDishCategories.filter((category) => categories.includes(category)),
     [categories, initialHomeDishCategories],
   );
-  const configuredHomeCategorySet = useMemo(() => new Set(configuredHomeCategories), [configuredHomeCategories]);
   const usingConfiguredHomeDishes = isHomePage && activeCategory === "All" && !deferredQuery.trim() && activeFilters.length === 0 && configuredHomeCategories.length > 0;
 
   const visibleProducts = useMemo(() => {
@@ -1072,7 +1053,7 @@ export function MenuExperience({
 
   const homeProducts = useMemo(() => {
     if (usingConfiguredHomeDishes) {
-      return visibleProducts.filter((product) => configuredHomeCategorySet.has(product.category));
+      return visibleProducts.filter((product) => configuredHomeCategories.some((category) => productMatchesCategory(product, category)));
     }
 
     if (activeCategory === "All" && !deferredQuery.trim() && activeFilters.length === 0) {
@@ -1081,7 +1062,54 @@ export function MenuExperience({
     }
 
     return visibleProducts;
-  }, [activeCategory, activeFilters.length, configuredHomeCategorySet, deferredQuery, usingConfiguredHomeDishes, visibleProducts]);
+  }, [activeCategory, activeFilters.length, configuredHomeCategories, deferredQuery, usingConfiguredHomeDishes, visibleProducts]);
+  const homeProductGroups = useMemo(() => {
+    if (usingConfiguredHomeDishes) {
+      return configuredHomeCategories
+        .map((category) => ({
+          category,
+          products: homeProducts.filter((product) => productMatchesCategory(product, category)),
+        }))
+        .filter((group) => group.products.length > 0);
+    }
+
+    if (isCategoryPage && activeCategory !== "All") {
+      const selectedCategory = categoryOptions.find((category) => category.name === activeCategory);
+      const childCategories = selectedCategory
+        ? categoryOptions.filter((category) => category.parentId === selectedCategory.id).map((category) => category.name)
+        : [];
+      const activeGroups = childCategories.length
+        ? [
+            {
+              category: activeCategory,
+              products: homeProducts.filter((product) => product.category === activeCategory),
+            },
+            ...childCategories.map((category) => ({
+              category,
+              products: homeProducts.filter((product) => product.category === category),
+            })),
+          ].filter((group) => group.products.length > 0)
+        : [{ category: activeCategory, products: homeProducts }];
+      return activeGroups;
+    }
+
+    return [{ category: activeCategory === "All" ? "" : activeCategory, products: homeProducts }];
+  }, [activeCategory, categoryOptions, configuredHomeCategories, homeProducts, isCategoryPage, usingConfiguredHomeDishes]);
+  const categoryPageShowcaseGroups = useMemo(() => {
+    if (!isCategoryPage || activeCategory === "All" || !configuredHomeCategories.length) return [];
+
+    return configuredHomeCategories
+      .map((category) => ({
+        category,
+        products: sortProductsForMenu(
+          products.filter((product) => productMatchesCategory(product, category)),
+          categoryOffers,
+          priceSort,
+        ),
+      }))
+      .filter((group) => group.products.length > 0);
+  }, [activeCategory, categoryOffers, configuredHomeCategories, isCategoryPage, priceSort, products]);
+  const hasHomeProductGroups = homeProductGroups.some((group) => group.products.length > 0);
 
   const promoSlides = useMemo(() => {
     const slides = initialSlides?.length ? initialSlides : [
@@ -1115,6 +1143,13 @@ export function MenuExperience({
 
   useEffect(() => {
     function syncCategoryFromUrl() {
+      if (isCategoryPage) {
+        const category = initialActiveCategory && categories.includes(initialActiveCategory) ? initialActiveCategory : "All";
+        setActiveCategory(category);
+        setMobileCategory(category);
+        return;
+      }
+
       const category = new URLSearchParams(window.location.search).get("category");
       if (!category || category === "All") {
         setActiveCategory("All");
@@ -1129,7 +1164,7 @@ export function MenuExperience({
     syncCategoryFromUrl();
     window.addEventListener("popstate", syncCategoryFromUrl);
     return () => window.removeEventListener("popstate", syncCategoryFromUrl);
-  }, [categories]);
+  }, [categories, initialActiveCategory, isCategoryPage]);
 
   useEffect(() => {
     if (promoSlides.length <= 1) return;
@@ -1229,25 +1264,30 @@ export function MenuExperience({
     setMobileMenuView("home");
     setShowMoreCategories(false);
 
-    if (isHomePage || isSearchPage) {
+    if (isHomePage || isSearchPage || isCategoryPage) {
       const params = new URLSearchParams();
       if (category !== "All") params.set("category", category);
-      router.replace(`${isSearchPage ? "/menu" : "/"}${params.toString() ? `?${params.toString()}` : ""}`, { scroll: false });
+      const targetPath = isSearchPage || isCategoryPage
+        ? (category === "All" ? "/menu" : getCategoryHref(category))
+        : "/";
+      router.replace(`${targetPath}${isHomePage && params.toString() ? `?${params.toString()}` : ""}`, { scroll: false });
       window.requestAnimationFrame(() => document.getElementById("menu-items")?.scrollIntoView({ block: "start", behavior: "smooth" }));
     }
   }
 
   function openMenuCategory(category: string) {
+    setActiveCategory(category);
+    setMobileCategory(category);
+    setMobileMenuView("home");
     setShowMoreCategories(false);
 
-    if (isSearchPage) {
+    if (isSearchPage || isCategoryPage) {
       selectHomeCategory(category);
       return;
     }
 
-    const params = new URLSearchParams();
-    if (category !== "All") params.set("category", category);
-    router.push(`/menu${params.toString() ? `?${params.toString()}` : ""}`);
+    window.requestAnimationFrame(() => document.getElementById("menu-items")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+    router.push(category === "All" ? "/menu" : getCategoryHref(category));
   }
 
   function toggleMobileCategoryGroup(category: string) {
@@ -1305,7 +1345,7 @@ export function MenuExperience({
   const homeOfferCards = getHomeOfferCards(initialCoupons);
   const mobileCategoryScreenOpen = mobileMenuView === "categories" || mobileMenuView === "category";
 
-  if (!serviceable) {
+  if (deliveryLocationReady && !serviceable) {
     return (
       <main className="min-h-screen bg-white pb-24 text-charcoal">
         <Header showLocation />
@@ -1386,7 +1426,6 @@ export function MenuExperience({
                             key={product.id}
                             product={product}
                             offer={getProductOffer(product, categoryOffers)}
-                            prepMinutes={displayPrepMinutes}
                             quantity={quantityByProduct.get(product.id) ?? 0}
                             saved={savedProductIdSet.has(product.id)}
                             onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
@@ -1436,7 +1475,6 @@ export function MenuExperience({
           onClearFilters={clearFilters}
           searchGroups={searchGroups}
           categoryOffers={categoryOffers}
-          prepMinutes={displayPrepMinutes}
           quantityByProduct={quantityByProduct}
           savedProductIdSet={savedProductIdSet}
           orderingDisabled={orderingDisabled}
@@ -1493,7 +1531,6 @@ export function MenuExperience({
                   key={product.id}
                   product={product}
                   offer={getProductOffer(product, categoryOffers)}
-                  prepMinutes={displayPrepMinutes}
                   quantity={quantityByProduct.get(product.id) ?? 0}
                   saved={savedProductIdSet.has(product.id)}
                   onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
@@ -1562,6 +1599,7 @@ export function MenuExperience({
             </section>
           ) : null}
 
+          {!isCategoryPage ? (
           <section
             className="relative isolate hidden aspect-[1434/248] w-full cursor-pointer overflow-hidden rounded-[22px] bg-red shadow-[0_16px_36px_rgba(141,0,33,0.18)] lg:block"
             role="button"
@@ -1598,6 +1636,7 @@ export function MenuExperience({
               </div>
             </div>
           </section>
+          ) : null}
 
           <SearchFilterControl
             query={query}
@@ -1715,44 +1754,110 @@ export function MenuExperience({
                 </Link>
               )}
             </div>
-            {homeProducts.length ? (
-              <>
-              <div className="flex snap-x gap-3.5 overflow-x-auto pb-5 lg:hidden">
-                {homeProducts.slice(0, 8).map((product) => (
-                  <div key={product.id} className="w-[clamp(140px,42vw,178px)] shrink-0 snap-start">
-                    <FoodieProductCard
-                      product={product}
-                      offer={getProductOffer(product, categoryOffers)}
-                      prepMinutes={displayPrepMinutes}
-                      quantity={quantityByProduct.get(product.id) ?? 0}
-                      saved={savedProductIdSet.has(product.id)}
-                      onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
-                      onDecrease={() => decreaseProduct(product)}
-                      onOpen={() => setSelectedProduct(product)}
-                      onToggleSave={() => toggleSaved(product)}
-                      orderingDisabled={orderingDisabled}
-                    />
-                  </div>
+            {hasHomeProductGroups ? (
+              <div className="grid gap-7">
+                {homeProductGroups.map((group) => (
+                  <section key={group.category || "all-dishes"}>
+                    {group.category ? (
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <h3 className="min-w-0 text-[15px] font-black leading-tight text-charcoal lg:text-[17px]">{group.category}</h3>
+                        <Link href={getCategoryHref(group.category)} className="inline-flex shrink-0 items-center gap-1 text-[10px] font-black text-maroon lg:text-[11px]">
+                          View all <ChevronRight size={12} />
+                        </Link>
+                      </div>
+                    ) : null}
+                    <div className="flex snap-x gap-3.5 overflow-x-auto pb-5 lg:hidden">
+                      {group.products.slice(0, 8).map((product) => (
+                        <div key={product.id} className="w-[clamp(140px,42vw,178px)] shrink-0 snap-start">
+                          <FoodieProductCard
+                            product={product}
+                            offer={getProductOffer(product, categoryOffers)}
+                            quantity={quantityByProduct.get(product.id) ?? 0}
+                            saved={savedProductIdSet.has(product.id)}
+                            onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
+                            onDecrease={() => decreaseProduct(product)}
+                            onOpen={() => setSelectedProduct(product)}
+                            onToggleSave={() => toggleSaved(product)}
+                            orderingDisabled={orderingDisabled}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="hidden gap-4 pb-3 lg:grid lg:grid-cols-[repeat(auto-fill,minmax(220px,260px))] lg:justify-start">
+                      {group.products.slice(0, 12).map((product) => (
+                        <ProductCard
+                          key={product.id}
+                          product={product}
+                          offer={getProductOffer(product, categoryOffers)}
+                          quantity={quantityByProduct.get(product.id) ?? 0}
+                          saved={savedProductIdSet.has(product.id)}
+                          onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
+                          onDecrease={() => decreaseProduct(product)}
+                          onOpen={() => setSelectedProduct(product)}
+                          onToggleSave={() => toggleSaved(product)}
+                          orderingDisabled={orderingDisabled}
+                        />
+                      ))}
+                    </div>
+                  </section>
                 ))}
+                {categoryPageShowcaseGroups.length ? (
+                  <section className="grid gap-7 border-t border-[#f1e7e4] pt-7">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div>
+                        <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-muted lg:text-[10px]">Home favourites</p>
+                        <h2 className="mt-1 font-sans text-[20px] font-semibold leading-tight text-charcoal lg:text-[20px]">Today&apos;s Dishes</h2>
+                      </div>
+                      <Link href="/menu" className="inline-flex h-8 items-center gap-1 rounded-full bg-[#fff4f5] px-3 text-[10px] font-semibold text-maroon lg:text-[11px]">
+                        Full menu <ChevronRight size={11} />
+                      </Link>
+                    </div>
+                    {categoryPageShowcaseGroups.map((group) => (
+                      <section key={`showcase-${group.category}`}>
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <h3 className="min-w-0 text-[15px] font-black leading-tight text-charcoal lg:text-[17px]">{group.category}</h3>
+                          <Link href={getCategoryHref(group.category)} className="inline-flex shrink-0 items-center gap-1 text-[10px] font-black text-maroon lg:text-[11px]">
+                            View all <ChevronRight size={12} />
+                          </Link>
+                        </div>
+                        <div className="flex snap-x gap-3.5 overflow-x-auto pb-5 lg:hidden">
+                          {group.products.slice(0, 8).map((product) => (
+                            <div key={product.id} className="w-[clamp(140px,42vw,178px)] shrink-0 snap-start">
+                              <FoodieProductCard
+                                product={product}
+                                offer={getProductOffer(product, categoryOffers)}
+                                quantity={quantityByProduct.get(product.id) ?? 0}
+                                saved={savedProductIdSet.has(product.id)}
+                                onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
+                                onDecrease={() => decreaseProduct(product)}
+                                onOpen={() => setSelectedProduct(product)}
+                                onToggleSave={() => toggleSaved(product)}
+                                orderingDisabled={orderingDisabled}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <div className="hidden gap-4 pb-3 lg:grid lg:grid-cols-[repeat(auto-fill,minmax(220px,260px))] lg:justify-start">
+                          {group.products.slice(0, 12).map((product) => (
+                            <ProductCard
+                              key={product.id}
+                              product={product}
+                              offer={getProductOffer(product, categoryOffers)}
+                              quantity={quantityByProduct.get(product.id) ?? 0}
+                              saved={savedProductIdSet.has(product.id)}
+                              onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
+                              onDecrease={() => decreaseProduct(product)}
+                              onOpen={() => setSelectedProduct(product)}
+                              onToggleSave={() => toggleSaved(product)}
+                              orderingDisabled={orderingDisabled}
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    ))}
+                  </section>
+                ) : null}
               </div>
-              <div className="hidden gap-4 pb-3 lg:grid lg:grid-cols-[repeat(auto-fill,minmax(220px,260px))] lg:justify-start">
-                {homeProducts.slice(0, 12).map((product) => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    offer={getProductOffer(product, categoryOffers)}
-                    prepMinutes={displayPrepMinutes}
-                    quantity={quantityByProduct.get(product.id) ?? 0}
-                    saved={savedProductIdSet.has(product.id)}
-                    onAdd={() => needsDishDetail(product) ? setSelectedProduct(product) : addProduct(product)}
-                    onDecrease={() => decreaseProduct(product)}
-                    onOpen={() => setSelectedProduct(product)}
-                    onToggleSave={() => toggleSaved(product)}
-                    orderingDisabled={orderingDisabled}
-                  />
-                ))}
-              </div>
-              </>
             ) : (
               <div className="rounded-2xl border border-[#f1e7e4] bg-white p-8 text-center">
                 <Store className="mx-auto text-muted" />
@@ -1886,7 +1991,6 @@ export function MenuExperience({
           onSelectProduct={setSelectedProduct}
           orderingDisabled={orderingDisabled}
           offer={getProductOffer(selectedProduct, categoryOffers)}
-          prepMinutes={displayPrepMinutes}
           freeDeliveryThreshold={restaurantSettings?.freeDeliveryThreshold}
           relatedProducts={products
             .filter((product) => product.id !== selectedProduct.id && product.available && product.category === selectedProduct.category)
@@ -2332,4 +2436,8 @@ function slugifyCategory(value: string) {
     .replace(/['"]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function getCategoryHref(category: string) {
+  return `/category/${slugifyCategory(category)}`;
 }

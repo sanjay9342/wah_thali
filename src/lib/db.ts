@@ -621,7 +621,7 @@ export const getPublicHomePageDataFromDb = unstable_cache(
 
 export const getPublicMenuPageDataFromDb = unstable_cache(
   async () => {
-    const [categories, categoryOptions, products, slides, categoryImages, categoryOffers, restaurantSettings] = await Promise.all([
+    const [categories, categoryOptions, products, slides, categoryImages, categoryOffers, restaurantSettings, homeDishCategories] = await Promise.all([
       getCategoriesFromDb(),
       getCategoryOptionsFromDb(),
       getProductsFromDb(),
@@ -629,9 +629,10 @@ export const getPublicMenuPageDataFromDb = unstable_cache(
       getCategoryImagesFromDb(),
       getCategoryOffersFromDb(),
       getRestaurantSettingsFromDb(),
+      getHomeDishCategoriesFromDb(),
     ]);
 
-    return { categories, categoryOptions, products, slides, categoryImages, categoryOffers, restaurantSettings };
+    return { categories, categoryOptions, products, slides, categoryImages, categoryOffers, restaurantSettings, homeDishCategories };
   },
   ["public-menu-page-data"],
   { revalidate: storefrontCacheSeconds, tags: ["storefront", "storefront-menu"] },

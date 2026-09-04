@@ -21,7 +21,7 @@ const reorderSchema = z.object({
     id: z.string().min(1),
     sortOrder: z.coerce.number().int().min(1),
   })).min(1).optional(),
-  cartSuggestionCategories: z.array(z.string().trim().min(1)).max(2).optional(),
+  cartSuggestionCategories: z.array(z.string().trim().min(1)).max(3).optional(),
 });
 
 async function getHandler() {
@@ -147,7 +147,7 @@ async function patchHandler(request: Request) {
   }
 
   if (parsed.data.cartSuggestionCategories !== undefined) {
-    const cartSuggestionCategories = parsed.data.cartSuggestionCategories.slice(0, 2);
+    const cartSuggestionCategories = parsed.data.cartSuggestionCategories.slice(0, 3);
     await Promise.all([
       prisma.businessSetting.upsert({
         where: { key: "cartSuggestionCategories" },
