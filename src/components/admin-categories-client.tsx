@@ -745,6 +745,7 @@ function CategoryEditModal({
   const [error, setError] = useState("");
   const parentOptions = categories.filter((item) =>
     item.id !== category.id &&
+    !item.parentId &&
     !hasCategoryCycle(categories, item.id) &&
     !isCategoryDescendant(categories, item.id, category.id),
   );

@@ -8,7 +8,7 @@ import { logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
 const categorySchema = z.object({
-  name: z.string().min(1),
+  name: z.string().trim().min(1),
   parentId: nullableParentId(),
   image: z.string().optional(),
   offer: z.string().optional(),
@@ -73,10 +73,23 @@ async function postHandler(request: Request) {
 
   const { image, offer, ...categoryData } = parsed.data;
   const slug = slugify(categoryData.name);
-  const category = await prisma.category.upsert({
-    where: { slug: slugify(parsed.data.name) },
-    create: { ...categoryData, slug },
-    update: categoryData,
+  const existingCategory = await prisma.category.findUnique({ where: { slug } });
+  if (existingCategory) {
+    return NextResponse.json({ error: "This category already exists. Edit the existing category instead." }, { status: 409 });
+  }
+
+  if (categoryData.parentId) {
+    const parent = await prisma.category.findUnique({
+      where: { id: categoryData.parentId },
+      select: { parentId: true },
+    });
+    if (!parent || parent.parentId) {
+      return NextResponse.json({ error: "Subcategories can only be created under a main category." }, { status: 400 });
+    }
+  }
+
+  const category = await prisma.category.create({
+    data: { ...categoryData, slug },
   });
 
   if (image !== undefined) {

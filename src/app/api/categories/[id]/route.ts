@@ -8,7 +8,7 @@ import { logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
 const categorySchema = z.object({
-  name: z.string().min(1).optional(),
+  name: z.string().trim().min(1).optional(),
   parentId: nullableParentId(),
   image: z.string().optional(),
   offer: z.string().optional(),
@@ -31,8 +31,26 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ id
 
   const { image, offer, ...categoryData } = parsed.data;
   const previous = await prisma.category.findUniqueOrThrow({ where: { id } });
+  if (categoryData.name) {
+    const duplicate = await prisma.category.findFirst({
+      where: { slug: slugify(categoryData.name), NOT: { id } },
+      select: { id: true },
+    });
+    if (duplicate) {
+      return NextResponse.json({ error: "This category already exists. Use a different category name." }, { status: 409 });
+    }
+  }
   if (categoryData.parentId === id) {
     return NextResponse.json({ error: "A category cannot be its own parent." }, { status: 400 });
+  }
+  if (categoryData.parentId) {
+    const parent = await prisma.category.findUnique({
+      where: { id: categoryData.parentId },
+      select: { parentId: true },
+    });
+    if (!parent || parent.parentId) {
+      return NextResponse.json({ error: "Subcategories can only be assigned under a main category." }, { status: 400 });
+    }
   }
   if (categoryData.parentId && await wouldCreateCategoryCycle(id, categoryData.parentId)) {
     return NextResponse.json({ error: "A category cannot use one of its own subcategories as a parent." }, { status: 400 });

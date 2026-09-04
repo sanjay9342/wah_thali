@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition, type DragEvent, type SyntheticEvent } from "react";
-import { ArrowDown, ArrowUp, CheckCircle2, Download, Edit3, EyeOff, GripVertical, PackagePlus, Plus, Search, SlidersHorizontal, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type DragEvent, type SyntheticEvent, type WheelEvent } from "react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, CheckCircle2, Download, Edit3, EyeOff, GripVertical, PackagePlus, Plus, Search, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { adminFetch, readAdminApiJson } from "@/lib/admin-client-auth";
@@ -104,6 +104,9 @@ export function AdminInventoryClient({
   const [savingProductIds, setSavingProductIds] = useState<Set<string>>(() => new Set());
   const [draggingProductId, setDraggingProductId] = useState<string | null>(null);
   const [dragOverProductId, setDragOverProductId] = useState<string | null>(null);
+  const [productScroll, setProductScroll] = useState({ left: 0, max: 0, canScroll: false });
+  const productScrollerRef = useRef<HTMLDivElement | null>(null);
+  const productScrollFrame = useRef<number | null>(null);
   const dragAutoScrollFrame = useRef<number | null>(null);
   const dragPointerY = useRef(0);
   const [isPending, startTransition] = useTransition();
@@ -118,6 +121,9 @@ export function AdminInventoryClient({
   useEffect(() => () => {
     if (dragAutoScrollFrame.current !== null) {
       window.cancelAnimationFrame(dragAutoScrollFrame.current);
+    }
+    if (productScrollFrame.current !== null) {
+      window.cancelAnimationFrame(productScrollFrame.current);
     }
   }, []);
 
@@ -162,6 +168,41 @@ export function AdminInventoryClient({
       return matchesQuery && matchesCategory && matchesFilter;
     });
   }, [categoryFilter, filter, products, query]);
+
+  const readProductScrollState = useCallback(() => {
+    const scroller = productScrollerRef.current;
+    if (!scroller) return;
+    const max = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+    setProductScroll({
+      left: Math.min(scroller.scrollLeft, max),
+      max,
+      canScroll: max > 1,
+    });
+  }, []);
+
+  const updateProductScrollState = useCallback(() => {
+    if (productScrollFrame.current !== null) return;
+    productScrollFrame.current = window.requestAnimationFrame(() => {
+      productScrollFrame.current = null;
+      readProductScrollState();
+    });
+  }, [readProductScrollState]);
+
+  useEffect(() => {
+    const scroller = productScrollerRef.current;
+    if (!scroller) return;
+
+    readProductScrollState();
+    const frame = window.requestAnimationFrame(readProductScrollState);
+    scroller.addEventListener("scroll", updateProductScrollState, { passive: true });
+    window.addEventListener("resize", readProductScrollState);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      scroller.removeEventListener("scroll", updateProductScrollState);
+      window.removeEventListener("resize", readProductScrollState);
+    };
+  }, [filteredProducts.length, readProductScrollState, updateProductScrollState]);
 
   const stats = {
     total: products.length,
@@ -390,6 +431,34 @@ export function AdminInventoryClient({
     dragAutoScrollFrame.current = null;
   }
 
+  function setProductHorizontalScroll(value: number) {
+    const scroller = productScrollerRef.current;
+    if (!scroller) return;
+    scroller.scrollTo({ left: value, behavior: "auto" });
+    readProductScrollState();
+  }
+
+  function nudgeProductHorizontalScroll(direction: -1 | 1) {
+    const scroller = productScrollerRef.current;
+    if (!scroller) return;
+    const max = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+    const distance = Math.max(520, scroller.clientWidth * 0.9);
+    const left = Math.min(max, Math.max(0, scroller.scrollLeft + direction * distance));
+    scroller.scrollTo({
+      left,
+      behavior: "smooth",
+    });
+  }
+
+  function handleProductSliderWheel(event: WheelEvent<HTMLDivElement>) {
+    const scroller = productScrollerRef.current;
+    if (!scroller) return;
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    if (!delta) return;
+    event.preventDefault();
+    setProductHorizontalScroll(Math.min(productScroll.max, Math.max(0, scroller.scrollLeft + delta * 1.4)));
+  }
+
   function saveProductOrder(orderedProducts: AdminProduct[]) {
     setProducts(orderedProducts);
     runMutation(async () => {
@@ -526,7 +595,7 @@ export function AdminInventoryClient({
             </div>
           </aside>
 
-          <div className="surface min-w-0 overflow-hidden rounded-2xl">
+          <div className="surface relative min-w-0 overflow-hidden rounded-2xl">
             <div className="flex flex-col gap-3 border-b border-border p-5 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-xl font-black text-maroon">Menu products</h2>
@@ -544,7 +613,7 @@ export function AdminInventoryClient({
                 </button>
               </div>
             </div>
-            <div className="overflow-x-auto" onDragOver={handleProductListDragOver}>
+            <div ref={productScrollerRef} className="overflow-x-auto" onDragOver={handleProductListDragOver}>
               <table className="w-full min-w-[1280px] table-fixed text-left text-sm">
                 <colgroup>
                   <col className="w-[330px]" />
@@ -674,6 +743,39 @@ export function AdminInventoryClient({
                 </tbody>
               </table>
             </div>
+            {productScroll.canScroll ? (
+              <div onWheel={handleProductSliderWheel} className="fixed bottom-4 left-1/2 z-40 grid w-[min(860px,calc(100vw-32px))] -translate-x-1/2 grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-3 rounded-xl border border-border bg-white/95 p-2 shadow-[0_18px_44px_rgba(34,31,32,0.20)] backdrop-blur">
+                <button
+                  type="button"
+                  onClick={() => nudgeProductHorizontalScroll(-1)}
+                  disabled={productScroll.left <= 0}
+                  className="grid h-10 w-10 place-items-center rounded-lg border border-border text-maroon disabled:opacity-35"
+                  aria-label="Scroll products left"
+                >
+                  <ArrowLeft size={18} />
+                </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={productScroll.max}
+                  step={1}
+                  value={productScroll.left}
+                  onChange={(event) => setProductHorizontalScroll(event.currentTarget.valueAsNumber)}
+                  onInput={(event) => setProductHorizontalScroll(event.currentTarget.valueAsNumber)}
+                  className="h-10 w-full cursor-grab accent-maroon active:cursor-grabbing"
+                  aria-label="Horizontal product table scroll"
+                />
+                <button
+                  type="button"
+                  onClick={() => nudgeProductHorizontalScroll(1)}
+                  disabled={productScroll.left >= productScroll.max}
+                  className="grid h-10 w-10 place-items-center rounded-lg border border-border text-maroon disabled:opacity-35"
+                  aria-label="Scroll products right"
+                >
+                  <ArrowRight size={18} />
+                </button>
+              </div>
+            ) : null}
           </div>
         </section>
       </div>
