@@ -1,6 +1,6 @@
 "use client";
 
-import { type DragEvent, useEffect, useMemo, useState, useTransition } from "react";
+import { type DragEvent, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ArrowDown, ArrowUp, CheckCircle2, Edit3, EyeOff, GripVertical, ImageOff, ImagePlus, Plus, Tag, Trash2, Upload, X } from "lucide-react";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
@@ -56,6 +56,8 @@ export function AdminCategoriesClient({
   const [editingCategory, setEditingCategory] = useState<AdminCategory | null>(null);
   const [draggingCategoryId, setDraggingCategoryId] = useState<string | null>(null);
   const [dragOverCategoryId, setDragOverCategoryId] = useState<string | null>(null);
+  const dragAutoScrollFrame = useRef<number | null>(null);
+  const dragPointerY = useRef(0);
   const [isPending, startTransition] = useTransition();
   const adminAccess = useAdminAccess();
   const parentCategoryOptions = useMemo(() => categories.filter((category) => !category.parentId), [categories]);
@@ -71,6 +73,12 @@ export function AdminCategoriesClient({
     const timer = window.setTimeout(() => setMessage(""), messageTone === "success" ? 4200 : 7000);
     return () => window.clearTimeout(timer);
   }, [message, messageTone]);
+
+  useEffect(() => () => {
+    if (dragAutoScrollFrame.current !== null) {
+      window.cancelAnimationFrame(dragAutoScrollFrame.current);
+    }
+  }, []);
 
   async function refreshCategories() {
     const response = await fetch("/api/categories", { cache: "no-store" });
@@ -241,6 +249,14 @@ export function AdminCategoriesClient({
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
     setDragOverCategoryId(categoryId);
+    startDragAutoScroll(event.clientY);
+  }
+
+  function handleListDragOver(event: DragEvent<HTMLElement>) {
+    if (!draggingCategoryId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    startDragAutoScroll(event.clientY);
   }
 
   function handleDrop(event: DragEvent<HTMLElement>, targetCategoryId: string) {
@@ -248,12 +264,43 @@ export function AdminCategoriesClient({
     const sourceCategoryId = event.dataTransfer.getData("text/plain") || draggingCategoryId;
     setDraggingCategoryId(null);
     setDragOverCategoryId(null);
+    stopDragAutoScroll();
     if (!sourceCategoryId || sourceCategoryId === targetCategoryId) return;
 
     const fromIndex = categories.findIndex((category) => category.id === sourceCategoryId);
     const toIndex = categories.findIndex((category) => category.id === targetCategoryId);
     if (fromIndex < 0 || toIndex < 0) return;
     saveCategoryOrder(moveItem(categories, fromIndex, toIndex));
+  }
+
+  function startDragAutoScroll(pointerY: number) {
+    dragPointerY.current = pointerY;
+    if (dragAutoScrollFrame.current !== null) return;
+    dragAutoScrollFrame.current = window.requestAnimationFrame(scrollWhileDragging);
+  }
+
+  function scrollWhileDragging() {
+    dragAutoScrollFrame.current = null;
+    const edgeSize = 120;
+    const maxSpeed = 28;
+    const viewportHeight = window.innerHeight;
+    const distanceFromTop = dragPointerY.current;
+    const distanceFromBottom = viewportHeight - dragPointerY.current;
+    const speed = distanceFromTop < edgeSize
+      ? -Math.ceil(((edgeSize - distanceFromTop) / edgeSize) * maxSpeed)
+      : distanceFromBottom < edgeSize
+        ? Math.ceil(((edgeSize - distanceFromBottom) / edgeSize) * maxSpeed)
+        : 0;
+
+    if (!speed) return;
+    window.scrollBy(0, speed);
+    dragAutoScrollFrame.current = window.requestAnimationFrame(scrollWhileDragging);
+  }
+
+  function stopDragAutoScroll() {
+    if (dragAutoScrollFrame.current === null) return;
+    window.cancelAnimationFrame(dragAutoScrollFrame.current);
+    dragAutoScrollFrame.current = null;
   }
 
   function deleteCategory(category: AdminCategory) {
@@ -430,7 +477,7 @@ export function AdminCategoriesClient({
                 </div>
               </div>
             </div>
-            <div className="grid gap-3 p-4 sm:p-5">
+            <div className="grid gap-3 p-4 sm:p-5" onDragOver={handleListDragOver}>
               {categoryRows.length ? categoryRows.map(({ category, depth }, index) => (
                 <article
                   key={category.id}
@@ -440,6 +487,7 @@ export function AdminCategoriesClient({
                   onDragEnd={() => {
                     setDraggingCategoryId(null);
                     setDragOverCategoryId(null);
+                    stopDragAutoScroll();
                   }}
                   className={`grid min-w-0 gap-4 rounded-xl border bg-white p-4 transition sm:grid-cols-[64px_minmax(0,1fr)] ${depth ? "ml-4 border-dashed sm:ml-8" : ""} ${dragOverCategoryId === category.id ? "border-maroon shadow-md" : "border-border"} ${draggingCategoryId === category.id ? "opacity-60" : ""}`}
                 >

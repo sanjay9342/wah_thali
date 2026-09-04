@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition, type SyntheticEvent } from "react";
-import { CheckCircle2, Download, Edit3, EyeOff, PackagePlus, Plus, Search, SlidersHorizontal, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useTransition, type DragEvent, type SyntheticEvent } from "react";
+import { ArrowDown, ArrowUp, CheckCircle2, Download, Edit3, EyeOff, GripVertical, PackagePlus, Plus, Search, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { adminFetch } from "@/lib/admin-client-auth";
@@ -102,6 +102,10 @@ export function AdminInventoryClient({
   const [uploading, setUploading] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [savingProductIds, setSavingProductIds] = useState<Set<string>>(() => new Set());
+  const [draggingProductId, setDraggingProductId] = useState<string | null>(null);
+  const [dragOverProductId, setDragOverProductId] = useState<string | null>(null);
+  const dragAutoScrollFrame = useRef<number | null>(null);
+  const dragPointerY = useRef(0);
   const [isPending, startTransition] = useTransition();
   const adminAccess = useAdminAccess();
 
@@ -110,6 +114,12 @@ export function AdminInventoryClient({
     const timer = window.setTimeout(() => setMessage(""), messageTone === "success" ? 4200 : 7000);
     return () => window.clearTimeout(timer);
   }, [message, messageTone]);
+
+  useEffect(() => () => {
+    if (dragAutoScrollFrame.current !== null) {
+      window.cancelAnimationFrame(dragAutoScrollFrame.current);
+    }
+  }, []);
 
   const categoryOptions = useMemo(() => {
     const optionsByName = new Map(initialCategoryOptions.map((category) => [category.name, category]));
@@ -141,7 +151,7 @@ export function AdminInventoryClient({
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
       const matchesQuery = `${product.name} ${product.displayName ?? ""} ${product.kitchenName ?? ""} ${product.reportCode ?? ""} ${product.category} ${product.description}`.toLowerCase().includes(query.toLowerCase());
-      const matchesCategory = categoryFilter === "All categories" || product.category === categoryFilter;
+      const matchesCategory = categoryFilter === "All categories" || product.category === categoryFilter || product.parentCategory === categoryFilter;
       const matchesFilter =
         filter === "All products" ||
         (filter === "Available" && product.available) ||
@@ -150,7 +160,7 @@ export function AdminInventoryClient({
         (filter === "Discounted" && Boolean(product.offer || product.originalPrice));
 
       return matchesQuery && matchesCategory && matchesFilter;
-    }).sort(compareProductsForMenuState);
+    });
   }, [categoryFilter, filter, products, query]);
 
   const stats = {
@@ -271,7 +281,7 @@ export function AdminInventoryClient({
     setMessage("");
     setSavingProductIds((current) => new Set(current).add(product.id));
     setProducts((current) =>
-      current.map((item) => item.id === product.id ? { ...item, ...patch } : item).sort(compareProductsForMenuState),
+      current.map((item) => item.id === product.id ? { ...item, ...patch } : item),
     );
 
     try {
@@ -284,14 +294,14 @@ export function AdminInventoryClient({
       if (!response.ok) throw new Error(data.error ?? "Update failed.");
       if (data.product?.available !== undefined) {
         setProducts((current) =>
-          current.map((item) => item.id === product.id ? { ...item, available: data.product.available } : item).sort(compareProductsForMenuState),
+          current.map((item) => item.id === product.id ? { ...item, available: data.product.available } : item),
         );
       }
       setLastSyncedAt(new Date());
       showSuccess(`${product.name} is now ${patch.available ? "online" : "offline"}.`);
     } catch (error) {
       setProducts((current) =>
-        current.map((item) => item.id === product.id ? previousProduct : item).sort(compareProductsForMenuState),
+        current.map((item) => item.id === product.id ? previousProduct : item),
       );
       showError(error instanceof Error ? error.message : "Update failed.");
     } finally {
@@ -301,6 +311,96 @@ export function AdminInventoryClient({
         return next;
       });
     }
+  }
+
+  function moveProductInCurrentView(productId: string, direction: -1 | 1) {
+    const currentIndex = filteredProducts.findIndex((product) => product.id === productId);
+    const target = filteredProducts[currentIndex + direction];
+    if (!target) return;
+
+    const fromIndex = products.findIndex((product) => product.id === productId);
+    const toIndex = products.findIndex((product) => product.id === target.id);
+    if (fromIndex < 0 || toIndex < 0) return;
+    saveProductOrder(moveItem(products, fromIndex, toIndex));
+  }
+
+  function handleProductDragStart(event: DragEvent<HTMLElement>, productId: string) {
+    setDraggingProductId(productId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", productId);
+  }
+
+  function handleProductDragOver(event: DragEvent<HTMLElement>, productId: string) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverProductId(productId);
+    startDragAutoScroll(event.clientY);
+  }
+
+  function handleProductListDragOver(event: DragEvent<HTMLElement>) {
+    if (!draggingProductId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    startDragAutoScroll(event.clientY);
+  }
+
+  function handleProductDrop(event: DragEvent<HTMLElement>, targetProductId: string) {
+    event.preventDefault();
+    const sourceProductId = event.dataTransfer.getData("text/plain") || draggingProductId;
+    setDraggingProductId(null);
+    setDragOverProductId(null);
+    stopDragAutoScroll();
+    if (!sourceProductId || sourceProductId === targetProductId) return;
+
+    const fromIndex = products.findIndex((product) => product.id === sourceProductId);
+    const toIndex = products.findIndex((product) => product.id === targetProductId);
+    if (fromIndex < 0 || toIndex < 0) return;
+    saveProductOrder(moveItem(products, fromIndex, toIndex));
+  }
+
+  function startDragAutoScroll(pointerY: number) {
+    dragPointerY.current = pointerY;
+    if (dragAutoScrollFrame.current !== null) return;
+    dragAutoScrollFrame.current = window.requestAnimationFrame(scrollWhileDragging);
+  }
+
+  function scrollWhileDragging() {
+    dragAutoScrollFrame.current = null;
+    const edgeSize = 120;
+    const maxSpeed = 28;
+    const viewportHeight = window.innerHeight;
+    const distanceFromTop = dragPointerY.current;
+    const distanceFromBottom = viewportHeight - dragPointerY.current;
+    const speed = distanceFromTop < edgeSize
+      ? -Math.ceil(((edgeSize - distanceFromTop) / edgeSize) * maxSpeed)
+      : distanceFromBottom < edgeSize
+        ? Math.ceil(((edgeSize - distanceFromBottom) / edgeSize) * maxSpeed)
+        : 0;
+
+    if (!speed) return;
+    window.scrollBy(0, speed);
+    dragAutoScrollFrame.current = window.requestAnimationFrame(scrollWhileDragging);
+  }
+
+  function stopDragAutoScroll() {
+    if (dragAutoScrollFrame.current === null) return;
+    window.cancelAnimationFrame(dragAutoScrollFrame.current);
+    dragAutoScrollFrame.current = null;
+  }
+
+  function saveProductOrder(orderedProducts: AdminProduct[]) {
+    setProducts(orderedProducts);
+    runMutation(async () => {
+      const response = await adminFetch(adminAccess?.session, "/api/products", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order: orderedProducts.map((product) => product.id) }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(getApiErrorMessage(data, "Product order save failed."));
+      await refreshProducts();
+      showSuccess("Product order saved successfully.");
+    });
   }
 
   function deleteProduct(product: AdminProduct) {
@@ -407,12 +507,17 @@ export function AdminInventoryClient({
               ))}
             </div>
             <h3 className="mt-5 text-sm font-black text-maroon">Categories</h3>
-            <div className="mt-2 grid gap-2">
-              {["All categories", ...categories].slice(0, 10).map((category) => (
-                <button key={category} onClick={() => setCategoryFilter(category)} className={`rounded-lg border border-border px-3 py-2 text-left text-xs font-black ${categoryFilter === category ? "bg-maroon text-white" : "text-charcoal"}`}>
-                  {category}
+            <div className="mt-2 grid max-h-[420px] gap-2 overflow-y-auto pr-1">
+              {["All categories", ...categoryOptions.map((category) => category.name)].map((category) => {
+                const option = categoryOptions.find((item) => item.name === category);
+                const isSubcategory = Boolean(option?.parentId);
+                return (
+                <button key={category} onClick={() => setCategoryFilter(category)} className={`rounded-lg border border-border px-3 py-2 text-left text-xs font-black ${isSubcategory ? "ml-4" : ""} ${categoryFilter === category ? "bg-maroon text-white" : "text-charcoal"}`}>
+                  <span className="block">{category}</span>
+                  {option?.parentName ? <span className={`mt-0.5 block text-[10px] ${categoryFilter === category ? "text-white/75" : "text-muted"}`}>{option.parentName}</span> : null}
                 </button>
-              ))}
+                );
+              })}
             </div>
           </aside>
 
@@ -434,12 +539,24 @@ export function AdminInventoryClient({
                 </button>
               </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[820px] text-left text-sm">
+            <div className="overflow-x-auto" onDragOver={handleProductListDragOver}>
+              <table className="w-full min-w-[1280px] table-fixed text-left text-sm">
+                <colgroup>
+                  <col className="w-[156px]" />
+                  <col className="w-[330px]" />
+                  <col className="w-[96px]" />
+                  <col className="w-[88px]" />
+                  <col className="w-[96px]" />
+                  <col className="w-[162px]" />
+                  <col className="w-[96px]" />
+                  <col className="w-[126px]" />
+                  <col className="w-[136px]" />
+                  <col className="w-[94px]" />
+                </colgroup>
                 <thead className="bg-cream text-maroon">
                   <tr>
-                    {["Item", "Shortcut", "Rating", "Price", "Offer", "Variants", "Choice groups", "Availability", "Actions"].map((head) => (
-                      <th key={head} className="p-3">{head}</th>
+                    {["Order", "Item", "Shortcut", "Rating", "Price", "Offer", "Variants", "Choice groups", "Availability", "Actions"].map((head) => (
+                      <th key={head} className="p-3 align-middle text-xs font-black uppercase tracking-wide">{head}</th>
                     ))}
                   </tr>
                 </thead>
@@ -451,14 +568,57 @@ export function AdminInventoryClient({
                     const modifierGroups = getProductModifierGroups(product);
 
                     return (
-                      <tr key={product.id} className={`border-t border-border align-top ${product.available ? "" : "bg-[#f7f7f7] grayscale"}`}>
+                      <tr
+                        key={product.id}
+                        onDragOver={(event) => handleProductDragOver(event, product.id)}
+                        onDragLeave={() => setDragOverProductId((current) => current === product.id ? null : current)}
+                        onDrop={(event) => handleProductDrop(event, product.id)}
+                        onDragEnd={() => {
+                          setDraggingProductId(null);
+                          setDragOverProductId(null);
+                          stopDragAutoScroll();
+                        }}
+                        className={`border-t border-border align-top transition ${product.available ? "" : "bg-[#f7f7f7] grayscale"} ${dragOverProductId === product.id ? "bg-[#fff4f5]" : ""} ${draggingProductId === product.id ? "opacity-55" : ""}`}
+                      >
                         <td className="p-3">
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={isPending || filteredProducts[0]?.id === product.id}
+                              onClick={() => moveProductInCurrentView(product.id, -1)}
+                              className="grid h-8 w-8 place-items-center rounded-lg border border-border text-maroon disabled:opacity-35"
+                              aria-label={`Move ${product.name} up`}
+                            >
+                              <ArrowUp size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isPending || filteredProducts[filteredProducts.length - 1]?.id === product.id}
+                              onClick={() => moveProductInCurrentView(product.id, 1)}
+                              className="grid h-8 w-8 place-items-center rounded-lg border border-border text-maroon disabled:opacity-35"
+                              aria-label={`Move ${product.name} down`}
+                            >
+                              <ArrowDown size={15} />
+                            </button>
+                            <span
+                              draggable={!isPending}
+                              onDragStart={(event) => handleProductDragStart(event, product.id)}
+                              className="grid h-8 w-8 cursor-grab select-none place-items-center rounded-lg border border-border bg-cream text-muted active:cursor-grabbing"
+                              title="Drag to reorder"
+                              role="button"
+                              aria-label={`Drag ${product.name}`}
+                            >
+                              <GripVertical size={16} />
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <div className="flex min-w-0 items-start gap-3">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={safeAdminImage(product.image)} alt="" className="h-14 w-14 rounded-xl object-cover" onError={useFallbackImage} />
-                            <div>
-                              <p className="font-black text-charcoal">{product.name}</p>
-                              <p className="text-xs font-bold text-muted">{product.parentCategory ? `${product.parentCategory} / ` : ""}{product.category} - {product.dietaryType}</p>
+                            <img src={safeAdminImage(product.image)} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" onError={useFallbackImage} />
+                            <div className="min-w-0">
+                              <p className="break-words font-black leading-snug text-charcoal">{product.name}</p>
+                              <p className="mt-1 break-words text-xs font-bold leading-5 text-muted">{product.parentCategory ? `${product.parentCategory} / ` : ""}{product.category} - {product.dietaryType}</p>
                               {product.kitchenName ? <p className="mt-1 text-xs font-black text-maroon">Kitchen: {product.kitchenName}</p> : null}
                             </div>
                           </div>
@@ -482,7 +642,7 @@ export function AdminInventoryClient({
                             <span className="truncate">{offerLabel}</span>
                           </span>
                         </td>
-                        <td className="p-3">{product.variants.length}</td>
+                        <td className="p-3 font-bold text-charcoal">{product.variants.length}</td>
                         <td className="p-3">
                           <span className="font-black">{modifierGroups.length}</span>
                           <span className="ml-1 text-xs font-bold text-muted">/ {product.addons.length} options</span>
@@ -557,15 +717,18 @@ function getApiErrorMessage(data: unknown, fallback: string) {
   return [...fieldMessages, ...formMessages, typeof payload.error === "string" ? payload.error : fallback][0] ?? fallback;
 }
 
-function compareProductsForMenuState(a: AdminProduct, b: AdminProduct) {
-  return Number(b.available) - Number(a.available) || a.name.localeCompare(b.name);
-}
-
 function compareCategoryOptions(a: CategoryOption, b: CategoryOption) {
   return (a.parentName ?? a.name).localeCompare(b.parentName ?? b.name) ||
     Number(Boolean(a.parentId)) - Number(Boolean(b.parentId)) ||
     a.sortOrder - b.sortOrder ||
     a.name.localeCompare(b.name);
+}
+
+function moveItem<T>(items: T[], fromIndex: number, toIndex: number) {
+  const next = [...items];
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item);
+  return next;
 }
 
 function createDraftId() {
