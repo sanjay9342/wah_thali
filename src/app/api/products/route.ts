@@ -45,6 +45,10 @@ const productSchema = z.object({
   })).default([]),
 });
 
+const productOrderSchema = z.object({
+  order: z.array(z.string().min(1)).min(1),
+});
+
 async function getHandler() {
   const products = await getAdminProductsFromDb();
   return NextResponse.json({ products });
@@ -120,6 +124,36 @@ async function postHandler(request: Request) {
   return NextResponse.json({ product: saved }, { status: 201 });
 }
 
+async function patchHandler(request: Request) {
+  if (!isDatabaseConfigured()) {
+    return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
+  }
+  const access = await requireAdminPermission(request, "inventory");
+  if (!access.ok) return access.response;
+
+  const parsed = productOrderSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid product order", issues: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const order = [...new Set(parsed.data.order)];
+  await prisma.businessSetting.upsert({
+    where: { key: "productSortOrder" },
+    create: { key: "productSortOrder", value: order as Prisma.InputJsonValue },
+    update: { value: order as Prisma.InputJsonValue },
+  });
+
+  await logActivity({
+    type: "PRODUCT_UPDATED",
+    entity: "Product",
+    summary: `Reordered ${order.length} products`,
+    metadata: { order },
+  });
+  revalidateTag("storefront", { expire: 0 });
+
+  return NextResponse.json({ ok: true });
+}
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -152,3 +186,4 @@ function isUniqueReportCodeError(error: unknown) {
 
 export const GET = withApiErrorHandling(getHandler, "GET /api/products");
 export const POST = withApiErrorHandling(postHandler, "POST /api/products");
+export const PATCH = withApiErrorHandling(patchHandler, "PATCH /api/products");

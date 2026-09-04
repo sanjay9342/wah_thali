@@ -70,11 +70,34 @@ function toAdminProduct(product: ProductWithRelations): AdminProduct {
   };
 }
 
+async function getProductSortOrderFromDb(): Promise<string[]> {
+  if (!isDatabaseConfigured()) return [];
+
+  try {
+    const row = await prisma.businessSetting.findUnique({ where: { key: "productSortOrder" } });
+    return isStringArray(row?.value) ? row.value : [];
+  } catch (error) {
+    console.error("Product sort order read failed.", error);
+    return [];
+  }
+}
+
+function applyProductSortOrder<T extends { id: string; name: string; available?: boolean }>(products: T[], order: string[]) {
+  if (!order.length) return products;
+  const position = new Map(order.map((id, index) => [id, index]));
+  return [...products].sort((a, b) => {
+    const aOrder = position.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+    const bOrder = position.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+    return aOrder - bOrder || a.name.localeCompare(b.name);
+  });
+}
+
 export async function getProductsFromDb(): Promise<Product[]> {
   if (!isDatabaseConfigured()) return fallbackProducts;
 
   try {
-    const products = await prisma.product.findMany({
+    const [products, productOrder] = await Promise.all([
+      prisma.product.findMany({
       where: { category: { visible: true } },
       orderBy: { name: "asc" },
       include: {
@@ -84,9 +107,11 @@ export async function getProductsFromDb(): Promise<Product[]> {
         addons: true,
         inventory: true,
       },
-    });
+      }),
+      getProductSortOrderFromDb(),
+    ]);
 
-    return products.map(toProduct);
+    return applyProductSortOrder(products.map(toProduct), productOrder);
   } catch (error) {
     console.error("Database product read failed. Falling back to local product data.", error);
     return fallbackProducts;
@@ -104,7 +129,8 @@ export async function getAdminProductsFromDb(): Promise<AdminProduct[]> {
   }
 
   try {
-    const products = await prisma.product.findMany({
+    const [products, productOrder] = await Promise.all([
+      prisma.product.findMany({
       orderBy: { name: "asc" },
       include: {
         category: { include: { parent: true } },
@@ -113,9 +139,11 @@ export async function getAdminProductsFromDb(): Promise<AdminProduct[]> {
         addons: true,
         inventory: true,
       },
-    });
+      }),
+      getProductSortOrderFromDb(),
+    ]);
 
-    return products.length ? products.map(toAdminProduct) : [];
+    return products.length ? applyProductSortOrder(products.map(toAdminProduct), productOrder) : [];
   } catch (error) {
     console.error("Database admin product read failed. Falling back to local product data.", error);
     return fallbackProducts.map((product) => ({

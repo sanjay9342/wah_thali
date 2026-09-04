@@ -142,7 +142,7 @@ function SearchFilterControl({
       </div>
 
       {filtersOpen ? (
-        <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+        <div className="wt-horizontal-scroll mt-2 flex gap-2 pb-1">
           {menuFilterOptions.map((option) => {
             const selected = activeFilters.includes(option.id);
             return (
@@ -449,7 +449,7 @@ function FoodieProductCard({
         {offer ? (
           <div className="mt-1.5 border-t border-[#eef1f6] pt-1.5">
             <p className="flex items-center gap-1.5 text-[10px] font-black text-[#078b52]">
-              <span className="text-lg">?</span>
+              <BadgePercent size={14} strokeWidth={2.6} />
               {offer}
             </p>
           </div>
@@ -888,7 +888,7 @@ function DishDetailSheet({
                   View All <ChevronRight size={15} />
                 </button>
               </div>
-              <div className="flex snap-x gap-3 overflow-x-auto pb-2">
+              <div className="wt-horizontal-scroll flex gap-3 pb-2">
                 {relatedProducts.map((item) => (
                   <button
                     key={item.id}
@@ -1096,7 +1096,7 @@ export function MenuExperience({
     return [{ category: activeCategory === "All" ? "" : activeCategory, products: homeProducts }];
   }, [activeCategory, categoryOptions, configuredHomeCategories, homeProducts, isCategoryPage, usingConfiguredHomeDishes]);
   const categoryPageShowcaseGroups = useMemo(() => {
-    if (!isCategoryPage || activeCategory === "All" || !configuredHomeCategories.length) return [];
+    if (!(isCategoryPage || isHomePage) || activeCategory === "All" || !configuredHomeCategories.length) return [];
 
     return configuredHomeCategories
       .map((category) => ({
@@ -1108,7 +1108,7 @@ export function MenuExperience({
         ),
       }))
       .filter((group) => group.products.length > 0);
-  }, [activeCategory, categoryOffers, configuredHomeCategories, isCategoryPage, priceSort, products]);
+  }, [activeCategory, categoryOffers, configuredHomeCategories, isCategoryPage, isHomePage, priceSort, products]);
   const hasHomeProductGroups = homeProductGroups.some((group) => group.products.length > 0);
 
   const promoSlides = useMemo(() => {
@@ -1143,10 +1143,10 @@ export function MenuExperience({
 
   useEffect(() => {
     function syncCategoryFromUrl() {
-      if (isCategoryPage) {
-        const category = initialActiveCategory && categories.includes(initialActiveCategory) ? initialActiveCategory : "All";
-        setActiveCategory(category);
-        setMobileCategory(category);
+      const categoryFromPath = getCategoryFromPath(window.location.pathname, categoryOptions);
+      if (categoryFromPath) {
+        setActiveCategory(categoryFromPath);
+        setMobileCategory(categoryFromPath);
         return;
       }
 
@@ -1164,7 +1164,7 @@ export function MenuExperience({
     syncCategoryFromUrl();
     window.addEventListener("popstate", syncCategoryFromUrl);
     return () => window.removeEventListener("popstate", syncCategoryFromUrl);
-  }, [categories, initialActiveCategory, isCategoryPage]);
+  }, [categories, categoryOptions]);
 
   useEffect(() => {
     if (promoSlides.length <= 1) return;
@@ -1265,12 +1265,7 @@ export function MenuExperience({
     setShowMoreCategories(false);
 
     if (isHomePage || isSearchPage || isCategoryPage) {
-      const params = new URLSearchParams();
-      if (category !== "All") params.set("category", category);
-      const targetPath = isSearchPage || isCategoryPage
-        ? (category === "All" ? "/menu" : getCategoryHref(category))
-        : "/";
-      router.replace(`${targetPath}${isHomePage && params.toString() ? `?${params.toString()}` : ""}`, { scroll: false });
+      updateMenuUrl(category, "replace");
       window.requestAnimationFrame(() => document.getElementById("menu-items")?.scrollIntoView({ block: "start", behavior: "smooth" }));
     }
   }
@@ -1287,7 +1282,14 @@ export function MenuExperience({
     }
 
     window.requestAnimationFrame(() => document.getElementById("menu-items")?.scrollIntoView({ block: "start", behavior: "smooth" }));
-    router.push(category === "All" ? "/menu" : getCategoryHref(category));
+    updateMenuUrl(category, "push");
+  }
+
+  function updateMenuUrl(category: string, mode: "push" | "replace") {
+    const targetPath = getMenuUrlForCategory(category, isHomePage);
+    const currentUrl = `${window.location.pathname}${window.location.search}`;
+    if (currentUrl === targetPath) return;
+    window.history[mode === "push" ? "pushState" : "replaceState"]({}, "", targetPath);
   }
 
   function toggleMobileCategoryGroup(category: string) {
@@ -1545,7 +1547,7 @@ export function MenuExperience({
         </section>
       ) : null}
 
-      <div className={`${isSearchPage ? "hidden" : mobileMenuView === "home" ? "grid" : "hidden lg:grid"} mx-auto w-full max-w-[1180px] gap-6 px-5 pt-3 sm:px-6 lg:grid-cols-[200px_minmax(0,1fr)] lg:pt-5 xl:px-0`}>
+      <div className={`${isSearchPage ? "hidden" : mobileMenuView === "home" ? "grid" : "hidden lg:grid"} mx-auto w-full max-w-[1180px] min-w-0 gap-6 px-5 pt-3 sm:px-6 lg:grid-cols-[200px_minmax(0,1fr)] lg:pt-5 xl:px-0`}>
         <aside className="sticky top-[98px] hidden max-h-[calc(100vh-118px)] overflow-y-auto rounded-2xl border border-[#f1e7e4] bg-white p-4 shadow-[0_14px_40px_rgba(34,31,32,0.04)] lg:block">
           <div className="mb-4 flex items-center gap-2 border-b border-[#f1e7e4] pb-4 text-xs font-black uppercase tracking-wide text-muted">
             <BookOpen size={18} />
@@ -1649,7 +1651,7 @@ export function MenuExperience({
             onChoosePriceSort={choosePriceSort}
             onClearFilters={clearFilters}
             placeholder="Search dishes or cuisines"
-            className="mt-5 lg:mt-6"
+            className="mt-3 lg:mt-6"
           />
 
           {storeMode === "BUSY" ? (
@@ -1664,8 +1666,8 @@ export function MenuExperience({
             </section>
           ) : null}
 
-          <section className="mt-5 lg:mt-6" aria-label="Menu categories">
-            <div className="wt-scrollbar-none flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain scroll-smooth px-1 py-1 pb-3 sm:gap-4">
+          <section className="mt-3 lg:mt-6" aria-label="Menu categories">
+            <div className="wt-horizontal-scroll flex gap-2 px-1 py-0 pb-1.5 sm:gap-4 sm:pb-3">
               {homeCategoryItems.map((category) => (
                 <button
                   key={category}
@@ -1673,7 +1675,7 @@ export function MenuExperience({
                   onClick={() => {
                     openMenuCategory(category);
                   }}
-                  className="group grid w-[66px] shrink-0 snap-start place-items-center gap-1.5 text-center sm:w-[90px]"
+                  className="group grid w-[66px] shrink-0 snap-start place-items-center gap-1 text-center sm:w-[90px] sm:gap-1.5"
                 >
                   <span className={`grid h-[52px] w-[52px] place-items-center overflow-hidden rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] transition duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06] group-hover:shadow-[0_14px_30px_rgba(34,31,32,0.12)] sm:h-20 sm:w-20 ${
                     activeCategory === category ? "border-maroon bg-maroon text-white" : "border-[#f1e7e4] bg-white text-charcoal group-hover:border-maroon/30 group-hover:bg-[#fff4f5] group-hover:text-maroon"
@@ -1697,7 +1699,7 @@ export function MenuExperience({
                   setShowMoreCategories((current) => !current);
                 }}
                 aria-expanded={showMoreCategories}
-                className="group grid w-[66px] shrink-0 snap-start place-items-center gap-1.5 text-center sm:w-[90px]"
+                className="group grid w-[66px] shrink-0 snap-start place-items-center gap-1 text-center sm:w-[90px] sm:gap-1.5"
               >
                 <span className={`grid h-[52px] w-[52px] place-items-center rounded-full border shadow-[0_8px_22px_rgba(34,31,32,0.06)] transition duration-200 group-hover:-translate-y-1 group-hover:scale-[1.06] group-hover:border-maroon/30 group-hover:bg-maroon group-hover:text-white group-hover:shadow-[0_14px_30px_rgba(141,0,33,0.18)] sm:h-20 sm:w-20 ${showMoreCategories ? "border-maroon bg-maroon text-white" : "border-[#f1e7e4] bg-[#f8fafc] text-charcoal"}`}>
                   <Grid3X3 size={21} />
@@ -1721,7 +1723,7 @@ export function MenuExperience({
             ) : null}
           </section>
 
-          <section id="menu-items" className="mt-6 border-t-[5px] border-[#c8c8c8] pt-7 pb-16 lg:mt-5 lg:border-t-0 lg:pt-0 lg:pb-8">
+          <section id="menu-items" className="mt-3 border-t-[5px] border-[#c8c8c8] pt-4 pb-16 lg:mt-5 lg:border-t-0 lg:pt-0 lg:pb-8">
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
               <div>
                 <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-muted lg:text-[10px]">
@@ -1755,9 +1757,9 @@ export function MenuExperience({
               )}
             </div>
             {hasHomeProductGroups ? (
-              <div className="grid gap-7">
+              <div className="grid min-w-0 gap-7">
                 {homeProductGroups.map((group) => (
-                  <section key={group.category || "all-dishes"}>
+                  <section key={group.category || "all-dishes"} className="min-w-0">
                     {group.category ? (
                       <div className="mb-3 flex items-center justify-between gap-3">
                         <h3 className="min-w-0 text-[15px] font-black leading-tight text-charcoal lg:text-[17px]">{group.category}</h3>
@@ -1766,9 +1768,9 @@ export function MenuExperience({
                         </Link>
                       </div>
                     ) : null}
-                    <div className="flex snap-x gap-3.5 overflow-x-auto pb-5 lg:hidden">
+                    <div className="wt-horizontal-scroll flex gap-3.5 pb-5 lg:hidden">
                       {group.products.slice(0, 8).map((product) => (
-                        <div key={product.id} className="w-[clamp(140px,42vw,178px)] shrink-0 snap-start">
+                        <div key={product.id} className="w-[calc((100%_-_14px)/2)] min-w-[132px] max-w-[174px] shrink-0">
                           <FoodieProductCard
                             product={product}
                             offer={getProductOffer(product, categoryOffers)}
@@ -1802,7 +1804,7 @@ export function MenuExperience({
                   </section>
                 ))}
                 {categoryPageShowcaseGroups.length ? (
-                  <section className="grid gap-7 border-t border-[#f1e7e4] pt-7">
+                  <section className="grid min-w-0 gap-7 border-t border-[#f1e7e4] pt-7">
                     <div className="flex flex-wrap items-end justify-between gap-3">
                       <div>
                         <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-muted lg:text-[10px]">Home favourites</p>
@@ -1813,16 +1815,16 @@ export function MenuExperience({
                       </Link>
                     </div>
                     {categoryPageShowcaseGroups.map((group) => (
-                      <section key={`showcase-${group.category}`}>
+                      <section key={`showcase-${group.category}`} className="min-w-0">
                         <div className="mb-3 flex items-center justify-between gap-3">
                           <h3 className="min-w-0 text-[15px] font-black leading-tight text-charcoal lg:text-[17px]">{group.category}</h3>
                           <Link href={getCategoryHref(group.category)} className="inline-flex shrink-0 items-center gap-1 text-[10px] font-black text-maroon lg:text-[11px]">
                             View all <ChevronRight size={12} />
                           </Link>
                         </div>
-                        <div className="flex snap-x gap-3.5 overflow-x-auto pb-5 lg:hidden">
+                        <div className="wt-horizontal-scroll flex gap-3.5 pb-5 lg:hidden">
                           {group.products.slice(0, 8).map((product) => (
-                            <div key={product.id} className="w-[clamp(140px,42vw,178px)] shrink-0 snap-start">
+                            <div key={product.id} className="w-[calc((100%_-_14px)/2)] min-w-[132px] max-w-[174px] shrink-0">
                               <FoodieProductCard
                                 product={product}
                                 offer={getProductOffer(product, categoryOffers)}
@@ -2440,4 +2442,18 @@ function slugifyCategory(value: string) {
 
 function getCategoryHref(category: string) {
   return `/category/${slugifyCategory(category)}`;
+}
+
+function getMenuUrlForCategory(category: string, homePage: boolean) {
+  if (homePage) {
+    return category === "All" ? "/" : `/?category=${encodeURIComponent(category)}`;
+  }
+
+  return category === "All" ? "/menu" : getCategoryHref(category);
+}
+
+function getCategoryFromPath(pathname: string, categories: CategoryOption[]) {
+  if (!pathname.startsWith("/category/")) return null;
+  const slug = decodeURIComponent(pathname.replace(/^\/category\//, "").split("/")[0] ?? "");
+  return categories.find((category) => slugifyCategory(category.name) === slug)?.name ?? null;
 }

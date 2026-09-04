@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition, type DragEvent, ty
 import { ArrowDown, ArrowUp, CheckCircle2, Download, Edit3, EyeOff, GripVertical, PackagePlus, Plus, Search, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
-import { adminFetch } from "@/lib/admin-client-auth";
+import { adminFetch, readAdminApiJson } from "@/lib/admin-client-auth";
 import { formatModifierOptionName, getProductModifierGroups } from "@/lib/product-modifiers";
 import type { AdminProduct, CategoryOption } from "@/lib/types";
 import { formatRupees, getProductUnitPricing } from "@/lib/pricing";
@@ -173,9 +173,9 @@ export function AdminInventoryClient({
 
   async function refreshProducts() {
     const response = await fetch("/api/products", { cache: "no-store" });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error ?? "Could not reload products.");
-    setProducts(data.products);
+    const data = await readAdminApiJson(response);
+    if (!response.ok) throw new Error(getApiErrorMessage(data, "Could not reload products."));
+    setProducts(Array.isArray(data.products) ? data.products as AdminProduct[] : []);
     setLastSyncedAt(new Date());
   }
 
@@ -265,7 +265,7 @@ export function AdminInventoryClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await response.json();
+      const data = await readAdminApiJson(response);
       if (!response.ok) throw new Error(getApiErrorMessage(data, "Product save failed."));
 
       await refreshProducts();
@@ -290,11 +290,13 @@ export function AdminInventoryClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Update failed.");
-      if (data.product?.available !== undefined) {
+      const data = await readAdminApiJson(response);
+      if (!response.ok) throw new Error(getApiErrorMessage(data, "Update failed."));
+      const updatedProduct = data.product && typeof data.product === "object" ? data.product as Partial<AdminProduct> : null;
+      if (typeof updatedProduct?.available === "boolean") {
+        const available = updatedProduct.available;
         setProducts((current) =>
-          current.map((item) => item.id === product.id ? { ...item, available: data.product.available } : item),
+          current.map((item) => item.id === product.id ? { ...item, available } : item),
         );
       }
       setLastSyncedAt(new Date());
@@ -396,7 +398,7 @@ export function AdminInventoryClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ order: orderedProducts.map((product) => product.id) }),
       });
-      const data = await response.json();
+      const data = await readAdminApiJson(response);
       if (!response.ok) throw new Error(getApiErrorMessage(data, "Product order save failed."));
       await refreshProducts();
       showSuccess("Product order saved successfully.");
@@ -409,8 +411,8 @@ export function AdminInventoryClient({
 
     runMutation(async () => {
       const response = await adminFetch(adminAccess?.session, `/api/products/${product.id}`, { method: "DELETE" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Delete failed.");
+      const data = await readAdminApiJson(response);
+      if (!response.ok) throw new Error(getApiErrorMessage(data, "Delete failed."));
       await refreshProducts();
       showSuccess(data.archived ? "Dish archived because it has order history." : "Dish deleted successfully.");
     });
@@ -447,9 +449,12 @@ export function AdminInventoryClient({
       body.append("file", file);
       body.append("folder", folder);
       const response = await adminFetch(adminAccess?.session, "/api/storage/upload", { method: "POST", body });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Image upload failed.");
-      return data.publicUrl as string;
+      const data = await readAdminApiJson(response);
+      if (!response.ok) throw new Error(getApiErrorMessage(data, "Image upload failed."));
+      if (typeof data.publicUrl !== "string" || !data.publicUrl) {
+        throw new Error("Image upload finished but no image URL was returned.");
+      }
+      return data.publicUrl;
     } finally {
       setUploading(false);
     }
