@@ -547,20 +547,20 @@ export function AdminInventoryClient({
             <div className="overflow-x-auto" onDragOver={handleProductListDragOver}>
               <table className="w-full min-w-[1280px] table-fixed text-left text-sm">
                 <colgroup>
-                  <col className="w-[156px]" />
                   <col className="w-[330px]" />
                   <col className="w-[96px]" />
-                  <col className="w-[88px]" />
-                  <col className="w-[96px]" />
-                  <col className="w-[162px]" />
-                  <col className="w-[96px]" />
-                  <col className="w-[126px]" />
+                  <col className="w-[156px]" />
                   <col className="w-[136px]" />
                   <col className="w-[94px]" />
+                  <col className="w-[126px]" />
+                  <col className="w-[96px]" />
+                  <col className="w-[88px]" />
+                  <col className="w-[162px]" />
+                  <col className="w-[96px]" />
                 </colgroup>
                 <thead className="bg-cream text-maroon">
                   <tr>
-                    {["Order", "Item", "Shortcut", "Rating", "Price", "Offer", "Variants", "Choice groups", "Availability", "Actions"].map((head) => (
+                    {["Item", "Price", "Order", "Availability", "Actions", "Choice groups", "Shortcut", "Rating", "Offer", "Variants"].map((head) => (
                       <th key={head} className="p-3 align-middle text-xs font-black uppercase tracking-wide">{head}</th>
                     ))}
                   </tr>
@@ -585,6 +585,21 @@ export function AdminInventoryClient({
                         }}
                         className={`border-t border-border align-top transition ${product.available ? "" : "bg-[#f7f7f7] grayscale"} ${dragOverProductId === product.id ? "bg-[#fff4f5]" : ""} ${draggingProductId === product.id ? "opacity-55" : ""}`}
                       >
+                        <td className="p-3">
+                          <div className="flex min-w-0 items-start gap-3">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={safeAdminImage(product.image)} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" onError={useFallbackImage} />
+                            <div className="min-w-0">
+                              <p className="break-words font-black leading-snug text-charcoal">{product.name}</p>
+                              <p className="mt-1 break-words text-xs font-bold leading-5 text-muted">{product.parentCategory ? `${product.parentCategory} / ` : ""}{product.category} - {product.dietaryType}</p>
+                              {product.kitchenName ? <p className="mt-1 text-xs font-black text-maroon">Kitchen: {product.kitchenName}</p> : null}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          {pricing.discountPerUnit > 0 ? <span className="block text-xs font-bold text-muted line-through">{formatRupees(pricing.originalUnitPrice)}</span> : null}
+                          <span className="font-black">{formatRupees(pricing.unitPrice)}</span>
+                        </td>
                         <td className="p-3">
                           <div className="flex items-center gap-1.5">
                             <button
@@ -618,41 +633,6 @@ export function AdminInventoryClient({
                           </div>
                         </td>
                         <td className="p-3">
-                          <div className="flex min-w-0 items-start gap-3">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={safeAdminImage(product.image)} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" onError={useFallbackImage} />
-                            <div className="min-w-0">
-                              <p className="break-words font-black leading-snug text-charcoal">{product.name}</p>
-                              <p className="mt-1 break-words text-xs font-bold leading-5 text-muted">{product.parentCategory ? `${product.parentCategory} / ` : ""}{product.category} - {product.dietaryType}</p>
-                              {product.kitchenName ? <p className="mt-1 text-xs font-black text-maroon">Kitchen: {product.kitchenName}</p> : null}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <span className="inline-flex h-7 items-center rounded-lg border border-border bg-cream px-2 text-xs font-black text-maroon">
-                            {product.reportCode || "-"}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <span className="inline-flex h-7 items-center rounded-lg bg-[#fff4f5] px-2 text-xs font-black text-maroon">
-                            {product.rating}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          {pricing.discountPerUnit > 0 ? <span className="block text-xs font-bold text-muted line-through">{formatRupees(pricing.originalUnitPrice)}</span> : null}
-                          <span className="font-black">{formatRupees(pricing.unitPrice)}</span>
-                        </td>
-                        <td className="p-3">
-                          <span className="inline-flex min-h-8 max-w-[170px] items-center rounded-full bg-cream px-3 py-1 text-xs font-black text-muted">
-                            <span className="truncate">{offerLabel}</span>
-                          </span>
-                        </td>
-                        <td className="p-3 font-bold text-charcoal">{product.variants.length}</td>
-                        <td className="p-3">
-                          <span className="font-black">{modifierGroups.length}</span>
-                          <span className="ml-1 text-xs font-bold text-muted">/ {product.addons.length} options</span>
-                        </td>
-                        <td className="p-3">
                           <button onClick={() => quickUpdate(product, { available: !product.available })} disabled={saving} aria-busy={saving} className={`inline-flex h-9 min-w-28 items-center justify-center gap-2 rounded-lg px-3 text-xs font-black disabled:opacity-60 ${product.available ? "bg-maroon text-white" : "border border-border bg-white text-charcoal"}`}>
                             {product.available ? <CheckCircle2 size={15} /> : <EyeOff size={15} />}
                             {product.available ? "Online" : "Offline"}
@@ -668,6 +648,26 @@ export function AdminInventoryClient({
                             </button>
                           </div>
                         </td>
+                        <td className="p-3">
+                          <span className="font-black">{modifierGroups.length}</span>
+                          <span className="ml-1 text-xs font-bold text-muted">/ {product.addons.length} options</span>
+                        </td>
+                        <td className="p-3">
+                          <span className="inline-flex h-7 items-center rounded-lg border border-border bg-cream px-2 text-xs font-black text-maroon">
+                            {product.reportCode || "-"}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <span className="inline-flex h-7 items-center rounded-lg bg-[#fff4f5] px-2 text-xs font-black text-maroon">
+                            {product.rating}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <span className="inline-flex min-h-8 max-w-[170px] items-center rounded-full bg-cream px-3 py-1 text-xs font-black text-muted">
+                            <span className="truncate">{offerLabel}</span>
+                          </span>
+                        </td>
+                        <td className="p-3 font-bold text-charcoal">{product.variants.length}</td>
                       </tr>
                     );
                   })}
