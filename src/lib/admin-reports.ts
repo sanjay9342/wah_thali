@@ -135,6 +135,15 @@ export type AdminReportsSnapshot = {
     popularCoupon?: CouponReportRow;
     rows: CouponReportRow[];
   };
+  crm: {
+    deliveryOrders: number;
+    pickupOrders: number;
+    websiteOrders: number;
+    codOrders: number;
+    onlinePaidOrders: number;
+    cancelledRate: number;
+    repeatRate: number;
+  };
   dishSearch: DishSearchReport;
   timeline: ReportBucket[];
 };
@@ -293,6 +302,9 @@ function buildSnapshot(input: {
   const totalItemsSold = sum(itemRows, (item) => item.quantity);
   const uniqueItemsSold = itemRows.filter((item) => item.quantity > 0).length;
   const couponReport = getCouponReport(input.couponRedemptions);
+  const pickupOrders = revenueOrders.filter((order) => order.fulfillmentMethod === "PICKUP").length;
+  const deliveryOrders = revenueOrders.filter((order) => order.fulfillmentMethod !== "PICKUP").length;
+  const websiteOrders = revenueOrders.filter((order) => order.orderSource === "WEBSITE").length;
   const primaryGrossSales = dishSearch.active ? dishSearch.itemSales : grossSales;
   const primaryNetRevenue = dishSearch.active ? dishSearch.itemSales : netRevenue;
   const primaryOrders = dishSearch.active ? dishSearch.orders : input.orders.length;
@@ -360,6 +372,15 @@ function buildSnapshot(input: {
       worst: [...itemRows].sort((a, b) => a.quantity - b.quantity || a.netSales - b.netSales || a.label.localeCompare(b.label)).slice(0, 8),
     },
     coupons: couponReport,
+    crm: {
+      deliveryOrders,
+      pickupOrders,
+      websiteOrders,
+      codOrders: revenueOrders.filter((order) => order.payments.some((payment) => payment.provider === "COD")).length,
+      onlinePaidOrders: revenueOrders.filter((order) => order.payments.some((payment) => payment.provider !== "COD" && paidOnlineStatuses.includes(payment.status as PaymentStatus))).length,
+      cancelledRate: input.orders.length ? Math.round((cancelledOrders.length / input.orders.length) * 100) : 0,
+      repeatRate: orderingCustomers ? Math.round((repeatCustomers / orderingCustomers) * 100) : 0,
+    },
     dishSearch,
     timeline: getTimelineRows(input.period, input.date, revenueOrders, input.fromDate, input.toDate),
   };
@@ -657,7 +678,7 @@ function normalizeReportDate(value?: string) {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) && parseIstDateInput(value) ? value : getIstDateInputValue();
 }
 
-function getReportWindow(period: ReportPeriod, date: string, from?: string, to?: string) {
+export function getReportWindow(period: ReportPeriod, date: string, from?: string, to?: string) {
   const parts = parseDateParts(date);
 
   if (period === "custom") {

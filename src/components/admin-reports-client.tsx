@@ -4,7 +4,9 @@ import { BarChart3, CalendarDays, Download, FileText, IndianRupee, ReceiptText, 
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
+import { adminFetch, readAdminApiJson } from "@/lib/admin-client-auth";
 import { formatRupees } from "@/lib/pricing";
 import { formatIstDateTime } from "@/lib/time";
 import type { AdminReportsSnapshot, ReportMetric, ReportPeriod, ReportRow } from "@/lib/admin-reports";
@@ -33,11 +35,13 @@ type ReportKind = (typeof reportKinds)[number]["key"];
 export function AdminReportsClient({ snapshot }: { snapshot: AdminReportsSnapshot }) {
   const router = useRouter();
   const pathname = usePathname();
+  const adminAccess = useAdminAccess();
   const snapshotKey = `${snapshot.period}:${snapshot.date}:${snapshot.fromDate}:${snapshot.toDate}:${snapshot.searchQuery}`;
   const [rangeDraft, setRangeDraft] = useState({ key: snapshotKey, from: snapshot.fromDate, to: snapshot.toDate });
   const activeRangeDraft = rangeDraft.key === snapshotKey ? rangeDraft : { key: snapshotKey, from: snapshot.fromDate, to: snapshot.toDate };
   const [searchDraft, setSearchDraft] = useState({ key: snapshotKey, value: snapshot.searchQuery });
   const activeSearchDraft = searchDraft.key === snapshotKey ? searchDraft : { key: snapshotKey, value: snapshot.searchQuery };
+  const [downloadError, setDownloadError] = useState("");
 
   const pdfSections = useMemo(() => buildPdfSections(snapshot), [snapshot]);
 
@@ -82,6 +86,7 @@ export function AdminReportsClient({ snapshot }: { snapshot: AdminReportsSnapsho
   }
 
   function download(kind: ReportKind) {
+    setDownloadError("");
     const selectedSections = kind === "full" ? pdfSections : pdfSections.filter((section) => section.kind === kind);
     const filenameDate = snapshot.period === "custom" ? `${snapshot.fromDate}-to-${snapshot.toDate}` : snapshot.date;
     downloadPdf({
@@ -90,6 +95,31 @@ export function AdminReportsClient({ snapshot }: { snapshot: AdminReportsSnapsho
       sections: selectedSections,
       filename: `wah-thali-${kind}-${snapshot.period}-${filenameDate}.pdf`,
     });
+  }
+
+  function downloadCsv() {
+    setDownloadError("");
+    const filenameDate = snapshot.period === "custom" ? `${snapshot.fromDate}-to-${snapshot.toDate}` : snapshot.date;
+    const rows = buildCsvRows(snapshot);
+    downloadTextFile(
+      `wah-thali-report-${snapshot.period}-${filenameDate}.csv`,
+      rows.map((row) => row.map(escapeCsvCell).join(",")).join("\n"),
+      "text/csv;charset=utf-8",
+    );
+  }
+
+  async function downloadGstrCsv() {
+    setDownloadError("");
+    const params = getReportParams({});
+    const response = await adminFetch(adminAccess?.session, `/api/reports/gstr1?${params.toString()}`);
+    if (!response.ok) {
+      const data = await readAdminApiJson(response);
+      setDownloadError(typeof data.error === "string" ? data.error : "GSTR-1 export failed.");
+      return;
+    }
+    const filenameDate = snapshot.period === "custom" ? `${snapshot.fromDate}-to-${snapshot.toDate}` : snapshot.date;
+    const blob = await response.blob();
+    downloadBlob(`wah-thali-gstr1-${snapshot.period}-${filenameDate}.csv`, blob);
   }
 
   return (
@@ -110,6 +140,11 @@ export function AdminReportsClient({ snapshot }: { snapshot: AdminReportsSnapsho
           </button>
         </div>
         <AdminSectionNav />
+        {downloadError ? (
+          <p className="mt-4 rounded-lg border border-[#ffd1d6] bg-[#fff4f5] px-4 py-3 text-sm font-black text-red" role="alert">
+            Error: {downloadError}
+          </p>
+        ) : null}
 
         <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-stretch">
           <div className="surface rounded-2xl p-4">
@@ -204,6 +239,25 @@ export function AdminReportsClient({ snapshot }: { snapshot: AdminReportsSnapsho
         <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {snapshot.metrics.map((metric, index) => (
             <MetricCard key={metric.label} metric={metric} iconIndex={index} />
+          ))}
+        </section>
+
+        <section className="mt-6 grid gap-4 rounded-2xl border border-[#f0d7dd] bg-[#fff8f9] p-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            ["Delivery orders", snapshot.crm.deliveryOrders, "Revenue orders delivered"],
+            ["Pickup orders", snapshot.crm.pickupOrders, "Takeaway/self pickup"],
+            ["COD orders", snapshot.crm.codOrders, "Cash collection follow-up"],
+            ["Online paid", snapshot.crm.onlinePaidOrders, "Paid or authorized online"],
+            ["Website orders", snapshot.crm.websiteOrders, "Orders from website"],
+            ["Cancel rate", `${snapshot.crm.cancelledRate}%`, "Cancelled / total orders"],
+            ["Repeat rate", `${snapshot.crm.repeatRate}%`, "Repeat buying customers"],
+            ["CSV export", "Ready", "Spreadsheet report available"],
+          ].map(([label, value, detail]) => (
+            <div key={String(label)} className="rounded-xl border border-[#f0d7dd] bg-white p-4">
+              <p className="text-xs font-black uppercase text-muted">{String(label)}</p>
+              <p className="mt-1 text-xl font-black text-maroon">{String(value)}</p>
+              <p className="mt-1 text-xs font-bold text-muted">{String(detail)}</p>
+            </div>
           ))}
         </section>
 
@@ -403,8 +457,22 @@ export function AdminReportsClient({ snapshot }: { snapshot: AdminReportsSnapsho
         </section>
 
         <section className="mt-6 surface rounded-2xl p-5">
-          <h2 className="text-xl font-black text-maroon">PDF downloads</h2>
+          <h2 className="text-xl font-black text-maroon">Downloads</h2>
           <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={downloadCsv}
+              className="inline-flex h-10 items-center gap-2 rounded-lg bg-maroon px-3 text-sm font-black text-white"
+            >
+              <Download size={16} /> Full CSV
+            </button>
+            <button
+              type="button"
+              onClick={downloadGstrCsv}
+              className="inline-flex h-10 items-center gap-2 rounded-lg border border-border bg-cream px-3 text-sm font-black text-maroon"
+            >
+              <Download size={16} /> GSTR-1 CSV
+            </button>
             {reportKinds.map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
@@ -795,6 +863,112 @@ function buildPdfSections(snapshot: AdminReportsSnapshot): PdfSection[] {
       rows: [["Order", "Customer", "Status", "Items", "Amount"], ...snapshot.orders.recent.map((row) => [row.orderNumber, row.customerName, row.status, row.itemSummary || String(row.items), money(row.amount)])],
     },
   ];
+}
+
+function buildCsvRows(snapshot: AdminReportsSnapshot) {
+  const rows: string[][] = [
+    ["Wah Thali Business Report"],
+    ["Period", periodLabels[snapshot.period]],
+    ["Range", snapshot.rangeLabel],
+    ["Generated", formatIstDateTime(snapshot.generatedAt)],
+    ["Search", snapshot.searchQuery || "All"],
+    [],
+    ["Summary"],
+    ["Metric", "Value", "Detail"],
+    ...snapshot.metrics.map((metric) => [metric.label, metric.value, metric.detail]),
+    [],
+    ["CRM Operations"],
+    ["Metric", "Value"],
+    ["Delivery orders", String(snapshot.crm.deliveryOrders)],
+    ["Pickup orders", String(snapshot.crm.pickupOrders)],
+    ["Website orders", String(snapshot.crm.websiteOrders)],
+    ["COD orders", String(snapshot.crm.codOrders)],
+    ["Online paid orders", String(snapshot.crm.onlinePaidOrders)],
+    ["Cancel rate", `${snapshot.crm.cancelledRate}%`],
+    ["Repeat rate", `${snapshot.crm.repeatRate}%`],
+    [],
+    ["Sales"],
+    ["Subtotal", "Discount", "GST", "Gross sales", "Net revenue", "Average order", "COD sales", "Online sales", "Cancelled value"],
+    [
+      String(snapshot.sales.subtotal),
+      String(snapshot.sales.discount),
+      String(snapshot.sales.gst),
+      String(snapshot.sales.grossSales),
+      String(snapshot.sales.netRevenue),
+      String(snapshot.sales.averageOrderValue),
+      String(snapshot.sales.codSales),
+      String(snapshot.sales.onlineSales),
+      String(snapshot.sales.cancelledValue),
+    ],
+    [],
+    ["Timeline"],
+    ["Period", "Orders", "Sales"],
+    ...snapshot.timeline.map((row) => [row.label, String(row.orders), String(row.sales)]),
+    [],
+    ["Order Status"],
+    ["Status", "Orders", "Quantity", "Gross sales", "Net sales"],
+    ...snapshot.orders.statusRows.map(reportRowToCsv),
+    [],
+    ["Recent Orders"],
+    ["Order", "Customer", "Status", "Items", "Amount", "Item summary", "Created"],
+    ...snapshot.orders.recent.map((row) => [row.orderNumber, row.customerName, row.status, String(row.items), String(row.amount), row.itemSummary, formatIstDateTime(row.createdAt)]),
+    [],
+    ["Customers"],
+    ["Customer", "Mobile", "Orders", "Spend", "Last order"],
+    ...snapshot.customers.topCustomers.map((row) => [row.name, row.mobile, String(row.orders), String(row.spend), row.lastOrder ? formatIstDateTime(row.lastOrder) : ""]),
+    [],
+    ["Items"],
+    ["Item", "Orders", "Quantity", "Gross sales", "Net sales"],
+    ...snapshot.items.rows.map(reportRowToCsv),
+    [],
+    ["Coupons"],
+    ["Coupon", "Offer", "Used", "Members", "Sales", "Discount", "Average order", "Delivery", "Takeaway", "Website"],
+    ...snapshot.coupons.rows.map((row) => [row.code, row.label, String(row.redemptions), String(row.members), String(row.sales), String(row.discount), String(row.averageOrderValue), String(row.delivery), String(row.takeaway), String(row.website)]),
+  ];
+
+  if (snapshot.dishSearch.active) {
+    rows.push(
+      [],
+      [`Dish Search - ${snapshot.dishSearch.query}`],
+      ["Metric", "Value"],
+      ["Matched dishes", String(snapshot.dishSearch.matchedDishes)],
+      ["Orders", String(snapshot.dishSearch.orders)],
+      ["Delivered", String(snapshot.dishSearch.delivered)],
+      ["Active", String(snapshot.dishSearch.activeOrders)],
+      ["Cancelled", String(snapshot.dishSearch.cancelled)],
+      ["Quantity", String(snapshot.dishSearch.quantity)],
+      ["Item sales", String(snapshot.dishSearch.itemSales)],
+      ["Customers", String(snapshot.dishSearch.customers)],
+      ["Repeat customers", String(snapshot.dishSearch.repeatCustomers)],
+      [],
+      ["Dish Search Customers"],
+      ["Customer", "Mobile", "Orders", "Quantity", "Spend", "Favourite dish", "Last order"],
+      ...snapshot.dishSearch.customerFavourites.map((row) => [row.name, row.mobile, String(row.orders), String(row.quantity), String(row.spend), row.favouriteItem, row.lastOrder ? formatIstDateTime(row.lastOrder) : ""]),
+    );
+  }
+
+  return rows;
+}
+
+function reportRowToCsv(row: ReportRow) {
+  return [row.label, String(row.orders), String(row.quantity), String(row.grossSales), String(row.netSales)];
+}
+
+function downloadTextFile(filename: string, content: string, type: string) {
+  downloadBlob(filename, new Blob([content], { type }));
+}
+
+function downloadBlob(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function escapeCsvCell(value: string) {
+  return `"${String(value).replaceAll('"', '""')}"`;
 }
 
 function reportRowToPdf(row: ReportRow) {
