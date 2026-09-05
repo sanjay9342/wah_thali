@@ -243,7 +243,7 @@ function getReadableWhatsAppError(code: number | undefined, message: string) {
   if (code === 133010) {
     return "Meta WhatsApp sender phone number is not registered in Cloud API. In Meta WhatsApp Manager, register or activate the phone number used by META_WHATSAPP_PHONE_NUMBER_ID, then retry.";
   }
-  if (code === 132018) {
+  if (code === 132000 || code === 132018) {
     return "Meta WhatsApp template parameter mismatch. The approved template expects a different number of variables than this message.";
   }
 

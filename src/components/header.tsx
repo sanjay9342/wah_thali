@@ -56,7 +56,7 @@ export function Header({ showContact = true, showLocation = false }: { showConta
             ["/menu", "Search"],
             ["/orders", "Orders"],
             ["/offers", "Offers"],
-            ["/bulk-orders", "Bulk Orders"],
+            ["/bulkorders", "Bulk Orders"],
             ["/support", "Help"],
           ].map(([href, label]) => {
             const active = href === "/" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
@@ -203,7 +203,7 @@ export function Header({ showContact = true, showLocation = false }: { showConta
 }
 
 function prefetchPrimaryRoutes(prefetch: (href: string) => void) {
-  ["/", "/menu", "/cart", "/orders", "/offers", "/bulk-orders", "/support", "/account"].forEach((href) => {
+  ["/", "/menu", "/cart", "/orders", "/offers", "/bulkorders", "/support", "/account"].forEach((href) => {
     prefetch(href);
   });
 }

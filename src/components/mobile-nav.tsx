@@ -10,7 +10,7 @@ const items = [
   { href: "/", icon: Home, label: "Home", match: (path: string) => path === "/" },
   { href: "/menu", icon: Search, label: "Search", match: (path: string) => path === "/menu" },
   { href: "/orders", icon: PackageCheck, label: "Orders", match: (path: string) => path.startsWith("/orders") || path.startsWith("/order/") },
-  { href: "/bulk-orders", icon: Building2, label: "Bulk Orders", match: (path: string) => path === "/bulk-orders" },
+  { href: "/bulkorders", icon: Building2, label: "Bulk Orders", match: (path: string) => path === "/bulkorders" || path === "/bulk-orders" },
   { href: "/account", icon: User, label: "Profile", match: (path: string) => path === "/account" },
 ];
 
@@ -29,7 +29,7 @@ export function MobileNav() {
   }, []);
 
   useEffect(() => {
-    ["/", "/menu", "/orders", "/bulk-orders", "/account"].forEach((href) => {
+    ["/", "/menu", "/orders", "/bulkorders", "/account"].forEach((href) => {
       router.prefetch(href);
     });
   }, [router]);
