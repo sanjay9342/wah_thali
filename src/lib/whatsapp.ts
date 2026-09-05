@@ -10,6 +10,8 @@ type WhatsAppTemplateInput = {
   mobile: string;
   templateName: string;
   parameters?: string[];
+  headerParameters?: string[];
+  buttonParameters?: string[];
 };
 
 type WhatsAppTextInput = {
@@ -201,10 +203,33 @@ async function postWhatsAppMessage(payload: Record<string, unknown>): Promise<Wh
   return { ok: true, messageId: data?.messages?.[0]?.id };
 }
 
-export async function sendWhatsAppTemplate({ mobile, templateName, parameters = [] }: WhatsAppTemplateInput): Promise<WhatsAppSendResult> {
+export async function sendWhatsAppTemplate({ mobile, templateName, parameters = [], headerParameters = [], buttonParameters = [] }: WhatsAppTemplateInput): Promise<WhatsAppSendResult> {
   if (!templateName) {
     return { ok: false, message: "WhatsApp template name is required." };
   }
+
+  const components = [
+    headerParameters.length
+      ? {
+          type: "header",
+          parameters: headerParameters.map((text) => ({ type: "text", text })),
+        }
+      : null,
+    parameters.length
+      ? {
+          type: "body",
+          parameters: parameters.map((text) => ({ type: "text", text })),
+        }
+      : null,
+    buttonParameters.length
+      ? {
+          type: "button",
+          sub_type: "url",
+          index: "0",
+          parameters: buttonParameters.map((text) => ({ type: "text", text })),
+        }
+      : null,
+  ].filter(Boolean);
 
   return postWhatsAppMessage({
     messaging_product: "whatsapp",
@@ -214,14 +239,7 @@ export async function sendWhatsAppTemplate({ mobile, templateName, parameters = 
     template: {
       name: templateName,
       language: { code: readEnv("META_WHATSAPP_LANGUAGE_CODE") || "en" },
-      components: parameters.length
-        ? [
-            {
-              type: "body",
-              parameters: parameters.map((text) => ({ type: "text", text })),
-            },
-          ]
-        : undefined,
+      components: components.length ? components : undefined,
     },
   });
 }

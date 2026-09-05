@@ -158,16 +158,25 @@ async function notifyAdminLead(data: z.infer<typeof leadSchema>, leadId: string)
   const templateName = readServerEnv("META_WHATSAPP_LEAD_TEMPLATE_NAME");
 
   let lastTemplateFailure: { ok: false; status?: number; message: string; channel?: string } | undefined;
-  const templateVariants = templateName ? buildLeadTemplateParameterVariants(fullTemplateParameters) : [];
-  for (const parameters of templateVariants) {
+  const templateVariants = templateName ? buildLeadTemplateParameterVariants(fullTemplateParameters, adminUrl) : [];
+  for (const variant of templateVariants) {
     const result = await sendWhatsAppTemplate({
       mobile: adminMobile,
       templateName,
-      parameters,
+      parameters: variant.body,
+      headerParameters: variant.header,
+      buttonParameters: variant.button,
     });
 
     if (result.ok) {
-      return { ...result, channel: "template" as const, templateName, parameterCount: parameters.length };
+      return {
+        ...result,
+        channel: "template" as const,
+        templateName,
+        parameterCount: variant.body.length,
+        headerParameterCount: variant.header.length,
+        buttonParameterCount: variant.button.length,
+      };
     }
 
     lastTemplateFailure = { ...result, channel: "template" };
@@ -192,12 +201,23 @@ async function notifyAdminLead(data: z.infer<typeof leadSchema>, leadId: string)
 
 export const POST = withApiErrorHandling(postHandler, "POST /api/leads");
 
-function buildLeadTemplateParameterVariants(parameters: string[]) {
-  const variants = new Map<string, string[]>();
+function buildLeadTemplateParameterVariants(parameters: string[], adminUrl: string) {
+  const variants = new Map<string, { body: string[]; header: string[]; button: string[] }>();
+
+  function add(body: string[], header: string[] = [], button: string[] = []) {
+    variants.set(`${header.length}:${body.length}:${button.length}:${[...header, ...body, ...button].join("\u001f")}`, {
+      body,
+      header,
+      button,
+    });
+  }
 
   for (let count = parameters.length; count >= 0; count -= 1) {
     const variant = count === 1 ? [parameters[5]] : parameters.slice(0, count);
-    variants.set(`${variant.length}:${variant.join("\u001f")}`, variant);
+    add(variant);
+    add(variant, ["Wah Thali"]);
+    add(variant, [], [adminUrl]);
+    add(variant, ["Wah Thali"], [adminUrl]);
   }
 
   return Array.from(variants.values());
