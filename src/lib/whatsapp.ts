@@ -186,14 +186,15 @@ async function postWhatsAppMessage(payload: Record<string, unknown>): Promise<Wh
 
   const data = await response.json().catch(() => null) as {
     messages?: Array<{ id?: string }>;
-    error?: { message?: string };
+    error?: { code?: number; error_subcode?: number; message?: string };
   } | null;
 
   if (!response.ok) {
+    const metaMessage = data?.error?.message || "Meta WhatsApp Cloud API rejected the message.";
     return {
       ok: false,
       status: response.status,
-      message: data?.error?.message || "Meta WhatsApp Cloud API rejected the message.",
+      message: getReadableWhatsAppError(data?.error?.code, metaMessage),
     };
   }
 
@@ -236,4 +237,15 @@ export async function sendWhatsAppText({ mobile, text }: WhatsAppTextInput): Pro
       body: text,
     },
   });
+}
+
+function getReadableWhatsAppError(code: number | undefined, message: string) {
+  if (code === 133010) {
+    return "Meta WhatsApp sender phone number is not registered in Cloud API. In Meta WhatsApp Manager, register or activate the phone number used by META_WHATSAPP_PHONE_NUMBER_ID, then retry.";
+  }
+  if (code === 132018) {
+    return "Meta WhatsApp template parameter mismatch. The approved template expects a different number of variables than this message.";
+  }
+
+  return code ? `Meta WhatsApp error #${code}: ${message}` : message;
 }

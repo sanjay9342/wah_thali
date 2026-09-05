@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import type { ReactNode } from "react";
 import { BellRing, CheckCircle2, Clock3, CreditCard, ImagePlus, LocateFixed, MapPin, Play, Save, Settings2, Square, Store, Trash2, Truck, Volume2, VolumeX } from "lucide-react";
+import { AdminFloatingMessage } from "@/components/admin-floating-message";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { adminFetch } from "@/lib/admin-client-auth";
@@ -114,7 +115,7 @@ export function AdminSettingsClient({
     lastOrderBufferMinutes: String(initialAdvanced?.lastOrderBufferMinutes ?? defaultAdvanced.lastOrderBufferMinutes),
     lowStockAlertThreshold: String(initialAdvanced?.lowStockAlertThreshold ?? defaultAdvanced.lowStockAlertThreshold),
   });
-  const [slides, setSlides] = useState(initialSlides);
+  const [slides, setSlides] = useState(() => initialSlides.map(normalizeAdminSlide));
   const [slidesDirty, setSlidesDirty] = useState(false);
   const [homeDishCategories, setHomeDishCategories] = useState(() =>
     initialHomeDishCategories.filter((category) => initialCategories.includes(category)),
@@ -122,6 +123,7 @@ export function AdminSettingsClient({
   const [homeDishesDirty, setHomeDishesDirty] = useState(false);
   const [message, setMessage] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [contactSaving, setContactSaving] = useState(false);
   const [locatingKitchen, setLocatingKitchen] = useState(false);
   const [geocodingKitchen, setGeocodingKitchen] = useState(false);
   const [storeModeSaving, setStoreModeSaving] = useState<StoreMode | null>(null);
@@ -133,10 +135,13 @@ export function AdminSettingsClient({
   const soundPreviewAudio = useRef<HTMLAudioElement | null>(null);
   const soundPreviewOscillators = useRef<OscillatorNode[]>([]);
   const soundPreviewTimer = useRef<number | null>(null);
+  const contactAutoSaveReady = useRef(false);
   const adminAccess = useAdminAccess();
   const kitchenCoordinatesReady = hasValidCoordinate(settings.kitchenLatitude, 90) && hasValidCoordinate(settings.kitchenLongitude, 180);
   const deliverySlabRows = parseDeliveryDistanceSlabRows(settings.deliveryDistanceSlabs);
   const deliverySlabCount = parseDeliveryDistanceSlabs(settings.deliveryDistanceSlabs).length;
+  const settingsValidationError = getSettingsValidationError(settings, advanced, storeHours);
+  const contactValidationError = getContactValidationError(settings.supportPhone, settings.whatsappNumber);
 
   function run(task: () => Promise<void>) {
     setMessage("");
@@ -151,6 +156,10 @@ export function AdminSettingsClient({
 
   function saveSettings() {
     run(async () => {
+      const validationError = getSettingsValidationError(settings, advanced, storeHours);
+      if (validationError) {
+        throw new Error(validationError);
+      }
       const openingHours = buildOpeningHours(storeHours.opensAt, storeHours.closesAt);
       if (!openingHours) {
         throw new Error("Please choose valid opening and closing times.");
@@ -194,7 +203,7 @@ export function AdminSettingsClient({
         }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Settings save failed.");
+      if (!response.ok) throw new Error(getApiErrorMessage(data, "Settings save failed."));
       setSettings((current) => ({ ...current, openingHours: data.settings?.openingHours ?? openingHours }));
       window.dispatchEvent(new CustomEvent("wah-thali-admin-alert-settings-updated", {
         detail: {
@@ -213,6 +222,39 @@ export function AdminSettingsClient({
       ].join("\n"));
     });
   }
+
+  const saveContactNumbers = useCallback(async (showSuccess = true) => {
+    const validationError = getContactValidationError(settings.supportPhone, settings.whatsappNumber);
+    if (validationError) {
+      setMessage(validationError);
+      return;
+    }
+
+    setContactSaving(true);
+    setMessage("");
+    try {
+      const response = await adminFetch(adminAccess?.session, "/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          supportPhone: settings.supportPhone,
+          whatsappNumber: settings.whatsappNumber,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(getApiErrorMessage(data, "Contact number save failed."));
+      setSettings((current) => ({
+        ...current,
+        supportPhone: data.settings?.supportPhone ?? current.supportPhone,
+        whatsappNumber: data.settings?.whatsappNumber ?? current.whatsappNumber,
+      }));
+      if (showSuccess) setMessage("Contact numbers saved automatically.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Contact number save failed.");
+    } finally {
+      setContactSaving(false);
+    }
+  }, [adminAccess, setSettings, settings.supportPhone, settings.whatsappNumber]);
 
   function applyDeliveryDistanceFormat() {
     const currentSlabs = parseDeliveryDistanceSlabs(settings.deliveryDistanceSlabs);
@@ -282,6 +324,20 @@ export function AdminSettingsClient({
       void soundPreviewContext.current?.close();
     };
   }, []);
+
+  useEffect(() => {
+    if (!contactAutoSaveReady.current) {
+      contactAutoSaveReady.current = true;
+      return;
+    }
+
+    if (contactValidationError) return;
+    const timer = window.setTimeout(() => {
+      void saveContactNumbers(true);
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [contactValidationError, saveContactNumbers, settings.supportPhone, settings.whatsappNumber]);
 
   async function previewOrderSound(sound: NewOrderSound) {
     if (previewingSound === sound) {
@@ -447,6 +503,8 @@ export function AdminSettingsClient({
         body: "Image-only slider",
         code: "SLIDER",
         image: "/wah-thali-meal-cutout-v2.png",
+        desktopImage: "/wah-thali-meal-cutout-v2.png",
+        mobileImage: "/wah-thali-meal-cutout-v2.png",
         targetCategory: current[0]?.targetCategory ?? initialCategories[0] ?? "All",
         active: true,
         sortOrder: current.length + 1,
@@ -471,13 +529,15 @@ export function AdminSettingsClient({
 
   function saveSlides() {
     run(async () => {
+      const normalizedSlides = slides.map(normalizeAdminSlide);
       const response = await adminFetch(adminAccess?.session, "/api/home-slides", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slides }),
+        body: JSON.stringify({ slides: normalizedSlides }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Slider save failed.");
+      setSlides(Array.isArray(data.slides) ? data.slides.map(normalizeAdminSlide) : normalizedSlides);
       setSlidesDirty(false);
       setMessage("Homepage slider saved live and connected to the website.");
     });
@@ -603,22 +663,19 @@ export function AdminSettingsClient({
             <p className="mt-1 text-sm font-semibold text-muted">Restaurant modes, order rules, kitchen timing, delivery, payments, and homepage promotions.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={saveSettings} disabled={isPending} className="inline-flex h-11 items-center gap-2 rounded-lg bg-red px-4 font-black text-white disabled:opacity-60">
+            <button
+              onClick={saveSettings}
+              disabled={isPending || Boolean(settingsValidationError)}
+              title={settingsValidationError || "Save settings"}
+              className="inline-flex h-11 items-center gap-2 rounded-lg bg-red px-4 font-black text-white disabled:opacity-60"
+            >
               <Save size={18} /> Save settings
             </button>
           </div>
         </div>
         <AdminSectionNav />
 
-        {message ? (
-          <p className={`mt-4 whitespace-pre-line rounded-lg border px-4 py-3 text-sm font-black ${
-            message.startsWith("Settings saved")
-              ? "border-[#bfe7cc] bg-[#effaf4] text-[#0f7a45]"
-              : "border-border bg-cream text-maroon"
-          }`}>
-            {message}
-          </p>
-        ) : null}
+        {message ? <AdminFloatingMessage message={message} tone={getAdminMessageTone(message)} /> : null}
 
         <section className="mt-6 grid gap-5 lg:grid-cols-3">
           <Panel title="Store mode" icon={<Store className="text-red" size={22} />}>
@@ -914,7 +971,8 @@ export function AdminSettingsClient({
             <button
               type="button"
               onClick={saveSettings}
-              disabled={isPending}
+              disabled={isPending || Boolean(settingsValidationError)}
+              title={settingsValidationError || "Save delivery rules"}
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-red px-4 text-sm font-black text-white disabled:opacity-60"
             >
               <Save size={17} /> {isPending ? "Saving..." : "Save delivery rules"}
@@ -936,15 +994,38 @@ export function AdminSettingsClient({
             <Input
               label="Support phone"
               value={settings.supportPhone}
-              onChange={(value) => setSettings({ ...settings, supportPhone: value })}
-              helper="Shown on customer Call buttons. Example: 7001323730."
+              onChange={(value) => setSettings({ ...settings, supportPhone: cleanDigits(value).slice(0, 10) })}
+              onBlur={() => void saveContactNumbers(true)}
+              helper="Required. Enter 10 digits only. Example: 7001323730."
             />
             <Input
               label="WhatsApp number"
               value={settings.whatsappNumber}
-              onChange={(value) => setSettings({ ...settings, whatsappNumber: value })}
-              helper="Used for customer WhatsApp buttons and owner new/cancelled order alerts. Include country code without +. Example: 917001323730."
+              onChange={(value) => setSettings({ ...settings, whatsappNumber: cleanDigits(value).slice(0, 15) })}
+              onBlur={() => void saveContactNumbers(true)}
+              helper="Required. Include country code without +. Example: 917001323730."
             />
+            {contactValidationError ? (
+              <p className="rounded-lg border border-red/25 bg-[#fff4f5] px-3 py-2 text-xs font-black leading-5 text-maroon">
+                {contactValidationError}
+              </p>
+            ) : contactSaving ? (
+              <p className="rounded-lg border border-border bg-cream px-3 py-2 text-xs font-black leading-5 text-muted">
+                Saving contact numbers...
+              </p>
+            ) : (
+              <p className="rounded-lg border border-[#c7ecd2] bg-[#effaf4] px-3 py-2 text-xs font-black leading-5 text-[#0f7a45]">
+                Contact numbers are valid and save automatically after editing.
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => void saveContactNumbers(true)}
+              disabled={contactSaving || Boolean(contactValidationError)}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-red px-4 text-sm font-black text-white disabled:opacity-60"
+            >
+              <Save size={17} /> {contactSaving ? "Saving..." : "Save contact numbers"}
+            </button>
             <p className="rounded-lg border border-[#c7ecd2] bg-[#effaf4] px-3 py-2 text-xs font-black leading-5 text-[#0f7a45]">
               Delivery availability is controlled by the kilometer radius settings above. These contact numbers update the website call and WhatsApp links after saving.
             </p>
@@ -1033,30 +1114,73 @@ export function AdminSettingsClient({
                     </select>
                   </label>
                 </div>
-                <div className="mt-3 grid gap-2 text-sm font-bold text-charcoal">
-                  <span>Slider image</span>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={safeImage(slide.image)} alt="" className="aspect-[390/166] w-full rounded-lg object-cover" />
-                  <input value={slide.image} onChange={(event) => updateSlide(index, { image: event.target.value })} className="h-11 min-w-0 rounded-lg border border-border bg-white px-3 text-sm" placeholder="Paste image URL or /public path" />
+                <div className="mt-3 grid gap-3 text-sm font-bold text-charcoal">
+                  <div className="grid gap-2">
+                    <span>Desktop image <span className="text-xs text-muted">(wide banner, 1434 x 248)</span></span>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={safeImage(slide.desktopImage || slide.image)} alt="" className="aspect-[1434/248] w-full rounded-lg bg-[#fff7f1] object-cover" />
+                    <input
+                      value={slide.desktopImage ?? slide.image}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        updateSlide(index, { desktopImage: value, image: value || slide.mobileImage || "/wah-thali-meal-cutout-v2.png" });
+                      }}
+                      className="h-11 min-w-0 rounded-lg border border-border bg-white px-3 text-sm"
+                      placeholder="Paste desktop image URL or /public path"
+                    />
+                    <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-lg bg-maroon px-3 text-sm font-black text-white">
+                      Upload desktop image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (event) => {
+                          const file = event.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            const image = await uploadImage(file);
+                            updateSlide(index, { desktopImage: image, image });
+                          } catch (error) {
+                            setMessage(error instanceof Error ? error.message : "Image upload failed.");
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <div className="grid gap-2">
+                    <span>Mobile image <span className="text-xs text-muted">(phone banner, 390 x 166)</span></span>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={safeImage(slide.mobileImage || slide.image)} alt="" className="aspect-[390/166] w-full rounded-lg bg-[#fff7f1] object-cover" />
+                    <input
+                      value={slide.mobileImage ?? slide.image}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        updateSlide(index, { mobileImage: value, image: slide.desktopImage || value || "/wah-thali-meal-cutout-v2.png" });
+                      }}
+                      className="h-11 min-w-0 rounded-lg border border-border bg-white px-3 text-sm"
+                      placeholder="Paste mobile image URL or /public path"
+                    />
+                    <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-lg border border-maroon/25 bg-white px-3 text-sm font-black text-maroon">
+                      Upload mobile image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (event) => {
+                          const file = event.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            const image = await uploadImage(file);
+                            updateSlide(index, { mobileImage: image, image: slide.desktopImage || image });
+                          } catch (error) {
+                            setMessage(error instanceof Error ? error.message : "Image upload failed.");
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
                 </div>
                 <div className="mt-auto grid gap-2 pt-4">
-                  <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-lg bg-maroon px-3 text-sm font-black text-white">
-                    Upload using your device
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={async (event) => {
-                        const file = event.target.files?.[0];
-                        if (!file) return;
-                        try {
-                          updateSlide(index, { image: await uploadImage(file) });
-                        } catch (error) {
-                          setMessage(error instanceof Error ? error.message : "Image upload failed.");
-                        }
-                      }}
-                    />
-                  </label>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                     <Toggle label="Active" checked={slide.active} onChange={(value) => updateSlide(index, { active: value })} />
                     <button type="button" onClick={() => deleteSlide(index)} className="grid h-11 w-12 place-items-center rounded-lg border border-border bg-white text-red" aria-label={`Delete slider image ${index + 1}`}>
@@ -1122,8 +1246,118 @@ function safeImage(src?: string) {
   return src?.startsWith("/") ? src : src || "/wah-thali-meal-cutout-v2.png";
 }
 
+function normalizeAdminSlide(slide: HomeSlide): HomeSlide {
+  const fallbackImage = slide.image || slide.desktopImage || slide.mobileImage || "/wah-thali-meal-cutout-v2.png";
+  return {
+    ...slide,
+    image: fallbackImage,
+    desktopImage: slide.desktopImage || fallbackImage,
+    mobileImage: slide.mobileImage || fallbackImage,
+  };
+}
+
 function getSoundLabel(sound: NewOrderSound) {
   return newOrderSoundOptions.find((option) => option.id === sound)?.label ?? "Classic bell";
+}
+
+function getAdminMessageTone(message: string) {
+  return /failed|error|could not|invalid|required|denied|blocked/i.test(message) ? "error" : "success";
+}
+
+function cleanDigits(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function getContactValidationError(supportPhone: string, whatsappNumber: string) {
+  if (!/^\d{10}$/.test(supportPhone.trim())) {
+    return "Support phone is required and must be exactly 10 digits.";
+  }
+  if (!/^\d{10,15}$/.test(whatsappNumber.trim())) {
+    return "WhatsApp number is required and must be 10 to 15 digits without +.";
+  }
+  return "";
+}
+
+function getSettingsValidationError(
+  settings: {
+    supportPhone: string;
+    whatsappNumber: string;
+    minimumOrder: string;
+    deliveryFee: string;
+    freeDeliveryThreshold: string;
+    packagingFee: string;
+    gstRate: string;
+    deliveryFeeMode: "FLAT" | "PERCENT" | "DISTANCE";
+    deliveryFeePercent: string;
+    deliveryDistanceSlabs: string;
+    locationRestrictionEnabled: boolean;
+    kitchenLatitude: string;
+    kitchenLongitude: string;
+    deliveryRadiusKm: string;
+  },
+  advanced: AdvancedSettings,
+  storeHours: { opensAt: string; closesAt: string },
+) {
+  const contactError = getContactValidationError(settings.supportPhone, settings.whatsappNumber);
+  if (contactError) return contactError;
+  if (!buildOpeningHours(storeHours.opensAt, storeHours.closesAt)) return "Please choose valid opening and closing times.";
+  if (!isNonNegativeNumber(settings.minimumOrder)) return "Minimum order must be 0 or more.";
+  if (!isNonNegativeNumber(settings.deliveryFee)) return "Delivery fee must be 0 or more.";
+  if (!isNonNegativeNumber(settings.freeDeliveryThreshold)) return "Free delivery threshold must be 0 or more.";
+  if (!isNonNegativeNumber(settings.packagingFee)) return "Packaging fee must be 0 or more.";
+  if (!isNumberInRange(settings.gstRate, 0, 100)) return "GST percentage must be between 0 and 100.";
+  if (!isNumberInRange(settings.deliveryFeePercent, 0, 100)) return "Delivery fee percentage must be between 0 and 100.";
+  if (settings.deliveryFeeMode === "DISTANCE" && !parseDeliveryDistanceSlabs(settings.deliveryDistanceSlabs).length) {
+    return "Add at least one distance slab before saving distance wise delivery charges.";
+  }
+  if (settings.locationRestrictionEnabled) {
+    if (!hasValidCoordinate(settings.kitchenLatitude, 90) || !hasValidCoordinate(settings.kitchenLongitude, 180)) {
+      return "Kitchen latitude and longitude are required before enabling delivery radius restriction.";
+    }
+    if (!isPositiveNumber(settings.deliveryRadiusKm)) return "Allowed delivery radius must be greater than 0 km.";
+  }
+  if (!isPositiveInteger(advanced.defaultPrepMinutes)) return "Default prep minutes must be greater than 0.";
+  if (!isNonNegativeInteger(advanced.rushPrepBufferMinutes)) return "Rush buffer minutes must be 0 or more.";
+  if (!isNumberInRange(advanced.lastOrderBufferMinutes, 0, 1439)) return "Last order buffer must be between 0 and 1439 minutes.";
+  if (!isNonNegativeInteger(advanced.maxOrdersPerSlot)) return "Max orders per slot must be 0 or more.";
+  if (!isNonNegativeInteger(advanced.lowStockAlertThreshold)) return "Low stock alert threshold must be 0 or more.";
+  if (!/^\d{2}:\d{2}$/.test(advanced.adminDailyDigestTime)) return "Daily digest time must be valid.";
+  return "";
+}
+
+function getApiErrorMessage(data: unknown, fallback: string) {
+  if (!data || typeof data !== "object") return fallback;
+  const payload = data as { error?: unknown; issues?: { fieldErrors?: Record<string, string[]>; formErrors?: string[] } };
+  const fieldMessage = payload.issues?.fieldErrors
+    ? Object.values(payload.issues.fieldErrors).flat().find(Boolean)
+    : undefined;
+  const formMessage = payload.issues?.formErrors?.find(Boolean);
+  return fieldMessage || formMessage || (typeof payload.error === "string" ? payload.error : fallback);
+}
+
+function isNonNegativeNumber(value: string) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0;
+}
+
+function isPositiveNumber(value: string) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0;
+}
+
+function isNonNegativeInteger(value: string) {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric >= 0;
+}
+
+function isPositiveInteger(value: string) {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric > 0;
+}
+
+function isNumberInRange(value: string, min: number, max: number) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= min && numeric <= max;
 }
 
 function formatPercentInput(rate: number) {

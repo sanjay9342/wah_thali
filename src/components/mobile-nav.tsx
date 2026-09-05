@@ -1,6 +1,6 @@
 "use client";
 
-import { Gift, Home, PackageCheck, Search, User } from "lucide-react";
+import { Building2, Home, PackageCheck, Search, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -10,7 +10,7 @@ const items = [
   { href: "/", icon: Home, label: "Home", match: (path: string) => path === "/" },
   { href: "/menu", icon: Search, label: "Search", match: (path: string) => path === "/menu" },
   { href: "/orders", icon: PackageCheck, label: "Orders", match: (path: string) => path.startsWith("/orders") || path.startsWith("/order/") },
-  { href: "/offers", icon: Gift, label: "Offers", match: (path: string) => path === "/offers" },
+  { href: "/bulk-orders", icon: Building2, label: "Bulk Orders", match: (path: string) => path === "/bulk-orders" },
   { href: "/account", icon: User, label: "Profile", match: (path: string) => path === "/account" },
 ];
 
@@ -29,7 +29,7 @@ export function MobileNav() {
   }, []);
 
   useEffect(() => {
-    ["/", "/menu", "/orders", "/offers", "/account"].forEach((href) => {
+    ["/", "/menu", "/orders", "/bulk-orders", "/account"].forEach((href) => {
       router.prefetch(href);
     });
   }, [router]);

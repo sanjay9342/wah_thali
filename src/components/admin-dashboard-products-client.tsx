@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CheckCircle2, Edit3, EyeOff } from "lucide-react";
+import { AdminFloatingMessage } from "@/components/admin-floating-message";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { adminFetch } from "@/lib/admin-client-auth";
 import type { Product } from "@/lib/types";
@@ -44,7 +45,7 @@ export function AdminDashboardProductsClient({ initialProducts }: { initialProdu
 
   return (
     <>
-      {message ? <p className="border-b border-border bg-cream px-5 py-3 text-sm font-black text-maroon">{message}</p> : null}
+      {message ? <AdminFloatingMessage message={message} tone={getAdminMessageTone(message)} /> : null}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[820px] text-left text-sm">
           <thead className="bg-cream text-maroon">
@@ -98,4 +99,8 @@ export function AdminDashboardProductsClient({ initialProducts }: { initialProdu
 
 function sortProductsForAvailability(products: Product[]) {
   return [...products].sort((a, b) => Number(b.available) - Number(a.available) || a.name.localeCompare(b.name));
+}
+
+function getAdminMessageTone(message: string) {
+  return /failed|error|could not|invalid|required/i.test(message) ? "error" : "success";
 }

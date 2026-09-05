@@ -23,6 +23,7 @@ const baseSettings: RestaurantSettings = {
   openingHours: "11:30 AM - 10:00 PM",
   supportPhone: "7001323730",
   whatsappNumber: "917001323730",
+  leadWhatsAppNumber: "917001323730",
   storeMode: "OPEN",
   storeStatusReason: "",
   busyMessage: "Kitchen busy",

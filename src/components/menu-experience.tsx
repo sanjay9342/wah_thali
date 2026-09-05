@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useDeferredValue, useEffect, useMemo, useState, type ReactNode, type SyntheticEvent } from "react";
+import { useDeferredValue, useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import {
   ArrowLeft,
   BadgeCheck,
@@ -32,6 +32,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/header";
 import { MobileNav } from "@/components/mobile-nav";
+import { DesktopTrustFooter } from "@/components/desktop-trust-footer";
 import { categories as fallbackCategories, products as fallbackProducts } from "@/lib/data";
 import { writeStoredCart } from "@/lib/cart-storage";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
@@ -579,71 +580,6 @@ function DesktopSearchPage({
   );
 }
 
-function DesktopTrustFooter({ categories }: { categories: string[] }) {
-  const topCategories = categories.filter((category) => category !== "All").slice(0, 5);
-
-  return (
-    <section className="hidden border-t border-[#f1e7e4] bg-white lg:block">
-      <div className="mx-auto max-w-[1180px] px-5 py-9">
-        <div className="grid grid-cols-[1.15fr_0.7fr_0.8fr_0.8fr] gap-12">
-          <div>
-            <Link href="/" className="relative block h-12 w-40 overflow-hidden">
-              <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill sizes="160px" className="object-contain object-left" />
-            </Link>
-            <p className="mt-5 max-w-[360px] text-sm font-semibold leading-7 text-muted">
-              Fresh homestyle meals delivered straight to your doorstep. Simple ordering, clean food, and fast delivery.
-            </p>
-          </div>
-
-          <FooterColumn title="Top Categories">
-            {topCategories.map((category) => (
-              <Link key={category} href={getCategoryHref(category)} className="text-sm font-bold text-muted hover:text-maroon">
-                {category}
-              </Link>
-            ))}
-          </FooterColumn>
-
-          <FooterColumn title="Our Policies">
-            {[
-              ["Privacy Policy", "/privacy-policy"],
-              ["About Us", "/about"],
-              ["Terms and Conditions", "/terms-and-conditions"],
-              ["Refund Policy", "/refund-cancellation-policy"],
-              ["Delivery & Pickup Policy", "/delivery-policy"],
-            ].map(([label, href]) => (
-              <Link key={href} href={href} className="text-sm font-bold text-muted hover:text-maroon">
-                {label}
-              </Link>
-            ))}
-          </FooterColumn>
-
-          <FooterColumn title="Support & More">
-            {[
-              ["Help Center", "/support"],
-              ["Orders", "/orders"],
-              ["Offers", "/offers"],
-              ["Loyalty", "/loyalty"],
-              ["Account", "/account"],
-            ].map(([label, href]) => (
-              <Link key={href} href={href} className="text-sm font-bold text-muted hover:text-maroon">
-                {label}
-              </Link>
-            ))}
-          </FooterColumn>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function FooterColumn({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div>
-      <h3 className="text-base font-black uppercase tracking-wide text-charcoal">{title}</h3>
-      <div className="mt-6 grid gap-4">{children}</div>
-    </div>
-  );
-}
 function DishDetailSheet({
   product,
   getQuantityForVariant,
@@ -1577,7 +1513,7 @@ export function MenuExperience({
               aria-label={`Open ${promoSlides[activeSlide]?.targetCategory || "All"} category`}
             >
               <Image
-                src={promoSlides[activeSlide]?.image || "/wah-thali-meal-cutout-v2.png"}
+                src={promoSlides[activeSlide]?.mobileImage || promoSlides[activeSlide]?.image || "/wah-thali-meal-cutout-v2.png"}
                 alt={promoSlides[activeSlide]?.targetCategory || "Wah Thali slider image"}
                 fill
                 loading="eager"
@@ -1603,7 +1539,7 @@ export function MenuExperience({
 
           {!isCategoryPage ? (
           <section
-            className="relative isolate hidden aspect-[1434/248] w-full cursor-pointer overflow-hidden rounded-[22px] bg-red shadow-[0_16px_36px_rgba(141,0,33,0.18)] lg:block"
+            className="relative isolate hidden aspect-[1434/248] w-full cursor-pointer overflow-hidden rounded-[22px] bg-[#fff7f1] shadow-[0_16px_36px_rgba(141,0,33,0.18)] lg:block"
             role="button"
             tabIndex={0}
             onClick={() => openPromoSlide(promoSlides[activeSlide])}
@@ -1613,12 +1549,12 @@ export function MenuExperience({
             aria-label={`Open ${promoSlides[activeSlide]?.targetCategory || "All"} category`}
           >
             <Image
-              src={promoSlides[activeSlide]?.image || "/wah-thali-meal-cutout-v2.png"}
+              src={promoSlides[activeSlide]?.desktopImage || promoSlides[activeSlide]?.image || "/wah-thali-meal-cutout-v2.png"}
               alt={promoSlides[activeSlide]?.targetCategory || "Wah Thali slider image"}
               fill
               loading="eager"
               unoptimized
-              sizes="(max-width: 1279px) 760px, 1000px"
+              sizes="(max-width: 1279px) calc(100vw - 288px), 956px"
               className="object-cover"
             />
             <div className="absolute inset-0">

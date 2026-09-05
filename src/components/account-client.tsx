@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   Bell,
@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { clearCustomerSession, readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
+import { clearCustomerSession, readCustomerSession, saveCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
 import { saveNotificationPreferences, useNotificationPreferences, type WahNotificationPreferences } from "@/lib/notifications";
 import { formatRupees } from "@/lib/pricing";
 import { getRewardState, rewardMilestones } from "@/lib/rewards";
@@ -79,10 +79,14 @@ export function AccountClient() {
   const [profile, setProfile] = useState<CustomerProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [nameSaving, setNameSaving] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [activeAddressActionsId, setActiveAddressActionsId] = useState<string | null>(null);
   const [deletingAddressId, setDeletingAddressId] = useState<string | null>(null);
   const [notificationSaving, setNotificationSaving] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
   const notificationPreferences = useNotificationPreferences(session?.mobile);
 
   useEffect(() => {
@@ -120,7 +124,10 @@ export function AccountClient() {
           setMessage(data.error || "Could not load profile.");
           return;
         }
-        if (!cancelled) setProfile(data.customer);
+        if (!cancelled) {
+          setProfile(data.customer);
+          setNameDraft(data.customer?.name ?? "");
+        }
       } catch {
         if (!cancelled) setMessage("Could not load profile. Please check your connection.");
       } finally {
@@ -146,6 +153,59 @@ export function AccountClient() {
   const tier = profile?.rewardTier || rewardState.tier;
   const unlockedRewardTotal = rewardState.completed.reduce((total, milestone) => total + milestone.value, 0);
   const mutedCount = [notificationPreferences.appMuted, notificationPreferences.whatsappMuted].filter(Boolean).length;
+
+  const saveProfileName = useCallback(async (nextName = nameDraft.trim().replace(/\s+/g, " "), showMessage = true) => {
+    if (!session?.mobile || nameSaving) return;
+    if (nextName.length < 2) {
+      if (showMessage) setMessage("Please enter at least 2 characters for your name.");
+      return;
+    }
+    if (nextName === displayName) return;
+
+    setNameSaving(true);
+    if (showMessage) setMessage("");
+    try {
+      const response = await fetch("/api/customers/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mobile: session.mobile, name: nextName }),
+      });
+      const data = await response.json().catch(() => ({})) as { error?: string; customer?: CustomerProfile };
+      if (!response.ok || !data.customer) throw new Error(data.error || "Could not update profile name.");
+
+      setProfile(data.customer);
+      setNameDraft(data.customer.name);
+      await saveCustomerSession({
+        id: data.customer.id,
+        name: data.customer.name,
+        mobile: data.customer.mobile,
+        email: data.customer.email || undefined,
+      });
+      if (showMessage) setMessage("Profile name saved.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update profile name.");
+    } finally {
+      setNameSaving(false);
+    }
+  }, [displayName, nameDraft, nameSaving, session]);
+
+  useEffect(() => {
+    if (!editingName) return;
+    nameInputRef.current?.focus();
+    nameInputRef.current?.select();
+  }, [editingName]);
+
+  useEffect(() => {
+    if (!editingName) return;
+    const nextName = nameDraft.trim().replace(/\s+/g, " ");
+    if (nextName.length < 2 || nextName === displayName) return;
+
+    const timer = window.setTimeout(() => {
+      void saveProfileName(nextName, false);
+    }, 800);
+
+    return () => window.clearTimeout(timer);
+  }, [displayName, editingName, nameDraft, saveProfileName]);
 
   async function updateNotificationPreference(key: keyof WahNotificationPreferences, value: boolean) {
     if (!session?.mobile || notificationSaving) return;
@@ -206,7 +266,50 @@ export function AccountClient() {
               </div>
               <div className="min-w-0">
                 <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/72">Profile</p>
-                <h1 className="mt-1 truncate text-[22px] font-bold leading-tight text-white lg:text-[30px]">{displayName}</h1>
+                <div className="mt-1 flex min-w-0 items-center gap-2">
+                  {editingName ? (
+                    <input
+                      ref={nameInputRef}
+                      value={nameDraft}
+                      onChange={(event) => setNameDraft(event.target.value)}
+                      onBlur={() => void saveProfileName()}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.currentTarget.blur();
+                        }
+                        if (event.key === "Escape") {
+                          setNameDraft(displayName);
+                          setEditingName(false);
+                        }
+                      }}
+                      className="h-11 min-w-0 flex-1 rounded-xl border border-white/30 bg-white px-3 text-[20px] font-bold leading-tight text-maroon outline-none ring-2 ring-white/20 lg:text-[26px]"
+                      aria-label="Edit profile name"
+                    />
+                  ) : (
+                    <h1 className="min-w-0 truncate text-[22px] font-bold leading-tight text-white lg:text-[30px]">{displayName}</h1>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editingName) {
+                        void saveProfileName();
+                        setEditingName(false);
+                        return;
+                      }
+                      setNameDraft(displayName);
+                      setEditingName(true);
+                    }}
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/14 text-white ring-1 ring-white/22 transition-colors hover:bg-white/22"
+                    aria-label={editingName ? "Save profile name" : "Edit profile name"}
+                  >
+                    {editingName ? <CheckCircle2 size={18} /> : <Pencil size={17} />}
+                  </button>
+                </div>
+                {editingName || nameSaving ? (
+                  <p className="mt-1 text-[10px] font-bold text-white/74">
+                    {nameSaving ? "Saving name..." : "Name saves automatically."}
+                  </p>
+                ) : null}
                 <div className="mt-2 grid gap-1.5 text-[11px] font-semibold text-white/84">
                   <span className="flex min-w-0 items-center gap-1.5">
                     <Phone size={13} className="shrink-0" />

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { AlertTriangle, BellRing, CalendarDays, CheckCircle2, Clock, Filter, Mail, MapPin, MessageCircle, Printer, ReceiptText, RefreshCw, Star, Timer, Trash2, UserRound, Utensils, XCircle } from "lucide-react";
+import { AdminFloatingMessage } from "@/components/admin-floating-message";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { business } from "@/lib/business";
@@ -539,7 +540,7 @@ export function AdminOrdersClient({
             </div>
           </section>
         ) : null}
-        {message ? <p className="mt-4 rounded-lg border border-border bg-cream px-4 py-3 text-sm font-black text-maroon">{message}</p> : null}
+        {message ? <AdminFloatingMessage message={message} tone={getAdminMessageTone(message)} /> : null}
 
         <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {counters.map(([label, count, detail]) => (
@@ -1295,6 +1296,10 @@ function getRefundInfo(order: AdminOrder) {
 
 function getOrderDetails(order: AdminOrder) {
   return getOrderFulfillmentDetails(order.timeline);
+}
+
+function getAdminMessageTone(message: string) {
+  return /failed|error|could not|blocked|not enabled|not support|denied/i.test(message) ? "error" : "success";
 }
 
 function escapeHtml(value: string) {

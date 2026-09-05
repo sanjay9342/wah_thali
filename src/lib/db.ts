@@ -433,6 +433,7 @@ function normalizeBusinessSettings(settings: BusinessSettings): BusinessSettings
 
   return {
     ...settings,
+    leadWhatsAppNumber: settings.leadWhatsAppNumber || settings.whatsappNumber || fallbackSettings.leadWhatsAppNumber,
     gstRate: normalizeGstRate(Number(settings.gstRate)),
     deliveryFeeMode,
     deliveryFeePercent: Number.isFinite(Number(settings.deliveryFeePercent)) ? Number(settings.deliveryFeePercent) : fallbackSettings.deliveryFeePercent,
@@ -440,6 +441,48 @@ function normalizeBusinessSettings(settings: BusinessSettings): BusinessSettings
       ? normalizeDeliveryDistanceSlabs(settings.deliveryDistanceSlabs)
       : fallbackSettings.deliveryDistanceSlabs,
   };
+}
+
+export async function getAdminLeadsFromDb() {
+  if (!isDatabaseConfigured()) return [];
+
+  const leads = await prisma.lead.findMany({
+    where: {
+      OR: [
+        { source: { contains: "Party", mode: "insensitive" } },
+        { source: { contains: "Bulk", mode: "insensitive" } },
+        { source: { contains: "Corporate", mode: "insensitive" } },
+        { source: { contains: "Office", mode: "insensitive" } },
+        { source: { contains: "Subscription", mode: "insensitive" } },
+      ],
+    },
+    include: {
+      customer: { select: { id: true, name: true, mobile: true, email: true } },
+      history: { orderBy: { createdAt: "desc" }, take: 1 },
+    },
+    orderBy: { id: "desc" },
+    take: 100,
+  });
+
+  return leads.map((lead) => ({
+    id: lead.id,
+    name: lead.name,
+    phone: lead.phone,
+    company: lead.company ?? undefined,
+    source: lead.source,
+    stage: lead.stage,
+    score: lead.score,
+    createdAt: lead.history[0]?.createdAt.toISOString(),
+    note: lead.history[0]?.note ?? undefined,
+    customer: lead.customer
+      ? {
+          id: lead.customer.id,
+          name: lead.customer.name,
+          mobile: lead.customer.mobile,
+          email: lead.customer.email ?? undefined,
+        }
+      : undefined,
+  }));
 }
 
 function withDefaultKitchenCoordinates(settings: BusinessSettings): BusinessSettings {
@@ -546,6 +589,8 @@ function isHomeSlides(value: unknown): value is HomeSlide[] {
     if (!slide || typeof slide !== "object") return false;
     const item = slide as Record<string, unknown>;
     return ["id", "eyebrow", "title", "body", "code", "image"].every((key) => typeof item[key] === "string") &&
+      (item.desktopImage === undefined || typeof item.desktopImage === "string") &&
+      (item.mobileImage === undefined || typeof item.mobileImage === "string") &&
       (item.targetCategory === undefined || typeof item.targetCategory === "string");
   });
 }

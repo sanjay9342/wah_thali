@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, ClipboardList, LayoutDashboard, ListTree, PackageCheck, Percent, Settings, ShieldCheck, Users } from "lucide-react";
+import { BarChart3, ClipboardList, LayoutDashboard, ListTree, PackageCheck, Percent, Settings, ShieldCheck, UserRoundPlus, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAdminAccess } from "@/components/admin-access-gate";
@@ -13,6 +13,7 @@ const adminLinks = [
   { href: "/admin/categories", label: "Categories", icon: ListTree },
   { href: "/admin/coupons", label: "Coupons", icon: Percent },
   { href: "/admin/customers", label: "Customers", icon: Users },
+  { href: "/admin/bulk-leads", label: "Bulk Leads", icon: UserRoundPlus },
   { href: "/admin/reports", label: "Reports", icon: BarChart3 },
   { href: "/admin/settings", label: "Settings", icon: Settings },
   { href: "/admin/access", label: "Staff Access", icon: ShieldCheck },

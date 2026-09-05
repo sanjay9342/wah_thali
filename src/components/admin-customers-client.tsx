@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { Crown, History, MessageCircle, Phone, Plus, Search, Star, Tag, X } from "lucide-react";
+import { AdminFloatingMessage } from "@/components/admin-floating-message";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { adminFetch } from "@/lib/admin-client-auth";
 import type { AdminCustomer } from "@/lib/types";
@@ -233,7 +234,7 @@ export function AdminCustomersClient({
       </aside>
 
       <div className="grid gap-4">
-        {message ? <p className="rounded-lg border border-border bg-cream px-4 py-3 text-sm font-black text-maroon">{message}</p> : null}
+        {message ? <AdminFloatingMessage message={message} tone={getAdminMessageTone(message)} /> : null}
         {filteredCustomers.length ? filteredCustomers.map((customer) => (
           <article key={customer.id} className="surface rounded-2xl p-5">
             <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
@@ -469,6 +470,10 @@ function Input({ label, value, onChange, type = "text" }: { label: string; value
 
 function toggleName(values: string[], name: string) {
   return values.includes(name) ? values.filter((value) => value !== name) : [...values, name];
+}
+
+function getAdminMessageTone(message: string) {
+  return /failed|error|could not|invalid|required/i.test(message) ? "error" : "success";
 }
 
 function toAdminCustomer(customer: {

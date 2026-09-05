@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { AlertTriangle, Check, Search, ShieldCheck, ShieldOff, UserCog, X } from "lucide-react";
+import { AdminFloatingMessage } from "@/components/admin-floating-message";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import {
@@ -34,6 +35,10 @@ type PendingAccessChange = {
 
 function cleanMobile(value: string) {
   return value.replace(/\D/g, "").slice(-10);
+}
+
+function getAdminMessageTone(message: string) {
+  return /failed|error|could not|invalid|required|permission/i.test(message) ? "error" : "success";
 }
 
 function assignmentKey(assignment: AdminAccessAssignment) {
@@ -222,7 +227,7 @@ export function AdminAccessClient() {
               </label>
             </div>
 
-            {message ? <p className="m-5 rounded-lg border border-border bg-cream px-4 py-3 text-sm font-black text-maroon">{message}</p> : null}
+            {message ? <AdminFloatingMessage message={message} tone={getAdminMessageTone(message)} /> : null}
 
             <div className="divide-y divide-border">
               {!searchReady && visibleAssignments.length ? visibleAssignments.map((assignment) => {

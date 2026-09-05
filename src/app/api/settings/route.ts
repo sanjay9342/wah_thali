@@ -11,8 +11,9 @@ import { formatMinutesAsClock, parseOpeningHours } from "@/lib/store-hours";
 
 const settingsSchema = z.object({
   openingHours: z.string().trim().refine((value) => parseOpeningHours(value) !== null, "Use a valid range, for example 11:30 AM - 10:00 PM."),
-  supportPhone: z.string().trim().min(1),
-  whatsappNumber: z.string().trim().min(1),
+  supportPhone: z.string().trim().regex(/^\d{10}$/, "Support phone must be a valid 10 digit number."),
+  whatsappNumber: z.string().trim().regex(/^\d{10,15}$/, "WhatsApp number must contain 10 to 15 digits without +."),
+  leadWhatsAppNumber: z.string().trim().regex(/^\d{10,15}$/, "Lead WhatsApp number must contain 10 to 15 digits without +."),
   minimumOrder: z.number().finite().nonnegative(),
   deliveryFee: z.number().finite().nonnegative(),
   deliveryFeeMode: z.enum(["FLAT", "PERCENT", "DISTANCE"]),
@@ -66,7 +67,7 @@ async function patchHandler(request: Request) {
 
   const parsed = settingsSchema.safeParse(await request.json());
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid settings payload", issues: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid settings payload", issues: parsed.error.flatten() }, { status: 400 });
   }
 
   const openingRange = parsed.data.openingHours ? parseOpeningHours(parsed.data.openingHours) : null;

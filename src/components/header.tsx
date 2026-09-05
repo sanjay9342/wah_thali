@@ -50,12 +50,13 @@ export function Header({ showContact = true, showLocation = false }: { showConta
           <DesktopLocationLink />
         ) : null}
 
-        <nav className="ml-auto flex items-center gap-8 text-[13px] font-semibold">
+        <nav className="ml-auto flex items-center gap-3 text-[13px] font-semibold xl:gap-6">
           {[
             ["/", "Home"],
             ["/menu", "Search"],
             ["/orders", "Orders"],
             ["/offers", "Offers"],
+            ["/bulk-orders", "Bulk Orders"],
             ["/support", "Help"],
           ].map(([href, label]) => {
             const active = href === "/" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
@@ -64,7 +65,7 @@ export function Header({ showContact = true, showLocation = false }: { showConta
                 key={href}
                 href={href}
                 onMouseEnter={() => router.prefetch(href)}
-                className={`rounded-full px-3 py-2 transition-colors ${active ? "bg-[#fff4f5] text-red" : "text-charcoal hover:bg-[#fff8f9] hover:text-red"}`}
+                className={`rounded-full px-2.5 py-2 transition-colors xl:px-3 ${active ? "bg-[#fff4f5] text-red" : "text-charcoal hover:bg-[#fff8f9] hover:text-red"}`}
                 aria-current={active ? "page" : undefined}
               >
                 {label}
@@ -202,7 +203,7 @@ export function Header({ showContact = true, showLocation = false }: { showConta
 }
 
 function prefetchPrimaryRoutes(prefetch: (href: string) => void) {
-  ["/", "/menu", "/cart", "/orders", "/offers", "/support", "/account"].forEach((href) => {
+  ["/", "/menu", "/cart", "/orders", "/offers", "/bulk-orders", "/support", "/account"].forEach((href) => {
     prefetch(href);
   });
 }

@@ -13,6 +13,8 @@ const slideSchema = z.object({
   body: z.string().min(1),
   code: z.string().min(1),
   image: z.string().min(1),
+  desktopImage: z.string().trim().optional(),
+  mobileImage: z.string().trim().optional(),
   targetCategory: z.string().trim().optional(),
   active: z.boolean(),
   sortOrder: z.coerce.number().int(),
@@ -62,21 +64,33 @@ async function putHandler(request: Request) {
     return NextResponse.json({ error: "Invalid slider payload", issues: parsed.error.flatten() }, { status: 400 });
   }
 
+  const slides = parsed.data.slides.map(normalizeSlidePayload);
+
   const setting = await prisma.businessSetting.upsert({
     where: { key: "homeSlides" },
-    create: { key: "homeSlides", value: parsed.data.slides as Prisma.InputJsonValue },
-    update: { value: parsed.data.slides as Prisma.InputJsonValue },
+    create: { key: "homeSlides", value: slides as Prisma.InputJsonValue },
+    update: { value: slides as Prisma.InputJsonValue },
   });
 
   await logActivity({
     type: "HOME_SLIDES_UPDATED",
     entity: "BusinessSetting",
     entityId: setting.id,
-    summary: `Updated ${parsed.data.slides.length} home slider items`,
+    summary: `Updated ${slides.length} home slider items`,
   });
 
-  return NextResponse.json({ slides: parsed.data.slides });
+  return NextResponse.json({ slides });
 }
 
 export const GET = withApiErrorHandling(getHandler, "GET /api/home-slides");
 export const PUT = withApiErrorHandling(putHandler, "PUT /api/home-slides");
+
+function normalizeSlidePayload(slide: z.infer<typeof slideSchema>) {
+  const fallbackImage = slide.image || slide.desktopImage || slide.mobileImage || "/wah-thali-meal-cutout-v2.png";
+  return {
+    ...slide,
+    image: fallbackImage,
+    desktopImage: slide.desktopImage || fallbackImage,
+    mobileImage: slide.mobileImage || fallbackImage,
+  };
+}

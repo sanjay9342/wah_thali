@@ -61,6 +61,8 @@ export type HomeSlide = {
   body: string;
   code: string;
   image: string;
+  desktopImage?: string;
+  mobileImage?: string;
   targetCategory?: string;
   active: boolean;
   sortOrder: number;
@@ -171,6 +173,25 @@ export type BusinessSettings = {
   openingHours: string;
   supportPhone: string;
   whatsappNumber: string;
+  leadWhatsAppNumber: string;
+};
+
+export type AdminLead = {
+  id: string;
+  name: string;
+  phone: string;
+  company?: string;
+  source: string;
+  stage: string;
+  score: number;
+  createdAt?: string;
+  note?: string;
+  customer?: {
+    id: string;
+    name: string;
+    mobile: string;
+    email?: string;
+  };
 };
 
 export type StoreMode = "OPEN" | "BUSY" | "PAUSED" | "CLOSED";

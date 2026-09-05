@@ -644,7 +644,7 @@ function StatusMessage({ message, tone }: { message: string; tone: MessageTone }
   const success = tone === "success";
   return (
     <p
-      className={`fixed right-4 top-4 z-[80] max-w-[min(420px,calc(100vw-32px))] rounded-lg border px-4 py-3 text-sm font-black shadow-[0_18px_42px_rgba(34,31,32,0.16)] ${
+      className={`fixed bottom-4 right-4 z-[80] max-w-[min(420px,calc(100vw-32px))] rounded-lg border px-4 py-3 text-sm font-black shadow-[0_18px_42px_rgba(34,31,32,0.16)] ${
         success
           ? "border-[#bfe7cf] bg-[#effaf4] text-[#0f7a45]"
           : "border-[#ffd1d6] bg-[#fff4f5] text-red"

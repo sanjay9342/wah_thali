@@ -42,10 +42,12 @@ export function BulkOrderFormClient() {
   async function submitLead() {
     const phone = cleanPhone(form.phone);
     if (!form.name.trim()) return setMessage("Please enter your full name.");
+    if (!form.intent.trim()) return setMessage("Please choose your requirement.");
     if (!form.company.trim()) return setMessage("Please enter company or organization name.");
     if (!form.email.trim() || !form.email.includes("@")) return setMessage("Please enter work email.");
     if (phone.length !== 10) return setMessage("Please enter a valid 10 digit phone number.");
     if (!form.startDate.trim()) return setMessage("Please select date of requirement.");
+    if (!form.deliveryTime.trim()) return setMessage("Please enter preferred time to call.");
     if (!form.area.trim()) return setMessage("Please enter delivery location.");
 
     setSubmitting(true);
@@ -109,7 +111,7 @@ export function BulkOrderFormClient() {
             <Field icon={<UsersRound size={20} />} label="Full Name" value={form.name} placeholder="Enter your full name" onChange={(name) => setForm({ ...form, name })} />
             <Field icon={<BriefcaseBusiness size={20} />} label="Company" value={form.company} placeholder="Company or organization" onChange={(company) => setForm({ ...form, company })} />
             <Field icon={<Mail size={20} />} label="Work Email" value={form.email} placeholder="name@company.com" onChange={(email) => setForm({ ...form, email })} />
-            <Field icon={<Phone size={20} />} label="Phone Number" value={form.phone} placeholder="10 digit mobile" onChange={(phone) => setForm({ ...form, phone })} />
+            <Field icon={<Phone size={20} />} label="Phone Number" value={form.phone} placeholder="10 digit mobile" onChange={(phone) => setForm({ ...form, phone: cleanPhone(phone) })} />
             <Select icon={<UsersRound size={20} />} label="Number of People" value={form.headcount} options={peopleOptions} onChange={(headcount) => setForm({ ...form, headcount })} />
             <Field icon={<CalendarDays size={20} />} label="Date" value={form.startDate} placeholder="DD/MM/YYYY" onChange={(startDate) => setForm({ ...form, startDate })} />
             <Select icon={<Utensils size={20} />} label="Meal Preference" value={form.mealPreference} options={preferenceOptions} onChange={(mealPreference) => setForm({ ...form, mealPreference })} />
@@ -118,6 +120,7 @@ export function BulkOrderFormClient() {
 
           <div className="mt-4 grid gap-4">
             <Field icon={<MapPin size={20} />} label="Delivery Location" value={form.area} placeholder="Complete delivery address" onChange={(area) => setForm({ ...form, area })} />
+            <Field icon={<Phone size={20} />} label="Preferred Time To Call" value={form.deliveryTime} placeholder="Example: 1:00 PM" onChange={(deliveryTime) => setForm({ ...form, deliveryTime })} />
             <label className="grid gap-2 text-xs font-black uppercase tracking-[0.12em] text-muted">
               Notes
               <textarea

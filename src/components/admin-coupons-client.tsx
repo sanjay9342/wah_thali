@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { CheckCircle2, Copy, Edit3, ExternalLink, EyeOff, Plus, Send, Sparkles, Tag, TicketPercent, Trash2, X } from "lucide-react";
 import Link from "next/link";
+import { AdminFloatingMessage } from "@/components/admin-floating-message";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { adminFetch } from "@/lib/admin-client-auth";
@@ -226,7 +227,7 @@ export function AdminCouponsClient({
         </div>
         <AdminSectionNav />
 
-        {message ? <p className="mt-4 rounded-lg border border-border bg-cream px-4 py-3 text-sm font-black text-maroon">{message}</p> : null}
+        {message ? <AdminFloatingMessage message={message} tone={getMessageTone(message)} /> : null}
 
         <section className="mt-6 grid gap-4 lg:grid-cols-3">
           {[
@@ -664,6 +665,10 @@ function getCouponStatus(coupon: AdminCoupon) {
     label: "Live",
     className: "bg-maroon text-white",
   };
+}
+
+function getMessageTone(message: string) {
+  return /failed|error|could not|invalid|required/i.test(message) ? "error" : "success";
 }
 
 function getCouponBounds(coupon: Pick<AdminCoupon, "startsAt" | "endsAt">) {

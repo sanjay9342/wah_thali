@@ -9,6 +9,7 @@ export type AdminPermission =
   | "categories"
   | "coupons"
   | "customers"
+  | "leads"
   | "reports"
   | "settings"
   | "access";
@@ -20,6 +21,7 @@ export const adminPermissions = [
   "categories",
   "coupons",
   "customers",
+  "leads",
   "reports",
   "settings",
   "access",
@@ -69,6 +71,7 @@ export const permissionLabels: Record<AdminPermission, string> = {
   categories: "Categories",
   coupons: "Coupons",
   customers: "Customers",
+  leads: "Bulk Leads",
   reports: "Reports",
   settings: "Settings",
   access: "Staff Access",
@@ -81,14 +84,15 @@ export const permissionDescriptions: Record<AdminPermission, string> = {
   categories: "Create categories, images, offers, visibility, and display order.",
   coupons: "Create, update, notify, and disable coupon offers.",
   customers: "View customer accounts, tags, points, and order history.",
+  leads: "View bulk-order enquiry forms and notification settings.",
   reports: "Open sales, tax, and performance reports.",
   settings: "Update business, checkout, store, sound, payment, and WhatsApp settings.",
   access: "Grant, edit, or disable staff roles and privileges.",
 };
 
 export const rolePermissions: Record<AdminRole, AdminPermission[]> = {
-  ADMIN: ["dashboard", "orders", "inventory", "categories", "coupons", "customers", "reports", "settings", "access"],
-  MANAGER: ["dashboard", "orders", "inventory", "categories", "coupons", "customers", "reports", "settings"],
+  ADMIN: ["dashboard", "orders", "inventory", "categories", "coupons", "customers", "leads", "reports", "settings", "access"],
+  MANAGER: ["dashboard", "orders", "inventory", "categories", "coupons", "customers", "leads", "reports", "settings"],
   STAFF: ["orders"],
 };
 
@@ -122,6 +126,7 @@ export function getAdminPathPermission(pathname: string): AdminPermission {
   if (pathname.startsWith("/admin/categories")) return "categories";
   if (pathname.startsWith("/admin/coupons")) return "coupons";
   if (pathname.startsWith("/admin/customers")) return "customers";
+  if (pathname.startsWith("/admin/bulk-leads")) return "leads";
   if (pathname.startsWith("/admin/reports")) return "reports";
   if (pathname.startsWith("/admin/settings")) return "settings";
   if (pathname.startsWith("/admin/access")) return "access";

@@ -32,6 +32,8 @@ type NotifyCustomerInput = {
   metadata?: Record<string, unknown>;
 };
 
+type TemplateMessage = NonNullable<NotifyCustomerInput["templateMessages"]>[number];
+
 type OrderForMessage = {
   id: string;
   orderNumber: string;
@@ -90,6 +92,26 @@ function uniqueTemplateConfigs(configs: OrderTemplateConfig[]) {
   return configs.filter((config) => {
     if (!config.name || seen.has(config.name)) return false;
     seen.add(config.name);
+    return true;
+  });
+}
+
+function uniqueTemplateMessages(messages: TemplateMessage[]) {
+  const seen = new Set<string>();
+  return messages.filter((message) => {
+    const key = `${message.name}:${JSON.stringify(message.parameters ?? [])}`;
+    if (!message.name || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getTemplateParameterVariants(...variants: string[][]) {
+  const seen = new Set<string>();
+  return variants.filter((parameters) => {
+    const key = JSON.stringify(parameters);
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 }
@@ -273,10 +295,14 @@ function getOwnerOrderTemplateMessages(alertType: OwnerOrderAlertType, order: Or
     { name: readServerEnv(ownerTemplateKey), parameterSet: "default" },
     { name: readServerEnv("META_WHATSAPP_OWNER_ORDER_TEMPLATE_NAME"), parameterSet: "default" },
     { name: readServerEnv("META_WHATSAPP_ORDER_STATUS_TEMPLATE_NAME"), parameterSet: "default" },
-  ]).map((template) => ({
-    name: template.name,
+  ]).flatMap((template) => getTemplateParameterVariants(
     parameters,
-  }));
+    [detailText || `${alertLabel}: ${order.orderNumber}`],
+    [],
+  ).map((variant) => ({
+    name: template.name,
+    parameters: variant,
+  })));
 }
 
 function getCouponBenefit(coupon: Coupon) {
@@ -398,9 +424,25 @@ export async function notifyOrderStatus(order: OrderForMessage, status: OrderSta
     title,
     body,
     kind: "order",
-    templateMessages: templateConfigs.map((templateConfig) => ({
-      name: templateConfig.name,
-      parameters: getOrderTemplateParameters(templateConfig, order, copy, latestNote, trackingUrl),
+    templateMessages: uniqueTemplateMessages(templateConfigs.flatMap((templateConfig) => {
+      const configuredParameters = getOrderTemplateParameters(templateConfig, order, copy, latestNote, trackingUrl);
+      return getTemplateParameterVariants(
+        configuredParameters,
+        [
+          order.customer.name,
+          order.orderNumber,
+          copy.label,
+          getOrderItemsText(order),
+          formatRupees(order.grandTotal),
+          latestNote || "-",
+          trackingUrl,
+        ],
+        [body],
+        [],
+      ).map((parameters) => ({
+        name: templateConfig.name,
+        parameters,
+      }));
     })),
     metadata: {
       entityId: order.id,
@@ -469,7 +511,7 @@ export async function notifyOwnerOrderAlert(order: OrderForMessage, ownerMobile:
     title: `Wah Thali owner alert: ${alertLabel}`,
     body,
     kind: "order",
-    templateMessages: getOwnerOrderTemplateMessages(alertType, order, latestNote, trackingUrl),
+    templateMessages: uniqueTemplateMessages(getOwnerOrderTemplateMessages(alertType, order, latestNote, trackingUrl)),
     metadata: {
       entityId: order.id,
       orderNumber: order.orderNumber,
@@ -542,15 +584,25 @@ export async function notifyCouponAudience(coupon: Coupon) {
         title: `Wah Thali coupon: ${coupon.code}`,
         body,
         kind: "offer",
-        templateName,
-        templateParameters: [
-          customer.name,
-          coupon.code,
-          coupon.label,
-          getCouponBenefit(coupon),
-          coupon.minOrder > 0 ? formatRupees(coupon.minOrder) : "No minimum",
-          expires,
-        ],
+        templateMessages: uniqueTemplateMessages(templateName
+          ? getTemplateParameterVariants(
+              [
+                customer.name,
+                coupon.code,
+                coupon.label,
+                getCouponBenefit(coupon),
+                coupon.minOrder > 0 ? formatRupees(coupon.minOrder) : "No minimum",
+                expires,
+              ],
+              [
+                coupon.minOrder > 0 ? formatRupees(coupon.minOrder) : "No minimum",
+                expires,
+              ],
+              [coupon.code, expires],
+              [body],
+              [],
+            ).map((parameters) => ({ name: templateName, parameters }))
+          : []),
         metadata: {
           entityId: coupon.code,
           couponCode: coupon.code,

@@ -25,6 +25,7 @@ export const settings: BusinessSettings = {
   openingHours: "11:30 AM - 10:00 PM",
   supportPhone: "7001323730",
   whatsappNumber: "917001323730",
+  leadWhatsAppNumber: "917001323730",
 };
 
 export const categories = [

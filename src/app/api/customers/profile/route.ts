@@ -18,6 +18,11 @@ const profileSchema = z.object({
   otp: z.string().min(4).optional(),
 });
 
+const profileNameSchema = z.object({
+  mobile: z.string().min(8),
+  name: z.string().trim().min(2, "Please enter at least 2 characters for your name.").max(80, "Name is too long."),
+});
+
 const publicCustomerSelect = {
   id: true,
   name: true,
@@ -164,6 +169,40 @@ async function postHandler(request: Request) {
   return NextResponse.json({ customer: toPublicCustomer(customer, rewardOrderCount) });
 }
 
+async function patchHandler(request: Request) {
+  if (!isDatabaseConfigured()) {
+    return NextResponse.json({ error: "Service is temporarily unavailable. Please contact support." }, { status: 503 });
+  }
+
+  const parsed = profileNameSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid profile details", issues: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const mobile = normalizeMobile(parsed.data.mobile);
+  const name = parsed.data.name.trim().replace(/\s+/g, " ");
+  if (mobile.length !== 10) {
+    return NextResponse.json({ error: "Please enter a valid 10 digit phone number." }, { status: 400 });
+  }
+
+  const customer = await prisma.customer.update({
+    where: { mobile },
+    data: { name },
+    select: publicCustomerSelect,
+  });
+
+  await logActivity({
+    type: "CUSTOMER_PROFILE_UPDATED",
+    actor: customer.mobile,
+    entity: "Customer",
+    entityId: customer.id,
+    summary: `Updated customer profile name to ${customer.name}`,
+  });
+
+  const rewardOrderCount = await countRewardOrders(customer.mobile);
+  return NextResponse.json({ customer: toPublicCustomer(customer, rewardOrderCount) });
+}
+
 function visiblePlacedOrderWhere(mobile: string): Prisma.OrderWhereInput {
   return {
     customer: { mobile },
@@ -180,3 +219,4 @@ function countRewardOrders(mobile: string) {
 
 export const GET = withApiErrorHandling(getHandler, "GET /api/customers/profile");
 export const POST = withApiErrorHandling(postHandler, "POST /api/customers/profile");
+export const PATCH = withApiErrorHandling(patchHandler, "PATCH /api/customers/profile");
