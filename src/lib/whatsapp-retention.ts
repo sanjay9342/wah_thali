@@ -325,6 +325,7 @@ export async function seedWhatsAppTemplateRegistry() {
         preview,
         sortOrder: index,
         bodyVariableKeys: getTemplateBodyKeys(templateName),
+        buttonVariableKeys: getTemplateButtonKeys(templateName),
       },
       update: {
         label,
@@ -333,6 +334,7 @@ export async function seedWhatsAppTemplateRegistry() {
         preview,
         sortOrder: index,
         bodyVariableKeys: getTemplateBodyKeys(templateName),
+        buttonVariableKeys: getTemplateButtonKeys(templateName),
       },
     }),
   ));
@@ -770,24 +772,6 @@ async function completeCampaignIfDone(campaignId: string | null) {
   });
 }
 
-async function scheduleImmediateReviewRequest(customerId: string) {
-  const config = await getWhatsAppRetentionConfig();
-  const customer = await prisma.customer.findUnique({ where: { id: customerId } });
-  if (!customer || customer.whatsappMarketingOptOut || !customer.whatsappMarketingOptIn) return null;
-  return prisma.retentionMessage.create({
-    data: {
-      customerId,
-      templateName: "wa_review_01",
-      stepKey: "review_01",
-      stage: "FEEDBACK",
-      scheduledAt: new Date(),
-      bodyParameters: [customer.name] as Prisma.InputJsonValue,
-      buttonParameters: [] as Prisma.InputJsonValue,
-      metadata: { googleReviewLink: config.googleReviewLink } as Prisma.InputJsonValue,
-    },
-  });
-}
-
 async function sendFeedbackBranchMessage(customer: { id?: string; name: string; mobile: string }, action: "REVIEW_REQUEST" | "FEEDBACK_GOOD" | "COMPLAINT_OPENED") {
   const config = await getWhatsAppRetentionConfig();
   const text =
@@ -801,7 +785,14 @@ async function sendFeedbackBranchMessage(customer: { id?: string; name: string; 
         ? `We are really sorry, ${customer.name}. Please tell us what went wrong. We would like to make it right.`
         : "Thank you! We are glad to hear that.";
 
-  const result = await sendWhatsAppText({ mobile: customer.mobile, text });
+  const result = action === "REVIEW_REQUEST"
+    ? await sendWhatsAppTemplate({
+        mobile: customer.mobile,
+        templateName: "wa_review_01",
+        parameters: [customer.name],
+      })
+    : await sendWhatsAppText({ mobile: customer.mobile, text });
+
   if (result.ok) {
     const messageId = result.messageId ?? `feedback-${action}-${customer.id ?? customer.mobile}-${Date.now()}`;
     await prisma.whatsAppMessage.upsert({
@@ -815,10 +806,6 @@ async function sendFeedbackBranchMessage(customer: { id?: string; name: string; 
       },
       update: { status: "SENT", body: text },
     });
-  }
-
-  if (action === "REVIEW_REQUEST" && customer.id) {
-    await scheduleImmediateReviewRequest(customer.id);
   }
 
   await logActivity({
@@ -844,4 +831,9 @@ function formatDate(date: Date) {
 function getTemplateBodyKeys(templateName: string) {
   const step = defaultWhatsAppRetentionConfig.steps.find((item) => item.templateName === templateName);
   return step?.bodyVariables ?? ["customer_name"];
+}
+
+function getTemplateButtonKeys(templateName: string) {
+  const step = defaultWhatsAppRetentionConfig.steps.find((item) => item.templateName === templateName);
+  return step?.buttonVariables ?? [];
 }
