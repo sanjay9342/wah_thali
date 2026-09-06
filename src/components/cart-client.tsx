@@ -827,13 +827,7 @@ export function CartClient({
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span
-                        className={`grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border bg-white ${
-                          product.dietaryType === "NON_VEG" ? "border-red" : "border-maroon"
-                        }`}
-                      >
-                        <span className={`h-2 w-2 rounded-full ${product.dietaryType === "NON_VEG" ? "bg-red" : "bg-maroon"}`} />
-                      </span>
+                      <DietaryMark type={product.dietaryType} size="md" />
                       <p className="truncate text-[10px] font-black uppercase tracking-[0.12em] text-muted">{product.category}</p>
                     </div>
                     <h2 className="mt-1.5 line-clamp-1 text-[17px] font-black text-charcoal">{product.name}</h2>
@@ -1018,13 +1012,7 @@ export function CartClient({
             <article key={`${line.productId}-${index}`} className="grid grid-cols-[minmax(0,1fr)_76px_42px] items-start gap-2">
               <div className="min-w-0">
                 <div className="flex items-start gap-2">
-                  <span
-                    className={`mt-1 grid h-5 w-5 shrink-0 place-items-center rounded-[4px] border bg-white ${
-                      product.dietaryType === "NON_VEG" ? "border-red" : "border-maroon"
-                    }`}
-                  >
-                    <span className={`h-2.5 w-2.5 rounded-full ${product.dietaryType === "NON_VEG" ? "bg-red" : "bg-maroon"}`} />
-                  </span>
+                  <DietaryMark type={product.dietaryType} size="lg" className="mt-1" />
                   <div className="min-w-0">
                     <h2 className="line-clamp-2 text-[13px] font-black leading-4 text-charcoal">{product.name}</h2>
                     <p className="mt-0.5 line-clamp-1 text-[10px] font-bold text-muted">{variant?.name || "Regular"}</p>
@@ -1924,11 +1912,18 @@ function CompactMealSuggestions({
   );
 }
 
-function DietaryMark({ type }: { type: Product["dietaryType"] }) {
+function DietaryMark({ type, size = "sm", className = "" }: { type: Product["dietaryType"]; size?: "sm" | "md" | "lg"; className?: string }) {
   const nonVeg = type === "NON_VEG";
+  const sizeClass = size === "lg" ? "h-5 w-5 rounded-[4px] border" : size === "md" ? "h-4 w-4 rounded-[4px] border" : "h-3.5 w-3.5 rounded-[3px] border";
+  const dotClass = size === "lg" ? "h-2.5 w-2.5" : size === "md" ? "h-2 w-2" : "h-1.5 w-1.5";
+  const label = nonVeg ? "Non veg" : "Veg";
   return (
-    <span className={`mt-0.5 grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[3px] border bg-white ${nonVeg ? "border-red" : "border-[#078b52]"}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${nonVeg ? "bg-red" : "bg-[#078b52]"}`} />
+    <span
+      className={`grid shrink-0 place-items-center bg-white ${sizeClass} ${nonVeg ? "border-red" : "border-[#078b52]"} ${className}`}
+      title={label}
+      aria-label={label}
+    >
+      <span className={`rounded-full ${dotClass} ${nonVeg ? "bg-red" : "bg-[#078b52]"}`} />
     </span>
   );
 }

@@ -39,6 +39,7 @@ const orderSchema = z.object({
   latitude: z.string().trim().optional(),
   longitude: z.string().trim().optional(),
   paymentMethod: z.enum(["COD", "RAZORPAY"]).default("COD"),
+  whatsappMarketingOptIn: z.boolean().default(false),
   items: z.array(orderItemSchema).min(1),
 });
 
@@ -325,10 +326,13 @@ async function postHandler(request: Request) {
         mobile: data.customerMobile,
         name: data.customerName,
         email: customerEmail || undefined,
+        whatsappMarketingOptIn: data.whatsappMarketingOptIn,
+        whatsappMarketingOptInAt: data.whatsappMarketingOptIn ? new Date() : undefined,
       },
       update: {
         name: data.customerName,
         ...(customerEmail ? { email: customerEmail } : {}),
+        ...(data.whatsappMarketingOptIn ? { whatsappMarketingOptIn: true, whatsappMarketingOptInAt: new Date(), whatsappMarketingOptOut: false, whatsappMarketingOptOutAt: null } : {}),
       },
       select: { id: true },
     });

@@ -100,6 +100,14 @@ model Customer {
   passwordHash String?
   birthday    DateTime?
   anniversary DateTime?
+  whatsappMarketingOptIn Boolean @default(false)
+  whatsappMarketingOptOut Boolean @default(false)
+  whatsappMarketingOptInAt DateTime?
+  whatsappMarketingOptOutAt DateTime?
+  completedOrderCount Int @default(0)
+  lastCompletedOrderAt DateTime?
+  marketingStage String?
+  activeRetentionCampaignId String?
   tags        CustomerTagAssignment[]
   addresses   CustomerAddress[]
   notes       CustomerNote[]
@@ -108,6 +116,8 @@ model Customer {
   leads       Lead[]
   reviews     Review[]
   tickets     SupportTicket[]
+  retentionCampaigns RetentionCampaign[]
+  retentionMessages RetentionMessage[]
   couponRedemptions CouponRedemption[]
   passwordResetTokens CustomerPasswordResetToken[]
   createdAt   DateTime     @default(now())
@@ -115,6 +125,9 @@ model Customer {
 
   @@index([mobile])
   @@index([email])
+  @@index([whatsappMarketingOptIn, whatsappMarketingOptOut])
+  @@index([completedOrderCount])
+  @@index([lastCompletedOrderAt])
 }
 
 model CustomerPasswordResetToken {
@@ -324,6 +337,8 @@ model Order {
   timeline    OrderStatusHistory[]
   reviews     Review[]
   couponRedemption CouponRedemption?
+  retentionCampaigns RetentionCampaign[]
+  retentionMessages RetentionMessage[]
   createdAt   DateTime            @default(now())
 
   @@index([status])
@@ -462,6 +477,76 @@ model WhatsAppMessage {
 
   @@index([phone])
   @@index([status])
+}
+
+model WhatsAppTemplateRegistry {
+  id          String   @id @default(cuid())
+  templateName String  @unique
+  label       String
+  category    String
+  stage       String
+  enabled     Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  bodyVariableKeys String[] @default([])
+  buttonVariableKeys String[] @default([])
+  preview     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([enabled])
+  @@index([stage])
+  @@index([sortOrder])
+}
+
+model RetentionCampaign {
+  id          String   @id @default(cuid())
+  customerId  String
+  orderId     String?
+  stage       String
+  status      String   @default("ACTIVE")
+  startedAt   DateTime @default(now())
+  cancelledAt DateTime?
+  completedAt DateTime?
+  cancelReason String?
+  currentStep String?
+  customer    Customer @relation(fields: [customerId], references: [id])
+  order       Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  messages    RetentionMessage[]
+
+  @@index([customerId, status])
+  @@index([orderId])
+  @@index([status])
+  @@index([stage])
+}
+
+model RetentionMessage {
+  id          String   @id @default(cuid())
+  campaignId  String?
+  customerId  String
+  orderId     String?
+  templateName String
+  stepKey     String
+  stage       String
+  status      String   @default("SCHEDULED")
+  scheduledAt DateTime
+  sentAt      DateTime?
+  cancelledAt DateTime?
+  messageId   String?
+  failureReason String?
+  bodyParameters Json?
+  buttonParameters Json?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  campaign    RetentionCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  customer    Customer @relation(fields: [customerId], references: [id])
+  order       Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([status, scheduledAt])
+  @@index([campaignId])
+  @@index([customerId])
+  @@index([orderId])
+  @@index([templateName])
 }
 
 model CustomerOtp {

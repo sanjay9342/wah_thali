@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { CheckCircle2, Copy, Edit3, ExternalLink, EyeOff, Plus, Send, Sparkles, Tag, TicketPercent, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { AdminFloatingMessage } from "@/components/admin-floating-message";
@@ -75,12 +75,14 @@ export function AdminCouponsClient({
   initialCustomerTags,
   products,
   categories,
+  retentionCouponCodes,
 }: {
   initialCoupons: AdminCoupon[];
   discountedProducts: number;
   initialCustomerTags: string[];
   products: CouponProductOption[];
   categories: CouponCategoryOption[];
+  retentionCouponCodes: string[];
 }) {
   const [coupons, setCoupons] = useState(initialCoupons);
   const [customerTags, setCustomerTags] = useState(() => Array.from(new Set(["VIP", ...initialCustomerTags])).sort((a, b) => a.localeCompare(b)));
@@ -177,6 +179,8 @@ export function AdminCouponsClient({
   const activeCoupons = coupons.filter((coupon) => coupon.active).length;
   const liveCoupons = coupons.filter((coupon) => isCouponLive(coupon));
   const scheduledCoupons = coupons.filter((coupon) => coupon.active && isCouponScheduled(coupon)).length;
+  const automationCouponCodes = useMemo(() => new Set(retentionCouponCodes.map((code) => code.trim().toUpperCase()).filter(Boolean)), [retentionCouponCodes]);
+  const automationCoupons = coupons.filter((coupon) => automationCouponCodes.has(coupon.code));
 
   function setCouponAudience(audience: AdminCoupon["audience"]) {
     if (!editing) return;
@@ -220,6 +224,9 @@ export function AdminCouponsClient({
             <Link href="/offers" className="inline-flex h-11 items-center gap-2 rounded-lg border border-border px-4 font-black text-maroon">
               <ExternalLink size={18} /> View offers
             </Link>
+            <Link href="/admin/automation" className="inline-flex h-11 items-center gap-2 rounded-lg border border-border px-4 font-black text-maroon">
+              <ExternalLink size={18} /> Automation
+            </Link>
             <button onClick={() => setEditing({ ...emptyCoupon })} className="inline-flex h-11 items-center gap-2 rounded-lg bg-red px-4 font-black text-white">
               <Plus size={18} /> New coupon
             </button>
@@ -229,10 +236,11 @@ export function AdminCouponsClient({
 
         {message ? <AdminFloatingMessage message={message} tone={getMessageTone(message)} /> : null}
 
-        <section className="mt-6 grid gap-4 lg:grid-cols-3">
+        <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             ["Live on Offers", String(liveCoupons.length), "Visible to customers now"],
             ["Active coupon codes", String(activeCoupons), `${scheduledCoupons} scheduled`],
+            ["Automation coupons", String(automationCoupons.length), automationCoupons.map((coupon) => coupon.code).join(", ") || "Save automation to sync"],
             ["Discounted products", String(discountedProducts), "Offer label visible"],
           ].map(([label, value, detail]) => (
             <div key={label} className="surface rounded-2xl p-5">
@@ -281,7 +289,7 @@ export function AdminCouponsClient({
           <div className="border-b border-border bg-[#fff8f9] p-5">
             <h3 className="text-lg font-black text-maroon">WhatsApp coupon broadcast</h3>
             <p className="mt-1 text-sm font-semibold leading-6 text-muted">
-              Use Notify eligible for coupons targeted to all customers, VIP customers, customer tags, or order milestones like 10+ orders. The message includes the coupon code and each customer&apos;s order quantity history.
+              Use Notify eligible for coupons targeted to all customers, VIP customers, customer tags, or order milestones like 10+ orders. Automation coupons are synced from the Follow-up automation page and can be fine-tuned here.
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -298,7 +306,12 @@ export function AdminCouponsClient({
                   const status = getCouponStatus(coupon);
                   return (
                     <tr key={coupon.code} className="border-t border-border">
-                      <td className="p-4"><span className="rounded-lg bg-maroon px-3 py-2 font-black text-white">{coupon.code}</span></td>
+                      <td className="p-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-lg bg-maroon px-3 py-2 font-black text-white">{coupon.code}</span>
+                          {automationCouponCodes.has(coupon.code) ? <span className="rounded-lg bg-[#effaf4] px-2 py-1 text-[11px] font-black text-[#0f7a45]">Automation</span> : null}
+                        </div>
+                      </td>
                       <td className="p-4 font-black">{coupon.label}</td>
                       <td className="p-4">{coupon.type === "FIXED" ? formatRupees(coupon.value) : `${coupon.value}%`}</td>
                       <td className="p-4"><EligibilityPill coupon={coupon} /></td>

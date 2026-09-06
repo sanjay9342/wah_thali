@@ -3,6 +3,7 @@ import { createHmac, randomUUID, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
+import { processDueRetentionMessages, scheduleDormantRetention } from "@/lib/whatsapp-retention";
 
 function isValidSignature(body: string, signature: string | null) {
   const secret = process.env.N8N_SHARED_SECRET;
@@ -36,10 +37,32 @@ async function postHandler(request: NextRequest) {
     summary: "Signed n8n webhook accepted",
   });
 
+  const payload = parseJsonBody(body);
+  const action = typeof payload?.action === "string" ? payload.action : "";
+  let result: unknown = undefined;
+
+  if (action === "process_retention_due") {
+    result = await processDueRetentionMessages();
+  }
+
+  if (action === "schedule_retention_dormant") {
+    result = await scheduleDormantRetention();
+  }
+
   return NextResponse.json({
     ok: true,
     idempotencyKey,
+    result,
   });
 }
 
 export const POST = withApiErrorHandling(postHandler, "POST /api/webhooks/n8n");
+
+function parseJsonBody(body: string) {
+  try {
+    const parsed = JSON.parse(body);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}

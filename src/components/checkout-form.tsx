@@ -56,6 +56,7 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
   const cartLines = useStoredCart(customerSession?.mobile);
   const [deliveryMode, setDeliveryMode] = useState<"now" | "schedule">("now");
   const [paymentMethod, setPaymentMethod] = useState(paymentMethods[0] ?? "No payment method");
+  const [whatsappMarketingOptIn, setWhatsappMarketingOptIn] = useState(true);
   const [locating, setLocating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [placingStage, setPlacingStage] = useState<string | null>(null);
@@ -263,6 +264,7 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
           latitude: String(address.latitude || deliveryLocation.latitude || ""),
           longitude: String(address.longitude || deliveryLocation.longitude || ""),
           paymentMethod: apiPaymentMethod,
+          whatsappMarketingOptIn,
           items: cartLines,
         }),
       });
@@ -490,6 +492,18 @@ export function CheckoutForm({ restaurantSettings }: { restaurantSettings: Resta
             )}
           </div>
         </div>
+
+        <label className="flex items-start gap-3 rounded-2xl border border-border bg-white p-4 text-sm font-bold text-charcoal">
+          <input
+            type="checkbox"
+            checked={whatsappMarketingOptIn}
+            onChange={(event) => setWhatsappMarketingOptIn(event.target.checked)}
+            className="mt-1 h-4 w-4 accent-[#8d0021]"
+          />
+          <span>
+            I agree to receive Wah Thali order follow-ups, menu reminders, and offers on WhatsApp. I can reply STOP anytime.
+          </span>
+        </label>
       </section>
 
       <aside className="surface h-fit rounded-2xl p-5">

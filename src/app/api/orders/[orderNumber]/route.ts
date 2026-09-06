@@ -6,6 +6,7 @@ import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { notifyOrderStatus, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { canTransitionOrder } from "@/lib/state-machines";
+import { scheduleRetentionForDeliveredOrder } from "@/lib/whatsapp-retention";
 
 const updateOrderSchema = z.object({
   status: z.enum([
@@ -115,6 +116,12 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ or
   if (settings.whatsappOrderAlerts) {
     await notifyOrderStatus(order, parsed.data.status, parsed.data.note).catch((error) => {
       console.error("Order status WhatsApp/customer notification failed.", error);
+    });
+  }
+
+  if (parsed.data.status === "DELIVERED") {
+    await scheduleRetentionForDeliveredOrder(order.id).catch((error) => {
+      console.error("WhatsApp retention scheduling failed.", error);
     });
   }
 

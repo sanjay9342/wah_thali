@@ -2,16 +2,18 @@ import { AdminCouponsClient } from "@/components/admin-coupons-client";
 import { requireAdminPagePermission } from "@/lib/admin-page-auth";
 import { getAdminCouponsFromDb, getCategoryOptionsFromDb, getCustomerTagsFromDb, getProductsFromDb } from "@/lib/db";
 import { getIstDateTimeInputValue } from "@/lib/time";
+import { getWhatsAppRetentionConfig } from "@/lib/whatsapp-retention";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminCouponsPage() {
   await requireAdminPagePermission("coupons", "/admin/coupons");
-  const [products, coupons, customerTags, categories] = await Promise.all([
+  const [products, coupons, customerTags, categories, retentionConfig] = await Promise.all([
     getProductsFromDb(),
     getAdminCouponsFromDb(),
     getCustomerTagsFromDb(),
     getCategoryOptionsFromDb({ visibleOnly: false }),
+    getWhatsAppRetentionConfig(),
   ]);
 
   return (
@@ -26,6 +28,7 @@ export default async function AdminCouponsPage() {
       initialCustomerTags={customerTags}
       products={products.map((product) => ({ id: product.id, name: product.displayName || product.name, categoryId: product.categoryId ?? "", category: product.category }))}
       categories={categories.map((category) => ({ id: category.id, name: category.name }))}
+      retentionCouponCodes={[retentionConfig.firstReturnCouponCode, retentionConfig.winbackCouponCode]}
     />
   );
 }

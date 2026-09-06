@@ -20,3 +20,5 @@ Planned event triggers:
 - Subscription renewal
 - Corporate lead created
 - Complaint escalated
+
+WhatsApp retention automation can run without n8n. See `docs/WHATSAPP_RETENTION_AUTOMATION.md`.

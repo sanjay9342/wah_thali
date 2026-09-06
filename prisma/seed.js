@@ -234,6 +234,7 @@ async function main() {
     { code: "REWARD20", label: "20 order reward", type: "FIXED", value: 20, minOrder: 0, maxDiscount: null, audience: "POINTS", minPoints: 20 },
     { code: "REWARD30", label: "30 order reward", type: "FIXED", value: 30, minOrder: 0, maxDiscount: null, audience: "POINTS", minPoints: 30 },
     { code: "WAH50", label: "Flat Rs 50 off", type: "FIXED", value: 50, minOrder: 299, maxDiscount: null },
+    { code: "WAH100", label: "Flat Rs 100 win-back offer", type: "FIXED", value: 100, minOrder: 499, maxDiscount: null },
     { code: "FAMILY10", label: "10% off family orders", type: "PERCENT", value: 10, minOrder: 699, maxDiscount: 120 },
   ];
 
