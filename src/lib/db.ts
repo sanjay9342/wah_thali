@@ -337,6 +337,11 @@ function applyCouponRules(coupons: Array<{
   });
 }
 
+function isWebsiteCoupon(coupon: Pick<Coupon, "channels">) {
+  const channels = coupon.channels?.length ? coupon.channels : ["WEBSITE"];
+  return channels.includes("WEBSITE");
+}
+
 function normalizeTagNames(tags: string[]) {
   return Array.from(new Set(tags.map((tag) => tag.trim()).filter(Boolean))).slice(0, 12);
 }
@@ -347,7 +352,7 @@ export async function getCouponsFromDb(): Promise<Coupon[]> {
   try {
     const now = new Date();
     const rewardCouponCodes = rewardCoupons.map((coupon) => coupon.code);
-    const [coupons, rewardCouponStates, rules, redemptionCounts] = await Promise.all([
+    const [coupons, rewardCouponStates, rules, redemptionCounts, automationCouponCodes] = await Promise.all([
       prisma.coupon.findMany({
       where: {
         active: true,
@@ -365,11 +370,13 @@ export async function getCouponsFromDb(): Promise<Coupon[]> {
         by: ["couponCode"],
         _count: { _all: true },
       }).catch(() => []),
+      getWhatsAppAutomationCouponCodesFromDb(),
     ]);
     const redeemedCountByCode = new Map(redemptionCounts.map((row) => [row.couponCode, row._count._all]));
     const disabledRewardCodes = new Set(rewardCouponStates.filter((coupon) => !coupon.active).map((coupon) => coupon.code));
 
     return withRewardCoupons(applyCouponRules(coupons, rules), disabledRewardCodes)
+      .map((coupon) => automationCouponCodes.has(coupon.code) ? { ...coupon, channels: ["WHATSAPP"] as Coupon["channels"] } : coupon)
       .map((coupon) => ({ ...coupon, redeemedCount: redeemedCountByCode.get(coupon.code) ?? 0 }))
       .filter((coupon) => !coupon.redemptionLimit || (coupon.redeemedCount ?? 0) < coupon.redemptionLimit);
   } catch (error) {
@@ -381,23 +388,44 @@ export async function getCouponsFromDb(): Promise<Coupon[]> {
 export async function getAdminCouponsFromDb(): Promise<Array<Coupon & { active: boolean }>> {
   if (!isDatabaseConfigured()) return [];
 
-  const [coupons, rules, redemptionCounts] = await Promise.all([
+  const [coupons, rules, redemptionCounts, automationCouponCodes] = await Promise.all([
     prisma.coupon.findMany({ orderBy: { code: "asc" } }),
     getCouponRulesFromDb(),
     prisma.couponRedemption.groupBy({
       by: ["couponCode"],
       _count: { _all: true },
     }).catch(() => []),
+    getWhatsAppAutomationCouponCodesFromDb(),
   ]);
   const redemptionCountByCode = new Map(redemptionCounts.map((row) => [row.couponCode, row._count._all]));
 
   const disabledRewardCodes = new Set(coupons.filter((coupon) => !coupon.active).map((coupon) => coupon.code));
 
-  return withRewardCoupons(applyCouponRules(coupons, rules), disabledRewardCodes).map((coupon) => ({
-    ...coupon,
-    redeemedCount: redemptionCountByCode.get(coupon.code) ?? 0,
-    active: coupons.find((item) => item.code === coupon.code)?.active ?? true,
-  }));
+  return withRewardCoupons(applyCouponRules(coupons, rules), disabledRewardCodes).map((coupon) => {
+    const normalizedCoupon = automationCouponCodes.has(coupon.code) ? { ...coupon, channels: ["WHATSAPP"] as Coupon["channels"] } : coupon;
+    return {
+      ...normalizedCoupon,
+      redeemedCount: redemptionCountByCode.get(coupon.code) ?? 0,
+      active: coupons.find((item) => item.code === coupon.code)?.active ?? true,
+    };
+  });
+}
+
+async function getWhatsAppAutomationCouponCodesFromDb() {
+  const fallbackCodes = ["WAH50", "WAH100"];
+  try {
+    const row = await prisma.businessSetting.findUnique({ where: { key: "whatsappRetentionConfig" } });
+    const value = row?.value && typeof row.value === "object" && !Array.isArray(row.value)
+      ? row.value as { firstReturnCouponCode?: unknown; winbackCouponCode?: unknown }
+      : {};
+    return new Set(
+      [value.firstReturnCouponCode, value.winbackCouponCode, ...fallbackCodes]
+        .map((code) => String(code ?? "").trim().toUpperCase())
+        .filter(Boolean),
+    );
+  } catch {
+    return new Set(fallbackCodes);
+  }
 }
 
 function withRewardCoupons(coupons: Coupon[], disabledRewardCodes = new Set<string>()) {
@@ -663,7 +691,7 @@ export const getPublicHomePageDataFromDb = unstable_cache(
       getHomeDishCategoriesFromDb(),
     ]);
 
-    return { categories, categoryOptions, products, slides, categoryImages, categoryOffers, restaurantSettings, coupons, homeDishCategories };
+    return { categories, categoryOptions, products, slides, categoryImages, categoryOffers, restaurantSettings, coupons: coupons.filter(isWebsiteCoupon), homeDishCategories };
   },
   ["public-home-page-data"],
   { revalidate: storefrontCacheSeconds, tags: ["storefront", "storefront-home"] },
@@ -707,7 +735,7 @@ export const getPublicCartPageDataFromDb = unstable_cache(
 export const getPublicOffersPageDataFromDb = unstable_cache(
   async () => {
     const coupons = await getCouponsFromDb();
-    return { coupons };
+    return { coupons: coupons.filter(isWebsiteCoupon) };
   },
   ["public-offers-page-data"],
   { revalidate: storefrontCacheSeconds, tags: ["storefront", "storefront-offers"] },

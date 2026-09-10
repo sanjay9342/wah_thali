@@ -25,7 +25,7 @@ type AdminCoupon = {
   redeemedCount?: number;
   productIds?: string[];
   categoryIds?: string[];
-  channels?: "WEBSITE"[];
+  channels?: ("WEBSITE" | "WHATSAPP")[];
   fulfillmentMethods?: ("DELIVERY" | "PICKUP")[];
   tagNames?: string[];
   startsAt: string;
@@ -205,9 +205,9 @@ export function AdminCouponsClient({
   }
 
   const activeCoupons = coupons.filter((coupon) => coupon.active).length;
-  const liveCoupons = coupons.filter((coupon) => isCouponLive(coupon));
-  const scheduledCoupons = coupons.filter((coupon) => coupon.active && isCouponScheduled(coupon)).length;
   const automationCouponCodes = useMemo(() => new Set(retentionCouponCodes.map((code) => code.trim().toUpperCase()).filter(Boolean)), [retentionCouponCodes]);
+  const liveCoupons = coupons.filter((coupon) => isCouponLive(coupon) && isWebsiteCoupon(coupon) && !automationCouponCodes.has(coupon.code));
+  const scheduledCoupons = coupons.filter((coupon) => coupon.active && isCouponScheduled(coupon)).length;
   const automationCoupons = coupons.filter((coupon) => automationCouponCodes.has(coupon.code));
 
   function setCouponAudience(audience: AdminCoupon["audience"]) {
@@ -246,7 +246,7 @@ export function AdminCouponsClient({
           <div>
             <p className="font-black uppercase tracking-widest text-red">Promotions</p>
             <h1 className="text-3xl font-black text-maroon">Coupons</h1>
-            <p className="mt-1 text-sm font-semibold text-muted">Create, edit, activate, and preview coupon tickets shown on the customer Offers page.</p>
+            <p className="mt-1 text-sm font-semibold text-muted">Create, edit, activate, and preview public website coupon tickets.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href="/offers" className="inline-flex h-11 items-center gap-2 rounded-lg border border-border px-4 font-black text-maroon">
@@ -286,7 +286,7 @@ export function AdminCouponsClient({
               <h2 className="flex items-center gap-2 text-xl font-black text-maroon">
                 <Sparkles className="text-red" size={20} /> Customer offer preview
               </h2>
-            <p className="mt-1 text-sm font-semibold text-muted">Every active valid coupon below appears automatically on the Offers page with matching varied colors.</p>
+            <p className="mt-1 text-sm font-semibold text-muted">Only active website coupons appear here. WhatsApp automation coupons stay private to recipients.</p>
             </div>
             <span className="rounded-lg bg-[#fff4f5] px-3 py-2 text-xs font-black text-red">{liveCoupons.length} live</span>
           </div>
@@ -312,12 +312,12 @@ export function AdminCouponsClient({
         <section className="mt-6 surface overflow-hidden rounded-2xl">
           <div className="border-b border-border p-5">
             <h2 className="text-xl font-black text-maroon">Manage coupon campaigns</h2>
-            <p className="text-sm font-semibold text-muted">Active coupons inside their date range are used by checkout and shown on the Offers page.</p>
+            <p className="text-sm font-semibold text-muted">Website coupons are public. WhatsApp coupons are accepted only for customers who received the automation message.</p>
           </div>
           <div className="border-b border-border bg-[#fff8f9] p-5">
             <h3 className="text-lg font-black text-maroon">WhatsApp coupon broadcast</h3>
             <p className="mt-1 text-sm font-semibold leading-6 text-muted">
-              Use Notify eligible for coupons targeted to all customers, VIP customers, customer tags, or order milestones like 10+ orders. Automation coupons are synced from the Follow-up automation page and can be fine-tuned here.
+              Use Notify eligible for public coupon broadcasts. Automation coupons are synced from the Follow-up automation page, hidden from website offer lists, and validated against sent WhatsApp retention messages.
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -789,6 +789,11 @@ function isCouponLive(coupon: AdminCoupon) {
   const now = new Date();
   const bounds = getCouponBounds(coupon);
   return bounds.start <= now && bounds.end >= now;
+}
+
+function isWebsiteCoupon(coupon: Pick<AdminCoupon, "channels">) {
+  const channels = coupon.channels?.length ? coupon.channels : ["WEBSITE"];
+  return channels.includes("WEBSITE");
 }
 
 function isCouponScheduled(coupon: AdminCoupon) {

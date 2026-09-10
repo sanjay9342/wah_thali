@@ -294,7 +294,7 @@ export async function syncRetentionCoupons(config: WhatsAppRetentionConfig) {
         customerUsageLimit: 1,
         startsAt: now,
         endsAt,
-        channels: ["WEBSITE"],
+        channels: ["WHATSAPP"],
         fulfillmentMethods: ["DELIVERY", "PICKUP"],
       },
       update: {
@@ -306,7 +306,7 @@ export async function syncRetentionCoupons(config: WhatsAppRetentionConfig) {
         minCustomerOrders: coupon.minCustomerOrders,
         startsAt: now,
         endsAt,
-        channels: ["WEBSITE"],
+        channels: ["WHATSAPP"],
         fulfillmentMethods: ["DELIVERY", "PICKUP"],
       },
     }),

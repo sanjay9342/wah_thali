@@ -108,6 +108,7 @@ export function CartClient({
 }) {
   const router = useRouter();
   const [coupon, setCoupon] = useState<string | undefined>();
+  const [couponDraft, setCouponDraft] = useState("");
   const [cookingRequest, setCookingRequest] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [placingStage, setPlacingStage] = useState<string | null>(null);
@@ -150,6 +151,7 @@ export function CartClient({
     [customerCouponUsage, initialCoupons],
   );
   const selectedCoupon = customerCoupons.find((item) => item.code === coupon);
+  const selectedCouponChannel = selectedCoupon && isCouponEligibleForFulfillment(selectedCoupon, fulfillmentMethod, "WEBSITE") ? "WEBSITE" : "WHATSAPP";
   const couponEligible = selectedCoupon ? isCouponEligibleForCustomer(selectedCoupon, couponCustomer) : true;
   const deliveryCoverage = getDeliveryLocationCoverage(deliveryLocation, restaurantSettings);
   const isPickup = fulfillmentMethod === "PICKUP";
@@ -176,8 +178,8 @@ export function CartClient({
   const fulfillmentChargeNote = isPickup ? "Self pickup: no delivery charge" : "Incl. taxes and charges";
 
   const couponTotals = useMemo(
-    () => calculateCartTotals(validLines, couponEligible ? coupon : undefined, initialProducts, customerCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm, fulfillmentMethod),
-    [couponCustomer, couponEligible, fulfillmentDistanceKm, fulfillmentMethod, initialCategoryOffers, customerCoupons, initialProducts, validLines, coupon, billingSettings],
+    () => calculateCartTotals(validLines, couponEligible ? coupon : undefined, initialProducts, customerCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm, fulfillmentMethod, selectedCouponChannel),
+    [couponCustomer, couponEligible, fulfillmentDistanceKm, fulfillmentMethod, initialCategoryOffers, customerCoupons, initialProducts, validLines, coupon, billingSettings, selectedCouponChannel],
   );
   const loyaltyRedemption = useMemo(
     () => calculateLoyaltyRedemption({
@@ -189,8 +191,8 @@ export function CartClient({
     [couponCustomer.points, couponTotals.discount, couponTotals.subtotal, redeemWahPoints],
   );
   const totals = useMemo(
-    () => calculateCartTotals(validLines, couponEligible ? coupon : undefined, initialProducts, customerCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm, fulfillmentMethod, "WEBSITE", loyaltyRedemption.discount),
-    [couponCustomer, couponEligible, fulfillmentDistanceKm, fulfillmentMethod, initialCategoryOffers, customerCoupons, initialProducts, validLines, coupon, billingSettings, loyaltyRedemption.discount],
+    () => calculateCartTotals(validLines, couponEligible ? coupon : undefined, initialProducts, customerCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm, fulfillmentMethod, selectedCouponChannel, loyaltyRedemption.discount),
+    [couponCustomer, couponEligible, fulfillmentDistanceKm, fulfillmentMethod, initialCategoryOffers, customerCoupons, initialProducts, validLines, coupon, billingSettings, selectedCouponChannel, loyaltyRedemption.discount],
   );
   const rewardState = getRewardState(couponCustomer.points);
   const suggestions = useMemo(() => {
@@ -380,13 +382,15 @@ export function CartClient({
       return false;
     }
 
-    if (!isCouponEligibleForFulfillment(availableCoupon, fulfillmentMethod)) {
+    const couponChannel = isCouponEligibleForFulfillment(availableCoupon, fulfillmentMethod, "WEBSITE") ? "WEBSITE" : "WHATSAPP";
+
+    if (!isCouponEligibleForFulfillment(availableCoupon, fulfillmentMethod, couponChannel)) {
       setCoupon(undefined);
       setCheckoutMessage(`${availableCoupon.code} is not available for ${fulfillmentMethod === "PICKUP" ? "takeaway" : "delivery"} orders.`);
       return false;
     }
 
-    if (!isCouponUsableForCart(availableCoupon, validLines, initialProducts, customerCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm, fulfillmentMethod, totals.subtotal)) {
+    if (!isCouponUsableForCart(availableCoupon, validLines, initialProducts, customerCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm, fulfillmentMethod, totals.subtotal, couponChannel)) {
       setCoupon(undefined);
       setCheckoutMessage(`${availableCoupon.code} is not applicable to the items in your cart.`);
       return false;
@@ -952,6 +956,39 @@ export function CartClient({
                 Your Savings {formatRupees(totalSavings)}
               </div>
             ) : null}
+            <div className="mt-5 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-[#edf0f5]">
+              <button
+                type="button"
+                onClick={() => initialCoupons.length ? setShowCouponSheet(true) : setCheckoutMessage("No coupons are available right now.")}
+                className="grid w-full grid-cols-[34px_1fr_auto] items-center gap-3 px-4 py-4 text-left"
+              >
+                <span className="grid h-9 w-9 place-items-center rounded-xl bg-maroon text-white">
+                  <Tag size={18} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[14px] font-black text-charcoal">Apply Coupon</span>
+                  <span className="mt-0.5 block text-[11px] font-bold text-muted">Enter website or WhatsApp code</span>
+                </span>
+                <ChevronRight size={22} className="text-maroon" />
+              </button>
+              {appliedCoupon ? (
+                <div className="grid grid-cols-[34px_1fr_auto] items-center gap-3 border-t border-[#edf0f5] px-4 py-4">
+                  <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#e7f6ee] text-[#16833d]">
+                    <BadgeCheck size={18} />
+                  </span>
+                  <span className="min-w-0 text-[13px] font-black text-charcoal">
+                    {formatRupees(couponTotals.discount)} saved with {appliedCoupon.code}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setCoupon(undefined)}
+                    className="text-[12px] font-black text-maroon"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : null}
+            </div>
             {paymentOptions.length > 1 ? (
               <PaymentMethodSelector
                 className="mt-5"
@@ -1453,6 +1490,8 @@ export function CartClient({
           categoryOffers={initialCategoryOffers}
           deliveryDistanceKm={fulfillmentDistanceKm}
           fulfillmentMethod={fulfillmentMethod}
+          manualCode={couponDraft}
+          onManualCodeChange={setCouponDraft}
           onClose={() => setShowCouponSheet(false)}
           onSelect={selectCoupon}
         />
@@ -1808,6 +1847,8 @@ function CouponSheet({
   categoryOffers,
   deliveryDistanceKm,
   fulfillmentMethod,
+  manualCode,
+  onManualCodeChange,
   onClose,
   onSelect,
 }: {
@@ -1821,6 +1862,8 @@ function CouponSheet({
   categoryOffers: CategoryOfferMap;
   deliveryDistanceKm?: number | null;
   fulfillmentMethod: FulfillmentMethod;
+  manualCode: string;
+  onManualCodeChange: (code: string) => void;
   onClose: () => void;
   onSelect: (code: string) => void;
 }) {
@@ -1840,6 +1883,29 @@ function CouponSheet({
   return (
     <BottomSheet title="Available coupons" onClose={onClose}>
       <div className="mt-6 grid gap-3">
+        <form
+          className="rounded-[18px] bg-white p-4 shadow-sm ring-1 ring-border"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSelect(manualCode);
+          }}
+        >
+          <label className="block text-[12px] font-black uppercase tracking-[0.14em] text-muted" htmlFor="manual-coupon-code">
+            Enter coupon code
+          </label>
+          <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+            <input
+              id="manual-coupon-code"
+              value={manualCode}
+              onChange={(event) => onManualCodeChange(event.target.value.toUpperCase())}
+              className="h-11 min-w-0 rounded-xl border border-border bg-white px-3 text-[14px] font-black uppercase text-charcoal outline-none"
+              placeholder="WAH50"
+            />
+            <button type="submit" className="h-11 rounded-xl bg-maroon px-4 text-[13px] font-black text-white">
+              Apply
+            </button>
+          </div>
+        </form>
         {usableCoupons.length ? usableCoupons.map((coupon) => {
           const estimatedDiscount = calculateCartTotals(lines, coupon.code, products, coupons, restaurantSettings, customer, categoryOffers, deliveryDistanceKm, fulfillmentMethod).discount;
           const selected = selectedCode === coupon.code;
@@ -1909,11 +1975,12 @@ function isCouponUsableForCart(
   deliveryDistanceKm: number | null | undefined,
   fulfillmentMethod: FulfillmentMethod,
   subtotal: number,
+  channel = "WEBSITE",
 ) {
   if (subtotal < coupon.minOrder) return false;
   if (!isCouponEligibleForCustomer(coupon, customer)) return false;
-  if (!isCouponEligibleForFulfillment(coupon, fulfillmentMethod)) return false;
-  return calculateCartTotals(lines, coupon.code, products, coupons, restaurantSettings, customer, categoryOffers, deliveryDistanceKm, fulfillmentMethod).discount > 0;
+  if (!isCouponEligibleForFulfillment(coupon, fulfillmentMethod, channel)) return false;
+  return calculateCartTotals(lines, coupon.code, products, coupons, restaurantSettings, customer, categoryOffers, deliveryDistanceKm, fulfillmentMethod, channel).discount > 0;
 }
 
 function CookingNoteSheet({

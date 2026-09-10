@@ -33,7 +33,7 @@ const couponSchema = z.object({
   customerUsageLimit: z.coerce.number().int().nonnegative().optional(),
   productIds: z.array(z.string().min(1)).optional(),
   categoryIds: z.array(z.string().min(1)).optional(),
-  channels: z.array(z.enum(["WEBSITE"])).optional(),
+  channels: z.array(z.enum(["WEBSITE", "WHATSAPP"])).optional(),
   fulfillmentMethods: z.array(z.enum(["DELIVERY", "PICKUP"])).optional(),
   tagNames: z.array(z.string().min(1)).optional(),
 }).refine((coupon) => coupon.type !== "PERCENT" || coupon.value === undefined || coupon.value <= 100, {

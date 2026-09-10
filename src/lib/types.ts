@@ -134,7 +134,7 @@ export type CartLine = {
 };
 
 export type CouponAudience = "ALL" | "NEW" | "EXISTING" | "VIP" | "POINTS" | "TAGS";
-export type CouponChannel = "WEBSITE";
+export type CouponChannel = "WEBSITE" | "WHATSAPP";
 export type FulfillmentMethod = "DELIVERY" | "PICKUP";
 
 export type Coupon = {

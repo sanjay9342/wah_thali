@@ -2340,9 +2340,13 @@ function getHomeOfferCards(coupons: Coupon[]) {
   ];
   const icons = [Truck, Bike, BadgePercent];
   const priorityCodes = ["PARTY", "FREEDEL", "YUMMY"];
+  const websiteCoupons = coupons.filter((coupon) => {
+    const channels = coupon.channels?.length ? coupon.channels : ["WEBSITE"];
+    return channels.includes("WEBSITE");
+  });
   const orderedCoupons = [
-    ...priorityCodes.flatMap((code) => coupons.filter((coupon) => coupon.code === code)),
-    ...coupons.filter((coupon) => !priorityCodes.includes(coupon.code)),
+    ...priorityCodes.flatMap((code) => websiteCoupons.filter((coupon) => coupon.code === code)),
+    ...websiteCoupons.filter((coupon) => !priorityCodes.includes(coupon.code)),
   ];
 
   return orderedCoupons.slice(0, 3).map((coupon, index) => ({

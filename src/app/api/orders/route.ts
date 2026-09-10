@@ -51,9 +51,19 @@ function calculateDiscount(
   customer: CouponCustomerContext | undefined,
   items: { productId: string; categoryId: string; lineTotal: number }[],
   fulfillmentMethod: "DELIVERY" | "PICKUP",
+  allowedWhatsAppCouponCodes = new Set<string>(),
 ) {
   const coupon = coupons.find((item) => item.code === couponCode?.toUpperCase());
-  if (!coupon || !isCouponEligibleForFulfillment(coupon, fulfillmentMethod) || subtotal < coupon.minOrder || !isCouponEligibleForCustomer(coupon, customer)) return { coupon: null, discount: 0 };
+  const channels = coupon?.channels?.length ? coupon.channels : ["WEBSITE"];
+  const channel = channels.includes("WEBSITE") ? "WEBSITE" : channels.includes("WHATSAPP") ? "WHATSAPP" : "";
+  if (
+    !coupon ||
+    !channel ||
+    (channel === "WHATSAPP" && !allowedWhatsAppCouponCodes.has(coupon.code)) ||
+    !isCouponEligibleForFulfillment(coupon, fulfillmentMethod, channel) ||
+    subtotal < coupon.minOrder ||
+    !isCouponEligibleForCustomer(coupon, customer)
+  ) return { coupon: null, discount: 0 };
   if (coupon.redemptionLimit && (coupon.redeemedCount ?? 0) >= coupon.redemptionLimit) return { coupon: null, discount: 0 };
 
   const productIds = new Set(coupon.productIds ?? []);
@@ -115,8 +125,11 @@ async function calculateServerOrder(lines: CartLine[], couponCode: string | unde
   });
 
   const subtotal = items.reduce((total, item) => total + item.lineTotal, 0);
-  const coupons = await getCouponsWithRedemptionCounts(customer?.mobile, couponCode);
-  const { coupon, discount } = calculateDiscount(subtotal, couponCode, coupons, customer, items, fulfillmentMethod);
+  const [coupons, allowedWhatsAppCouponCodes] = await Promise.all([
+    getCouponsWithRedemptionCounts(customer?.mobile, couponCode),
+    getAllowedWhatsAppCouponCodes(customer?.customerId, couponCode),
+  ]);
+  const { coupon, discount } = calculateDiscount(subtotal, couponCode, coupons, customer, items, fulfillmentMethod, allowedWhatsAppCouponCodes);
   const loyaltyRedemption = await getRedeemableLoyaltyForOrder({
     customerId: customer?.customerId,
     foodValue: subtotal,
@@ -532,6 +545,38 @@ async function getCouponsWithRedemptionCounts(customerMobile?: string, couponCod
         customerRedeemedCount: customerRedeemedCountByCode.get(coupon.code) ?? 0,
       }
     : coupon);
+}
+
+async function getAllowedWhatsAppCouponCodes(customerId?: string, couponCode?: string): Promise<Set<string>> {
+  const normalizedCode = couponCode?.trim().toUpperCase();
+  if (!customerId || !normalizedCode) return new Set();
+
+  const messages = await prisma.retentionMessage.findMany({
+    where: {
+      customerId,
+      status: "SENT",
+    },
+    select: {
+      bodyParameters: true,
+      buttonParameters: true,
+    },
+    orderBy: { sentAt: "desc" },
+    take: 100,
+  });
+
+  const allowedCodes = new Set<string>();
+  for (const message of messages) {
+    const values = [...toJsonStringArray(message.bodyParameters), ...toJsonStringArray(message.buttonParameters)];
+    if (values.some((value) => value.trim().toUpperCase() === normalizedCode)) {
+      allowedCodes.add(normalizedCode);
+    }
+  }
+  return allowedCodes;
+}
+
+function toJsonStringArray(value: Prisma.JsonValue | null): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item));
 }
 
 async function redeemCouponForSuccessfulOrder(
