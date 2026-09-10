@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
 import { notifyOrderStatus, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
+import { recordLoyaltyForPaidOrder, reverseLoyaltyForOrder } from "@/lib/loyalty";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import type { OrderStatus } from "@/lib/types";
 
@@ -129,11 +130,18 @@ async function postHandler(request: NextRequest) {
               couponCode: payment.order.couponCode,
               orderId: payment.orderId,
               customerId: payment.order.customerId,
-              discount: payment.order.discount,
+              discount: Math.max(payment.order.discount - payment.order.loyaltyDiscount, 0),
               orderTotal: payment.order.grandTotal,
               fulfillmentMethod: payment.order.fulfillmentMethod === "PICKUP" ? "PICKUP" : "DELIVERY",
             });
           }
+          await recordLoyaltyForPaidOrder(tx, {
+            orderId: payment.orderId,
+            orderNumber: payment.order.orderNumber,
+            customerId: payment.order.customerId,
+            eligibleFoodValue: Math.max(payment.order.subtotal - payment.order.discount, 0),
+            redeemedPoints: payment.order.loyaltyPointsRedeemed,
+          });
           notifiedStatus = nextStatus;
           notificationNote = `Razorpay webhook confirmed payment: ${paymentId}`;
         }
@@ -221,6 +229,9 @@ async function postHandler(request: NextRequest) {
           where: { id: payment.id },
           data: { status: nextPaymentStatus },
         });
+        if (nextPaymentStatus === "REFUNDED") {
+          await reverseLoyaltyForOrder(tx, payment.orderId, "Order refunded");
+        }
 
         await tx.orderStatusHistory.create({
           data: {

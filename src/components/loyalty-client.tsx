@@ -13,6 +13,13 @@ type LoyaltyProfile = {
   rewardOrderCount?: number;
   rewardTier?: string;
   loyalty?: { points: number; tier: string } | null;
+  loyaltySummary?: {
+    availablePoints: number;
+    expiringPoints: number;
+    expiringAt?: string;
+    nextRewardPoints: number;
+    nextRewardDiscount: number;
+  };
 };
 
 export function LoyaltyClient() {
@@ -52,8 +59,9 @@ export function LoyaltyClient() {
     };
   }, [session?.mobile]);
 
-  const orderCount = profile?.rewardOrderCount ?? profile?.loyalty?.points ?? 0;
-  const rewardState = getRewardState(orderCount);
+  const orderCount = profile?.rewardOrderCount ?? 0;
+  const pointBalance = profile?.loyaltySummary?.availablePoints ?? profile?.loyalty?.points ?? 0;
+  const rewardState = getRewardState(pointBalance);
   const unlockedCount = rewardState.completed.length;
   const nextRewardValue = rewardState.next?.value ?? rewardMilestones.at(-1)?.value ?? 0;
   const rewardName = `${profile?.name || session?.name || "Your"} Rewards`;
@@ -78,7 +86,7 @@ export function LoyaltyClient() {
             </p>
             <h1 className="mt-3 text-[28px] font-black leading-tight text-[#111827] lg:text-[38px]">{rewardName}</h1>
             <p className="mt-2 max-w-2xl text-sm font-bold leading-5 text-[#5f6875] lg:text-base lg:leading-7">
-              {rewardState.tier} tier from {orderCount} placed orders. Keep ordering to unlock coupon cash.
+              {rewardState.tier} tier with {pointBalance} Wah Points from {orderCount} placed orders. Keep ordering to unlock coupon cash.
             </p>
           </div>
           <span className="grid h-13 w-13 shrink-0 place-items-center rounded-full bg-[#e9f7ff] text-[#1769c2] ring-1 ring-[#cce8ff]">
@@ -88,7 +96,7 @@ export function LoyaltyClient() {
 
         <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-[18px] border border-[#e7ebf2] bg-[#f7f8fb] text-center">
           {[
-            [String(orderCount), "Orders"],
+            [String(pointBalance), "Points"],
             [`${unlockedCount}/${rewardMilestones.length}`, "Coupons"],
             [formatRupees(nextRewardValue), rewardState.next ? "Next" : "Unlocked"],
           ].map(([value, label]) => (
@@ -101,7 +109,7 @@ export function LoyaltyClient() {
 
         <div className="mt-5 rounded-[18px] bg-[#eef7ff] p-4 ring-1 ring-[#d5eaff]">
           <div className="flex items-center justify-between gap-3 text-xs font-black text-[#1769c2]">
-            <span>{rewardState.next ? `${rewardState.ordersToNext} orders to next coupon` : "All milestone coupons unlocked"}</span>
+            <span>{rewardState.next ? `${rewardState.pointsToNext} points to next coupon` : "All milestone coupons unlocked"}</span>
             <span>{Math.round(rewardState.progress)}%</span>
           </div>
           <div className="mt-2 h-3 overflow-hidden rounded-full bg-white ring-1 ring-[#d5eaff]">
@@ -120,8 +128,8 @@ export function LoyaltyClient() {
 
       <section className="mt-5 grid gap-3 lg:grid-cols-3">
         {rewardMilestones.map((milestone, index) => {
-          const unlocked = orderCount >= milestone.orders;
-          const remainingOrders = Math.max(milestone.orders - orderCount, 0);
+          const unlocked = pointBalance >= milestone.points;
+          const remainingPoints = Math.max(milestone.points - pointBalance, 0);
           const palette = rewardCardPalettes[index % rewardCardPalettes.length];
 
           return (
@@ -129,10 +137,10 @@ export function LoyaltyClient() {
               <div className="flex items-start justify-between gap-3">
                 <span>
                   <span className={`text-2xl font-black ${palette.value}`}>{formatRupees(milestone.value)}</span>
-                  <span className="mt-1 block text-sm font-black text-[#111827]">{milestone.orders} order coupon</span>
+                  <span className="mt-1 block text-sm font-black text-[#111827]">{milestone.points} point coupon</span>
                   <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-white/75 px-2.5 py-1 text-[10px] font-black text-[#4b5563] ring-1 ring-white/80">
                     {unlocked ? <CheckCircle2 size={12} className={palette.iconText} /> : <LockKeyhole size={12} className={palette.iconText} />}
-                    {unlocked ? "Ready in Coupons" : `${remainingOrders} orders left`}
+                    {unlocked ? "Ready in Coupons" : `${remainingPoints} points left`}
                   </span>
                 </span>
                 <span className={`grid h-11 w-11 place-items-center rounded-full bg-white shadow-sm ring-1 ring-white/80 ${palette.iconText}`}>
@@ -140,7 +148,7 @@ export function LoyaltyClient() {
                 </span>
               </div>
               <p className="mt-4 text-sm font-bold leading-5 text-[#5f6875]">
-                {unlocked ? `${milestone.code} is ready. Use it from Coupons or Cart checkout.` : `Place ${remainingOrders} more orders to unlock ${milestone.code}.`}
+                {unlocked ? `${milestone.code} is ready. Use it from Coupons or Cart checkout.` : `Earn ${remainingPoints} more Wah Points to unlock ${milestone.code}.`}
               </p>
               <Link href={unlocked ? "/offers" : "/menu"} className={`mt-5 inline-flex h-11 items-center gap-2 rounded-xl px-5 text-sm font-black ${palette.button}`}>
                 {unlocked ? "View coupon" : "Order now"}
@@ -159,7 +167,7 @@ export function LoyaltyClient() {
           <div className="min-w-0">
             <h2 className="text-[17px] font-black text-[#111827]">How to reach coupons faster</h2>
             <p className="mt-1 text-sm font-bold leading-5 text-[#5f6875]">
-              Every completed order moves you closer. Unlock rewards, open Coupons, and apply them during checkout.
+              Earn on food value after discounts. First order earns 2x points, repeat orders within 30 days get a 50 point bonus, and points can be redeemed from Cart.
             </p>
           </div>
         </div>

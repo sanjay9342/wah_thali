@@ -1396,6 +1396,10 @@ export function MenuExperience({
               <Heart size={11} className="fill-[#ff2446] text-[#ff2446]" />
               <span>in Kolkata, India</span>
             </p>
+            <p className="mt-1 flex items-center justify-center gap-1 text-[9px] font-black text-[#a7adba]">
+              <span>by Sanjay</span>
+              <Heart size={11} className="fill-[#ff2446] text-[#ff2446]" />
+            </p>
           </section>
         </section>
       ) : null}
@@ -1805,35 +1809,39 @@ export function MenuExperience({
             )}
           </section>
 
-          <section className="mt-2 pb-8 lg:mt-4">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-[16px] font-semibold text-charcoal lg:text-[20px]">Best Offers for You</h2>
-              <Link href="/offers" className="inline-flex items-center gap-1 text-[10px] font-semibold text-maroon lg:text-[12px]">
-                View all <ChevronRight size={13} />
-              </Link>
-            </div>
+          {homeOfferCards.length ? (
+            <section className="mt-2 pb-8 lg:mt-4">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-[16px] font-semibold text-charcoal lg:text-[20px]">Best Offers for You</h2>
+                <Link href="/offers" className="inline-flex items-center gap-1 text-[10px] font-semibold text-maroon lg:text-[12px]">
+                  View all <ChevronRight size={13} />
+                </Link>
+              </div>
 
-            <div className="grid gap-3 lg:grid-cols-3">
-              {homeOfferCards.map((offer) => (
-                <article key={offer.code} className={`min-h-[96px] rounded-[12px] p-5 lg:min-h-[112px] ${offer.classes}`}>
-                  <div className="flex h-full items-center justify-between gap-4">
-                    <div className="min-w-0">
-                      <h3 className="text-[15px] font-black leading-tight">
-                        {offer.title} <span className="text-[10px]">{offer.subtitle}</span>
-                      </h3>
-                      <p className="mt-4 inline-flex max-w-full rounded-lg bg-white/55 px-3 py-2 text-[9px] font-black">
-                        <span className="truncate">Use Code: {offer.code}</span>
-                      </p>
+              <div className="grid gap-3 lg:grid-cols-3">
+                {homeOfferCards.map((offer) => (
+                  <article key={offer.code} className={`min-h-[96px] rounded-[12px] p-5 lg:min-h-[112px] ${offer.classes}`}>
+                    <div className="flex h-full items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <h3 className="text-[15px] font-black leading-tight">
+                          {offer.title} <span className="text-[10px]">{offer.subtitle}</span>
+                        </h3>
+                        <p className="mt-4 inline-flex max-w-full rounded-lg bg-white/55 px-3 py-2 text-[9px] font-black">
+                          <span className="truncate">Use Code: {offer.code}</span>
+                        </p>
+                      </div>
+                      <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white/35">
+                        <offer.Icon size={29} strokeWidth={2.6} />
+                      </span>
                     </div>
-                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white/35">
-                      <offer.Icon size={29} strokeWidth={2.6} />
-                    </span>
-                  </div>
-                </article>
-              ))}
-            </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
-            <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-[#f1e7e4] pt-5 lg:grid-cols-4 lg:gap-x-10 lg:pt-7">
+          <section className="pb-8">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-[#f1e7e4] pt-5 lg:grid-cols-4 lg:gap-x-10 lg:pt-7">
               {[
                 ["No Minimum Order", "Order in for yourself"],
                 ["Lightning Delivery", "On selected locations"],
@@ -1871,6 +1879,10 @@ export function MenuExperience({
                 <span>Crafted with</span>
                 <Heart size={11} className="fill-[#ff2446] text-[#ff2446]" />
                 <span>in Kolkata, India</span>
+              </p>
+              <p className="mt-1 flex items-center justify-center gap-1 text-[9px] font-black text-[#a7adba] lg:mt-2 lg:text-xs">
+                <span>by Sanjay</span>
+                <Heart size={11} className="fill-[#ff2446] text-[#ff2446]" />
               </p>
             </section>
           ) : null}

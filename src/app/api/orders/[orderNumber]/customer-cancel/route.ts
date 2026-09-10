@@ -4,6 +4,7 @@ import { z } from "zod";
 import { normalizeMobile } from "@/lib/customer-auth";
 import { notifyOrderCustomerCancelled, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
+import { reverseLoyaltyForOrder } from "@/lib/loyalty";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 
 const sessionCookie = "wah_thali_customer_mobile";
@@ -67,6 +68,7 @@ async function postHandler(request: Request, { params }: { params: Promise<{ ord
         data: { stock: { increment: item.quantity } },
       });
     }
+    await reverseLoyaltyForOrder(tx, existing.id, "Order cancelled by customer");
 
     return tx.order.update({
       where: { orderNumber },

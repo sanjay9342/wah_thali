@@ -76,6 +76,9 @@ export type AdminOrder = {
   status: OrderStatus;
   subtotal: number;
   discount: number;
+  loyaltyDiscount?: number;
+  loyaltyPointsEarned?: number;
+  loyaltyPointsRedeemed?: number;
   gst: number;
   amount: number;
   itemSummary: string;
@@ -106,6 +109,8 @@ export type AdminCustomer = {
   ltv: number;
   points: number;
   tier: string;
+  expiringPoints?: number;
+  expiringAt?: string;
   lastOrder?: string;
   orderHistory?: {
     orderNumber: string;

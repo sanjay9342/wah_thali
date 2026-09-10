@@ -31,6 +31,7 @@ import {
   X,
 } from "lucide-react";
 import { calculateCartTotals, formatRupees, getPricableCartLines, getProductUnitPricing, isCouponEligibleForCustomer, isCouponEligibleForFulfillment } from "@/lib/pricing";
+import { calculateLoyaltyRedemption, getRewardState, wahPointsRule } from "@/lib/rewards";
 import { getModifierOptionLabel } from "@/lib/product-modifiers";
 import { writeStoredCart } from "@/lib/cart-storage";
 import { readCustomerSession, saveCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
@@ -119,6 +120,8 @@ export function CartClient({
   const [locating, setLocating] = useState(false);
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null);
   const [couponCustomer, setCouponCustomer] = useState<CouponCustomer>({ isVip: false, orderCount: 0, points: 0, tags: [] });
+  const [customerCouponUsage, setCustomerCouponUsage] = useState<Record<string, number>>({});
+  const [redeemWahPoints, setRedeemWahPoints] = useState(false);
   const [checkoutMessage, setCheckoutMessage] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
     restaurantSettings.onlinePaymentsEnabled ? "RAZORPAY" : "COD",
@@ -142,7 +145,11 @@ export function CartClient({
   const lines = useStoredCart(cartOwnerId);
   const deliveryLocation = useDeliveryLocation();
   const validLines = useMemo(() => getPricableCartLines(lines, initialProducts), [initialProducts, lines]);
-  const selectedCoupon = initialCoupons.find((item) => item.code === coupon);
+  const customerCoupons = useMemo(
+    () => initialCoupons.map((item) => ({ ...item, customerRedeemedCount: customerCouponUsage[item.code] ?? 0 })),
+    [customerCouponUsage, initialCoupons],
+  );
+  const selectedCoupon = customerCoupons.find((item) => item.code === coupon);
   const couponEligible = selectedCoupon ? isCouponEligibleForCustomer(selectedCoupon, couponCustomer) : true;
   const deliveryCoverage = getDeliveryLocationCoverage(deliveryLocation, restaurantSettings);
   const isPickup = fulfillmentMethod === "PICKUP";
@@ -168,10 +175,24 @@ export function CartClient({
     : "Delivery in 30-35 mins";
   const fulfillmentChargeNote = isPickup ? "Self pickup: no delivery charge" : "Incl. taxes and charges";
 
-  const totals = useMemo(
-    () => calculateCartTotals(validLines, couponEligible ? coupon : undefined, initialProducts, initialCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm, fulfillmentMethod),
-    [couponCustomer, couponEligible, fulfillmentDistanceKm, fulfillmentMethod, initialCategoryOffers, initialCoupons, initialProducts, validLines, coupon, billingSettings],
+  const couponTotals = useMemo(
+    () => calculateCartTotals(validLines, couponEligible ? coupon : undefined, initialProducts, customerCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm, fulfillmentMethod),
+    [couponCustomer, couponEligible, fulfillmentDistanceKm, fulfillmentMethod, initialCategoryOffers, customerCoupons, initialProducts, validLines, coupon, billingSettings],
   );
+  const loyaltyRedemption = useMemo(
+    () => calculateLoyaltyRedemption({
+      foodValue: couponTotals.subtotal,
+      couponDiscount: couponTotals.discount,
+      availablePoints: couponCustomer.points,
+      requestedPoints: redeemWahPoints ? couponCustomer.points : 0,
+    }),
+    [couponCustomer.points, couponTotals.discount, couponTotals.subtotal, redeemWahPoints],
+  );
+  const totals = useMemo(
+    () => calculateCartTotals(validLines, couponEligible ? coupon : undefined, initialProducts, customerCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm, fulfillmentMethod, "WEBSITE", loyaltyRedemption.discount),
+    [couponCustomer, couponEligible, fulfillmentDistanceKm, fulfillmentMethod, initialCategoryOffers, customerCoupons, initialProducts, validLines, coupon, billingSettings, loyaltyRedemption.discount],
+  );
+  const rewardState = getRewardState(couponCustomer.points);
   const suggestions = useMemo(() => {
     const cartProductIds = new Set(validLines.map((line) => line.productId));
     const selectedCategories = new Set(cartSuggestionCategories);
@@ -188,16 +209,22 @@ export function CartClient({
   const storeOrderingDisabled = orderingStatus.unavailable;
   const statusMessage = orderingStatus.message;
   const showStoreStatus = restaurantSettings.storeMode !== "OPEN" || orderingStatus.outsideOrderingHours;
-  const appliedCoupon = couponEligible ? selectedCoupon : undefined;
+  const appliedCoupon = couponEligible && couponTotals.discount > 0 ? selectedCoupon : undefined;
   const availableCoupons = useMemo(
     () =>
-      initialCoupons.filter((item) => (
-        totals.subtotal >= item.minOrder &&
-        isCouponEligibleForCustomer(item, couponCustomer) &&
-        isCouponEligibleForFulfillment(item, fulfillmentMethod) &&
-        calculateCartTotals(validLines, item.code, initialProducts, initialCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm, fulfillmentMethod).discount > 0
+      customerCoupons.filter((item) => isCouponUsableForCart(
+        item,
+        validLines,
+        initialProducts,
+        customerCoupons,
+        billingSettings,
+        couponCustomer,
+        initialCategoryOffers,
+        fulfillmentDistanceKm,
+        fulfillmentMethod,
+        totals.subtotal,
       )),
-    [couponCustomer, fulfillmentDistanceKm, fulfillmentMethod, initialCategoryOffers, initialCoupons, initialProducts, billingSettings, totals.subtotal, validLines],
+    [couponCustomer, fulfillmentDistanceKm, fulfillmentMethod, initialCategoryOffers, customerCoupons, initialProducts, billingSettings, totals.subtotal, validLines],
   );
   const featuredCoupon = availableCoupons[0];
   const featuredCouponValue = featuredCoupon ? getCouponBenefitText(featuredCoupon) : "";
@@ -279,6 +306,7 @@ export function CartClient({
     async function loadCouponCustomer() {
       if (!customerSession?.mobile) {
         setCouponCustomer({ isVip: false, orderCount: 0, points: 0, tags: [] });
+        setCustomerCouponUsage({});
         return;
       }
 
@@ -286,15 +314,20 @@ export function CartClient({
         const response = await fetch(`/api/customers/profile?mobile=${encodeURIComponent(customerSession.mobile)}`, { cache: "no-store" });
         const data = await response.json();
         if (!response.ok || !data.customer || cancelled) return;
-        const orderCount = Number(data.customer.rewardOrderCount ?? data.customer.loyalty?.points ?? 0);
+        const orderCount = Number(data.customer.rewardOrderCount ?? 0);
+        const points = Number(data.customer.loyaltySummary?.availablePoints ?? data.customer.loyalty?.points ?? 0);
         setCouponCustomer({
           isVip: Boolean(data.customer.isVip),
           orderCount,
-          points: orderCount,
+          points,
           tags: getCustomerTagNames(data.customer.tags),
         });
+        setCustomerCouponUsage(getCustomerCouponUsage(data.customer.orders));
       } catch {
-        if (!cancelled) setCouponCustomer({ isVip: false, orderCount: 0, points: 0, tags: [] });
+        if (!cancelled) {
+          setCouponCustomer({ isVip: false, orderCount: 0, points: 0, tags: [] });
+          setCustomerCouponUsage({});
+        }
       }
     }
 
@@ -327,7 +360,7 @@ export function CartClient({
 
   function applyCommonCoupon(code: string) {
     const normalizedCode = code.trim().toUpperCase();
-    const availableCoupon = initialCoupons.find((item) => item.code === normalizedCode);
+    const availableCoupon = customerCoupons.find((item) => item.code === normalizedCode);
 
     if (!availableCoupon) {
       setCoupon(undefined);
@@ -350,6 +383,12 @@ export function CartClient({
     if (!isCouponEligibleForFulfillment(availableCoupon, fulfillmentMethod)) {
       setCoupon(undefined);
       setCheckoutMessage(`${availableCoupon.code} is not available for ${fulfillmentMethod === "PICKUP" ? "takeaway" : "delivery"} orders.`);
+      return false;
+    }
+
+    if (!isCouponUsableForCart(availableCoupon, validLines, initialProducts, customerCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm, fulfillmentMethod, totals.subtotal)) {
+      setCoupon(undefined);
+      setCheckoutMessage(`${availableCoupon.code} is not applicable to the items in your cart.`);
       return false;
     }
 
@@ -631,6 +670,7 @@ export function CartClient({
           deliveryLabel: isPickup ? "Self Pickup" : deliveryLocation.label,
           restaurantNote: [cookingRequest, isPickup ? "Customer will self pickup from the kitchen." : ""].filter(Boolean).join(" "),
           couponCode: appliedCoupon?.code,
+          loyaltyPointsToRedeem: loyaltyRedemption.points,
           pinCode: isPickup ? "" : deliveryLocation.pinCode,
           latitude: isPickup ? "" : deliveryLocation.latitude,
           longitude: isPickup ? "" : deliveryLocation.longitude,
@@ -890,10 +930,16 @@ export function CartClient({
                 <dt className="font-bold text-[#1f2937]">GST</dt>
                 <dd className="font-black text-charcoal">{formatRupees(totals.gst)}</dd>
               </div>
-              {totals.discount > 0 ? (
+              {couponTotals.discount > 0 ? (
                 <div className="flex items-center justify-between gap-4 rounded-2xl bg-[#e7f6ee] px-4 py-3 text-maroon">
                   <dt className="flex items-center gap-2 font-black"><Tag size={16} /> {appliedCoupon ? `Coupon ${appliedCoupon.code}` : "Discount Applied"}</dt>
-                  <dd className="font-black">-{formatRupees(totals.discount)}</dd>
+                  <dd className="font-black">-{formatRupees(couponTotals.discount)}</dd>
+                </div>
+              ) : null}
+              {loyaltyRedemption.discount > 0 ? (
+                <div className="flex items-center justify-between gap-4 rounded-2xl bg-[#fff7dc] px-4 py-3 text-[#9a5b00]">
+                  <dt className="flex items-center gap-2 font-black"><Gift size={16} /> {loyaltyRedemption.points} Wah Points</dt>
+                  <dd className="font-black">-{formatRupees(loyaltyRedemption.discount)}</dd>
                 </div>
               ) : null}
               <div className="flex items-center justify-between gap-4 border-t border-[#dfe3ea] pt-5">
@@ -915,6 +961,16 @@ export function CartClient({
                 onSelect={setPaymentMethod}
               />
             ) : null}
+            <LoyaltyRedeemBox
+              className="mt-5"
+              points={couponCustomer.points}
+              pointsToNext={rewardState.pointsToNext}
+              redeemablePoints={loyaltyRedemption.points}
+              redeemableDiscount={loyaltyRedemption.discount}
+              enabled={redeemWahPoints}
+              onToggle={() => setRedeemWahPoints((current) => !current)}
+              disabled={couponCustomer.points < 10 || couponTotals.subtotal < wahPointsRule.minimumRedemptionOrderValue}
+            />
             {checkoutMessage ? (
               <p className="mt-4 rounded-xl bg-white px-3 py-2 text-center text-xs font-black leading-5 text-muted" aria-live="polite">
                 {checkoutMessage}
@@ -1089,7 +1145,7 @@ export function CartClient({
                 <Tag size={17} />
               </span>
               <span className="text-[13px] font-bold text-charcoal">
-                {formatRupees(totals.discount)} saved with {appliedCoupon.code}
+                {formatRupees(couponTotals.discount)} saved with {appliedCoupon.code}
               </span>
               <button
                 onClick={() => {
@@ -1101,6 +1157,26 @@ export function CartClient({
               </button>
             </div>
           ) : null}
+          <button
+            onClick={() => setRedeemWahPoints((current) => !current)}
+            disabled={couponCustomer.points < 10 || couponTotals.subtotal < wahPointsRule.minimumRedemptionOrderValue}
+            className="grid w-full grid-cols-[30px_1fr_auto] items-center gap-2.5 px-3.5 py-3.5 text-left disabled:opacity-55"
+          >
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#fff7dc] text-[#9a5b00]">
+              <Gift size={17} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[14px] font-bold text-charcoal">Redeem Wah Points</span>
+              <span className="mt-0.5 block text-[11px] font-bold text-muted">
+                {redeemWahPoints && loyaltyRedemption.points > 0
+                  ? `${loyaltyRedemption.points} points saves ${formatRupees(loyaltyRedemption.discount)}`
+                  : `${couponCustomer.points} points available`}
+              </span>
+            </span>
+            <span className={`grid h-6 w-11 items-center rounded-full p-1 ${redeemWahPoints ? "bg-maroon" : "bg-[#dfe3ea]"}`}>
+              <span className={`h-4 w-4 rounded-full bg-white transition ${redeemWahPoints ? "translate-x-5" : ""}`} />
+            </span>
+          </button>
         </div>
       </div>
 
@@ -1230,10 +1306,16 @@ export function CartClient({
                   <dt className="text-[16px] font-black text-charcoal">Grand Total</dt>
                   <dd className="text-[16px] font-black text-charcoal">{formatRupees(totals.subtotal + totals.delivery + totals.packaging + totals.gst)}</dd>
                 </div>
-                {totals.discount > 0 ? (
+                {couponTotals.discount > 0 ? (
                 <div className="flex items-center justify-between gap-3">
                   <dt className="text-[14px] font-black text-[#1769c2]">{appliedCoupon ? `Coupon ${appliedCoupon.code}` : "Limited Time Offer"}</dt>
-                  <dd className="font-black text-[#1769c2]">-{formatRupees(totals.discount)}</dd>
+                  <dd className="font-black text-[#1769c2]">-{formatRupees(couponTotals.discount)}</dd>
+                </div>
+                ) : null}
+                {loyaltyRedemption.discount > 0 ? (
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-[14px] font-black text-[#9a5b00]">Wah Points</dt>
+                  <dd className="font-black text-[#9a5b00]">-{formatRupees(loyaltyRedemption.discount)}</dd>
                 </div>
                 ) : null}
                 <div className="flex items-center justify-between gap-3">
@@ -1361,7 +1443,7 @@ export function CartClient({
 
       {showCouponSheet ? (
         <CouponSheet
-          coupons={initialCoupons}
+          coupons={customerCoupons}
           selectedCode={appliedCoupon?.code}
           subtotal={totals.subtotal}
           customer={couponCustomer}
@@ -1742,14 +1824,23 @@ function CouponSheet({
   onClose: () => void;
   onSelect: (code: string) => void;
 }) {
+  const usableCoupons = coupons.filter((coupon) => isCouponUsableForCart(
+    coupon,
+    lines,
+    products,
+    coupons,
+    restaurantSettings,
+    customer,
+    categoryOffers,
+    deliveryDistanceKm,
+    fulfillmentMethod,
+    subtotal,
+  ));
+
   return (
     <BottomSheet title="Available coupons" onClose={onClose}>
       <div className="mt-6 grid gap-3">
-        {coupons.length ? coupons.map((coupon) => {
-          const eligibleForCustomer = isCouponEligibleForCustomer(coupon, customer);
-          const minOrderGap = Math.max(coupon.minOrder - subtotal, 0);
-          const eligibleForFulfillment = isCouponEligibleForFulfillment(coupon, fulfillmentMethod);
-          const available = eligibleForCustomer && eligibleForFulfillment && minOrderGap === 0;
+        {usableCoupons.length ? usableCoupons.map((coupon) => {
           const estimatedDiscount = calculateCartTotals(lines, coupon.code, products, coupons, restaurantSettings, customer, categoryOffers, deliveryDistanceKm, fulfillmentMethod).discount;
           const selected = selectedCode === coupon.code;
 
@@ -1782,27 +1873,16 @@ function CouponSheet({
                 ) : null}
               </div>
 
-              {!eligibleForCustomer ? (
-                <p className="mt-3 text-[12px] font-black leading-5 text-maroon">{getCouponEligibilityMessage(coupon)}</p>
-              ) : !eligibleForFulfillment ? (
-                <p className="mt-3 text-[12px] font-black leading-5 text-maroon">Available only for {getFulfillmentCouponLabel(coupon)} orders.</p>
-              ) : minOrderGap > 0 ? (
-                <p className="mt-3 text-[12px] font-black leading-5 text-maroon">Add {formatRupees(minOrderGap)} more to apply this coupon.</p>
-              ) : null}
-
               <button
                 type="button"
-                disabled={!available}
                 onClick={() => onSelect(coupon.code)}
                 className={`mt-4 h-11 w-full rounded-xl text-[14px] font-black ${
                   selected
                     ? "bg-[#e9f2ff] text-[#1769c2]"
-                    : available
-                      ? "bg-maroon text-white"
-                      : "bg-muted/20 text-muted"
+                    : "bg-maroon text-white"
                 }`}
               >
-                {selected ? "Applied" : available ? "Apply Coupon" : "Unavailable"}
+                {selected ? "Applied" : "Apply Coupon"}
               </button>
             </article>
           );
@@ -1816,6 +1896,24 @@ function CouponSheet({
       </div>
     </BottomSheet>
   );
+}
+
+function isCouponUsableForCart(
+  coupon: Coupon,
+  lines: CartLine[],
+  products: Product[],
+  coupons: Coupon[],
+  restaurantSettings: RestaurantSettings,
+  customer: CouponCustomer,
+  categoryOffers: CategoryOfferMap,
+  deliveryDistanceKm: number | null | undefined,
+  fulfillmentMethod: FulfillmentMethod,
+  subtotal: number,
+) {
+  if (subtotal < coupon.minOrder) return false;
+  if (!isCouponEligibleForCustomer(coupon, customer)) return false;
+  if (!isCouponEligibleForFulfillment(coupon, fulfillmentMethod)) return false;
+  return calculateCartTotals(lines, coupon.code, products, coupons, restaurantSettings, customer, categoryOffers, deliveryDistanceKm, fulfillmentMethod).discount > 0;
 }
 
 function CookingNoteSheet({
@@ -1912,6 +2010,56 @@ function CompactMealSuggestions({
   );
 }
 
+function LoyaltyRedeemBox({
+  points,
+  pointsToNext,
+  redeemablePoints,
+  redeemableDiscount,
+  enabled,
+  disabled,
+  onToggle,
+  className = "",
+}: {
+  points: number;
+  pointsToNext: number;
+  redeemablePoints: number;
+  redeemableDiscount: number;
+  enabled: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+  className?: string;
+}) {
+  return (
+    <div className={`rounded-[16px] bg-white p-4 ring-1 ring-border ${className}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[13px] font-black text-maroon">{points} Wah Points</p>
+          <p className="mt-1 text-[12px] font-bold leading-5 text-muted">
+            {pointsToNext > 0
+              ? `${pointsToNext} more points unlock ${formatRupees(wahPointsRule.redemptionDiscount)} off.`
+              : `${wahPointsRule.redemptionPoints} points equals ${formatRupees(wahPointsRule.redemptionDiscount)} off.`}
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onToggle}
+          className={`grid h-7 w-12 shrink-0 items-center rounded-full p-1 transition disabled:opacity-50 ${enabled ? "bg-maroon" : "bg-[#dfe3ea]"}`}
+          aria-pressed={enabled}
+          aria-label="Redeem Wah Points"
+        >
+          <span className={`h-5 w-5 rounded-full bg-white shadow-sm transition ${enabled ? "translate-x-5" : ""}`} />
+        </button>
+      </div>
+      <div className="mt-3 rounded-xl bg-cream px-3 py-2 text-[12px] font-black text-charcoal">
+        {enabled && redeemablePoints > 0
+          ? `${redeemablePoints} points will save ${formatRupees(redeemableDiscount)} on this order.`
+          : `Redeem on food orders above ${formatRupees(wahPointsRule.minimumRedemptionOrderValue)}. Coupon plus points stays under ${wahPointsRule.maxCombinedDiscountPercent}%.`}
+      </div>
+    </div>
+  );
+}
+
 function DietaryMark({ type, size = "sm", className = "" }: { type: Product["dietaryType"]; size?: "sm" | "md" | "lg"; className?: string }) {
   const nonVeg = type === "NON_VEG";
   const sizeClass = size === "lg" ? "h-5 w-5 rounded-[4px] border" : size === "md" ? "h-4 w-4 rounded-[4px] border" : "h-3.5 w-3.5 rounded-[3px] border";
@@ -1983,20 +2131,13 @@ function getCouponEligibilityMessage(coupon: Coupon) {
   if (coupon.audience === "VIP") return "This coupon is only for VIP customers.";
   if (coupon.audience === "NEW") return "This coupon is only for new customers.";
   if (coupon.audience === "EXISTING") return `This coupon unlocks after ${getCouponOrderCountRequirement(coupon)} successful order${getCouponOrderCountRequirement(coupon) === 1 ? "" : "s"}.`;
-  if (coupon.audience === "POINTS") return `This reward unlocks after ${getCouponOrderCountRequirement(coupon)} placed orders.`;
+  if (coupon.audience === "POINTS") return `This reward unlocks with ${getCouponOrderCountRequirement(coupon)} Wah Points.`;
   if (coupon.audience === "TAGS") return `This coupon is only for ${formatCouponTags(coupon.tagNames)} customers.`;
   return "This coupon is not eligible for this account.";
 }
 
 function getCouponOrderCountRequirement(coupon: Pick<Coupon, "minPoints" | "minCustomerOrders">) {
   return Math.max(1, Number(coupon.minCustomerOrders ?? coupon.minPoints ?? 1));
-}
-
-function getFulfillmentCouponLabel(coupon: Coupon) {
-  const methods = coupon.fulfillmentMethods?.length ? coupon.fulfillmentMethods : ["DELIVERY", "PICKUP"];
-  if (methods.includes("DELIVERY") && methods.includes("PICKUP")) return "delivery and takeaway";
-  if (methods.includes("PICKUP")) return "takeaway";
-  return "delivery";
 }
 
 function formatCouponTags(tags: string[] | undefined) {
@@ -2015,6 +2156,17 @@ function getCustomerTagNames(tags: unknown): string[] {
       return "";
     })
     .filter(Boolean);
+}
+
+function getCustomerCouponUsage(orders: unknown): Record<string, number> {
+  if (!Array.isArray(orders)) return {};
+  return orders.reduce<Record<string, number>>((usage, order) => {
+    const couponCode = order && typeof order === "object" && "couponCode" in order
+      ? String((order as { couponCode?: unknown }).couponCode ?? "").trim().toUpperCase()
+      : "";
+    if (couponCode) usage[couponCode] = (usage[couponCode] ?? 0) + 1;
+    return usage;
+  }, {});
 }
 
 function getPaymentLabel(method?: PaymentMethod, fulfillmentMethod: FulfillmentMethod = "DELIVERY") {

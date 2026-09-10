@@ -5,6 +5,7 @@ import type { Product } from "./types";
 export type CartTotals = {
   subtotal: number;
   discount: number;
+  loyaltyDiscount: number;
   packaging: number;
   delivery: number;
   gst: number;
@@ -95,7 +96,7 @@ export function isCouponEligibleForCustomer(coupon: Coupon, customer?: CouponCus
         : audience === "EXISTING"
           ? (customer?.orderCount ?? 0) >= Math.max(1, Number(coupon.minCustomerOrders ?? 1))
           : audience === "POINTS"
-            ? (customer?.orderCount ?? customer?.points ?? 0) >= getCouponOrderCountRequirement(coupon)
+            ? (customer?.points ?? 0) >= getCouponOrderCountRequirement(coupon)
             : audience === "TAGS"
               ? hasMatchingCouponTag(coupon.tagNames, customer?.tags)
               : true;
@@ -160,14 +161,17 @@ export function calculateCartTotals(
   deliveryDistanceKm?: number | null,
   fulfillmentMethod: "DELIVERY" | "PICKUP" = "DELIVERY",
   channel = "WEBSITE",
+  loyaltyDiscount = 0,
 ): CartTotals {
   const pricableLines = getPricableCartLines(lines, productCatalog);
   const subtotal = pricableLines.reduce((total, line) => total + getProductPrice(line, productCatalog, categoryOffers), 0);
   const coupon = couponCatalog.find((item) => item.code === couponCode?.toUpperCase());
   const eligibleSubtotal = coupon ? getCouponEligibleSubtotal(pricableLines, productCatalog, categoryOffers, coupon) : subtotal;
-  const discount = coupon && isCouponEligibleForFulfillment(coupon, fulfillmentMethod, channel)
+  const couponDiscount = coupon && isCouponEligibleForFulfillment(coupon, fulfillmentMethod, channel)
     ? applyCoupon(subtotal, coupon, customer, eligibleSubtotal)
     : 0;
+  const appliedLoyaltyDiscount = Math.min(Math.max(Math.round(loyaltyDiscount), 0), Math.max(subtotal - couponDiscount, 0));
+  const discount = couponDiscount + appliedLoyaltyDiscount;
   const packaging = pricableLines.length > 0 ? activeSettings.packagingFee : 0;
   const freeDeliveryEnabled = activeSettings.freeDeliveryThreshold > 0;
   const eligibleOrderValue = subtotal - discount;
@@ -180,6 +184,7 @@ export function calculateCartTotals(
   return {
     subtotal,
     discount,
+    loyaltyDiscount: appliedLoyaltyDiscount,
     packaging,
     delivery,
     gst,

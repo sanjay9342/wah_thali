@@ -1,9 +1,11 @@
 import { withApiErrorHandling } from "@/lib/api-error";
+import { revalidateTag } from "next/cache";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { deleteCouponRule, logActivity, saveCouponRule } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
+import { rewardCoupons } from "@/lib/rewards";
 import { parseIstDateInput } from "@/lib/time";
 
 function istDateSchema(boundary: "start" | "end") {
@@ -47,6 +49,7 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ co
   if (!access.ok) return access.response;
 
   const { code } = await params;
+  const normalizedCode = code.toUpperCase();
   const parsed = couponSchema.safeParse(await request.json());
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid coupon update", issues: parsed.error.flatten() }, { status: 400 });
@@ -64,8 +67,34 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ co
     ...(couponData.fulfillmentMethods ? { fulfillmentMethods: couponData.fulfillmentMethods.length ? couponData.fulfillmentMethods : ["DELIVERY", "PICKUP"] } : {}),
   };
   const coupon = await prisma.coupon.update({
-    where: { code: code.toUpperCase() },
+    where: { code: normalizedCode },
     data: normalizedCouponData,
+  }).catch(async (error: unknown) => {
+    if (!isMissingCouponError(error)) throw error;
+    const rewardCoupon = rewardCoupons.find((coupon) => coupon.code === normalizedCode);
+    if (!rewardCoupon) throw error;
+
+    return prisma.coupon.create({
+      data: {
+        code: couponData.code ?? rewardCoupon.code,
+        label: couponData.label ?? rewardCoupon.label,
+        type: couponData.type ?? rewardCoupon.type,
+        value: couponData.value ?? rewardCoupon.value,
+        minOrder: couponData.minOrder ?? rewardCoupon.minOrder,
+        maxDiscount: couponData.maxDiscount ?? rewardCoupon.maxDiscount ?? null,
+        startsAt: couponData.startsAt ?? parseIstDateInput(rewardCoupon.startsAt ?? "2026-01-01T00:00:00.000Z", "start") ?? new Date("2026-01-01T00:00:00.000Z"),
+        endsAt: couponData.endsAt ?? parseIstDateInput(rewardCoupon.endsAt ?? "2028-01-01T00:00:00.000Z", "end") ?? new Date("2028-01-01T00:00:00.000Z"),
+        active: couponData.active ?? true,
+        audience: couponData.audience ?? rewardCoupon.audience ?? "POINTS",
+        minCustomerOrders: normalizedCouponData.minCustomerOrders ?? Math.max(1, Number(rewardCoupon.minPoints ?? rewardCoupon.minCustomerOrders ?? 1)),
+        redemptionLimit: couponData.redemptionLimit ?? rewardCoupon.redemptionLimit ?? null,
+        customerUsageLimit: couponData.customerUsageLimit ?? rewardCoupon.customerUsageLimit ?? 1,
+        productIds: normalizedCouponData.productIds ?? rewardCoupon.productIds ?? [],
+        categoryIds: normalizedCouponData.categoryIds ?? rewardCoupon.categoryIds ?? [],
+        channels: normalizedCouponData.channels ?? rewardCoupon.channels ?? ["WEBSITE"],
+        fulfillmentMethods: normalizedCouponData.fulfillmentMethods ?? rewardCoupon.fulfillmentMethods ?? ["DELIVERY", "PICKUP"],
+      },
+    });
   });
   if (couponData.audience !== undefined || minPoints !== undefined || tagNames !== undefined) {
     await saveCouponRule(coupon.code, { audience: coupon.audience as never, minPoints: coupon.minCustomerOrders, minCustomerOrders: coupon.minCustomerOrders, tagNames: tagNames ?? [] });
@@ -77,6 +106,7 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ co
     entityId: coupon.id,
     summary: `Updated coupon ${coupon.code}`,
   });
+  revalidateTag("storefront", { expire: 0 });
 
   return NextResponse.json({ coupon });
 }
@@ -91,6 +121,7 @@ async function deleteHandler(request: Request, { params }: { params: Promise<{ c
   const { code } = await params;
   const coupon = await prisma.coupon.delete({ where: { code: code.toUpperCase() } });
   await deleteCouponRule(code);
+  revalidateTag("storefront", { expire: 0 });
   return NextResponse.json({ deleted: true, coupon });
 }
 
@@ -99,4 +130,8 @@ export const DELETE = withApiErrorHandling(deleteHandler, "DELETE /api/coupons/[
 
 function normalizeIds(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).slice(0, 80);
+}
+
+function isMissingCouponError(error: unknown) {
+  return Boolean(error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "P2025");
 }

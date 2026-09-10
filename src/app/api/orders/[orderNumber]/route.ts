@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { notifyOrderStatus, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
+import { reverseLoyaltyForOrder } from "@/lib/loyalty";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { canTransitionOrder } from "@/lib/state-machines";
 import { scheduleRetentionForDeliveredOrder } from "@/lib/whatsapp-retention";
@@ -77,6 +78,7 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ or
           data: { stock: { increment: item.quantity } },
         });
       }
+      await reverseLoyaltyForOrder(tx, existing.id, "Order cancelled");
     }
 
     return tx.order.update({

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { hashPassword, normalizeEmail, normalizeMobile } from "@/lib/customer-auth";
 import { verifyCustomerOtp } from "@/lib/customer-otp";
 import { logActivity } from "@/lib/db";
+import { getCustomerLoyaltySummary } from "@/lib/loyalty";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { getRewardTier } from "@/lib/rewards";
 
@@ -51,18 +52,27 @@ const publicCustomerSelect = {
   },
 };
 
-function toPublicCustomer<Customer extends object>(customer: Customer, rewardOrderCount = 0) {
+function toPublicCustomer<Customer extends object>(customer: Customer, rewardOrderCount = 0, loyaltySummary?: Awaited<ReturnType<typeof getCustomerLoyaltySummary>>) {
   const publicCustomer = { ...customer } as Customer & {
     passwordHash?: string | null;
     isVip?: boolean;
     tags?: Array<{ tag?: { name?: string } }>;
+    loyalty?: { points: number; tier: string } | null;
     rewardOrderCount?: number;
     rewardTier?: string;
+    loyaltySummary?: Awaited<ReturnType<typeof getCustomerLoyaltySummary>>;
   };
   delete publicCustomer.passwordHash;
   publicCustomer.isVip = publicCustomer.tags?.some((assignment) => assignment.tag?.name === "VIP") ?? false;
   publicCustomer.rewardOrderCount = rewardOrderCount;
-  publicCustomer.rewardTier = getRewardTier(rewardOrderCount);
+  publicCustomer.rewardTier = getRewardTier(loyaltySummary?.availablePoints ?? rewardOrderCount);
+  if (loyaltySummary) {
+    publicCustomer.loyaltySummary = loyaltySummary;
+    publicCustomer.loyalty = {
+      points: loyaltySummary.availablePoints,
+      tier: getRewardTier(loyaltySummary.availablePoints),
+    };
+  }
   return publicCustomer;
 }
 
@@ -86,8 +96,9 @@ async function getHandler(request: Request) {
     select: publicCustomerSelect,
   });
   const rewardOrderCount = customer ? await countRewardOrders(mobile) : 0;
+  const loyaltySummary = customer ? await getCustomerLoyaltySummary(customer.id, customer.loyalty?.points ?? rewardOrderCount) : undefined;
 
-  return NextResponse.json({ customer: customer ? toPublicCustomer(customer, rewardOrderCount) : null, configured: true });
+  return NextResponse.json({ customer: customer ? toPublicCustomer(customer, rewardOrderCount, loyaltySummary) : null, configured: true });
 }
 
 async function postHandler(request: Request) {
@@ -165,8 +176,9 @@ async function postHandler(request: Request) {
   });
 
   const rewardOrderCount = await countRewardOrders(customer.mobile);
+  const loyaltySummary = await getCustomerLoyaltySummary(customer.id, customer.loyalty?.points ?? rewardOrderCount);
 
-  return NextResponse.json({ customer: toPublicCustomer(customer, rewardOrderCount) });
+  return NextResponse.json({ customer: toPublicCustomer(customer, rewardOrderCount, loyaltySummary) });
 }
 
 async function patchHandler(request: Request) {
@@ -200,7 +212,8 @@ async function patchHandler(request: Request) {
   });
 
   const rewardOrderCount = await countRewardOrders(customer.mobile);
-  return NextResponse.json({ customer: toPublicCustomer(customer, rewardOrderCount) });
+  const loyaltySummary = await getCustomerLoyaltySummary(customer.id, customer.loyalty?.points ?? rewardOrderCount);
+  return NextResponse.json({ customer: toPublicCustomer(customer, rewardOrderCount, loyaltySummary) });
 }
 
 function visiblePlacedOrderWhere(mobile: string): Prisma.OrderWhereInput {

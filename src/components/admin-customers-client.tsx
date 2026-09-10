@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Crown, History, MessageCircle, Phone, Plus, Search, Star, Tag, X } from "lucide-react";
+import { AlertTriangle, Crown, History, MessageCircle, Pencil, Phone, Plus, Search, Star, Tag, Trash2, X } from "lucide-react";
 import { AdminFloatingMessage } from "@/components/admin-floating-message";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { adminFetch } from "@/lib/admin-client-auth";
@@ -17,7 +17,7 @@ const segmentOptions: { id: Segment; helper: string }[] = [
   { id: "New", helper: "First order or newly created customers." },
   { id: "Repeat buyers", helper: "More than one completed checkout." },
   { id: "High value", helper: "Lifetime value above Rs 1,500." },
-  { id: "Loyalty ready", helper: "Customers with 5 or more loyalty points." },
+  { id: "Loyalty ready", helper: "Customers with 100 or more Wah Points." },
   { id: "At risk", helper: "Ordered before, but not in the last 30 days." },
   { id: "No orders", helper: "Signed up or saved, but never ordered." },
 ];
@@ -39,6 +39,8 @@ export function AdminCustomersClient({
   const [newTag, setNewTag] = useState("");
   const [showAddCustomer, setShowAddCustomer] = useState(() => typeof window !== "undefined" && window.location.hash === "#add-customer");
   const [draft, setDraft] = useState<CustomerDraft>(emptyCustomerDraft);
+  const [editingCustomer, setEditingCustomer] = useState<AdminCustomer | null>(null);
+  const [customerToDelete, setCustomerToDelete] = useState<AdminCustomer | null>(null);
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -114,15 +116,19 @@ export function AdminCustomersClient({
   function saveCustomer() {
     if (!draft.name.trim() || !draft.mobile.trim()) return;
     run(async () => {
-      const response = await adminFetch(adminAccess?.session, "/api/customers", {
-        method: "POST",
+      const customerPayload = {
+        name: draft.name.trim(),
+        mobile: draft.mobile,
+        email: draft.email.trim(),
+        birthday: draft.birthday,
+        anniversary: draft.anniversary,
+        tagNames: draft.tags,
+      };
+      const response = await adminFetch(adminAccess?.session, editingCustomer ? `/api/customers/${editingCustomer.id}` : "/api/customers", {
+        method: editingCustomer ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: draft.name.trim(),
-          mobile: draft.mobile,
-          email: draft.email.trim() || undefined,
-          birthday: draft.birthday,
-          anniversary: draft.anniversary,
+        body: JSON.stringify(editingCustomer ? customerPayload : {
+          ...customerPayload,
           tags: draft.tags,
           note: draft.note,
           address: {
@@ -138,16 +144,41 @@ export function AdminCustomersClient({
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Customer save failed.");
-      const saved = toAdminCustomer(data.customer, customerRows.find((customer) => customer.mobile === data.customer.mobile));
-      setCustomerRows((current) => [saved, ...current.filter((customer) => customer.id !== saved.id && customer.mobile !== saved.mobile)]);
+      const saved = toAdminCustomer(data.customer, customerRows.find((customer) => customer.id === data.customer.id || customer.mobile === data.customer.mobile));
+      setCustomerRows((current) => editingCustomer
+        ? current.map((customer) => customer.id === saved.id ? saved : customer)
+        : [saved, ...current.filter((customer) => customer.id !== saved.id && customer.mobile !== saved.mobile)]);
       closeAddCustomer();
       setDraft(emptyCustomerDraft);
-      setMessage("Customer added to CRM.");
+      setEditingCustomer(null);
+      setMessage(editingCustomer ? "Customer updated." : "Customer added to CRM.");
+    });
+  }
+
+  function openEditCustomer(customer: AdminCustomer) {
+    setEditingCustomer(customer);
+    setDraft(customerToDraft(customer));
+    setShowAddCustomer(true);
+    setMessage("");
+  }
+
+  function deleteCustomer(customer: AdminCustomer) {
+    run(async () => {
+      const response = await adminFetch(adminAccess?.session, `/api/customers/${customer.id}`, {
+        method: "DELETE",
+      });
+      const data = await response.json().catch(() => null) as { error?: string } | null;
+      if (!response.ok) throw new Error(data?.error ?? "Could not delete customer.");
+      setCustomerRows((current) => current.filter((item) => item.id !== customer.id));
+      setCustomerToDelete(null);
+      setExpandedCustomerId((current) => current === customer.id ? null : current);
+      setMessage(`Deleted customer ${customer.name}.`);
     });
   }
 
   function closeAddCustomer() {
     setShowAddCustomer(false);
+    setEditingCustomer(null);
     if (typeof window !== "undefined" && window.location.hash === "#add-customer") {
       window.history.replaceState(null, "", window.location.pathname + window.location.search);
     }
@@ -166,7 +197,7 @@ export function AdminCustomersClient({
         (segment === "New" && customer.orders <= 1) ||
         (segment === "Repeat buyers" && customer.orders > 1) ||
         (segment === "High value" && customer.ltv >= 1500) ||
-        (segment === "Loyalty ready" && customer.points >= 5) ||
+        (segment === "Loyalty ready" && customer.points >= 100) ||
         (segment === "At risk" && customer.orders > 0 && isOlderThanDays(customer.lastOrder, 30)) ||
         (segment === "No orders" && customer.orders === 0);
 
@@ -249,6 +280,7 @@ export function AdminCustomersClient({
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2 text-xs font-black">
                   <span className="rounded-lg bg-cream px-3 py-2">Points {customer.points}</span>
+                  {customer.expiringPoints ? <span className="rounded-lg bg-cream px-3 py-2">{customer.expiringPoints} expiring soon</span> : null}
                   <span className="rounded-lg bg-cream px-3 py-2">Last order {customer.lastOrder ? formatIstDate(customer.lastOrder) : "No orders"}</span>
                   {customer.email ? <span className="max-w-full truncate rounded-lg bg-cream px-3 py-2">{customer.email}</span> : null}
                 </div>
@@ -272,6 +304,12 @@ export function AdminCustomersClient({
                 </button>
                 <button type="button" onClick={() => setExpandedCustomerId((current) => current === customer.id ? null : customer.id)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm font-black text-maroon">
                   <History size={16} /> Order history
+                </button>
+                <button type="button" disabled={isPending} onClick={() => openEditCustomer(customer)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm font-black text-maroon disabled:opacity-60">
+                  <Pencil size={16} /> Edit
+                </button>
+                <button type="button" disabled={isPending} onClick={() => setCustomerToDelete(customer)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#f0c7cf] px-3 text-sm font-black text-maroon disabled:opacity-60">
+                  <Trash2 size={16} /> Delete
                 </button>
                 <a href={`tel:${customer.mobile || supportPhone}`} className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm font-black">
                   <Phone size={16} /> Call
@@ -317,12 +355,28 @@ export function AdminCustomersClient({
           draft={draft}
           tags={allTags}
           isPending={isPending}
+          title={editingCustomer ? "Edit customer" : "Add customer"}
+          description={editingCustomer ? "Update customer profile details and tags." : "Create outside, bulk order, and WhatsApp customers directly in CRM."}
+          saveLabel={editingCustomer ? "Save changes" : "Save customer"}
+          isEditing={Boolean(editingCustomer)}
           onChange={setDraft}
           onClose={closeAddCustomer}
           onCreateTag={(name) => {
             createTag(name);
           }}
           onSave={saveCustomer}
+        />
+      ) : null}
+      {customerToDelete ? (
+        <ConfirmDialog
+          title="Delete customer?"
+          body={customerToDelete.orders > 0
+            ? `${customerToDelete.name} has ${customerToDelete.orders} order${customerToDelete.orders === 1 ? "" : "s"}. The server will keep customers with order history for invoices and reports.`
+            : `Remove ${customerToDelete.name} from the customer list. Notes, tags, saved addresses, and related leads will also be removed.`}
+          confirmLabel={isPending ? "Deleting..." : "Delete customer"}
+          confirmDisabled={isPending}
+          onCancel={() => setCustomerToDelete(null)}
+          onConfirm={() => deleteCustomer(customerToDelete)}
         />
       ) : null}
     </section>
@@ -372,6 +426,10 @@ function CustomerModal({
   draft,
   tags,
   isPending,
+  title,
+  description,
+  saveLabel,
+  isEditing,
   onChange,
   onClose,
   onCreateTag,
@@ -380,6 +438,10 @@ function CustomerModal({
   draft: CustomerDraft;
   tags: string[];
   isPending: boolean;
+  title: string;
+  description: string;
+  saveLabel: string;
+  isEditing: boolean;
   onChange: (draft: CustomerDraft) => void;
   onClose: () => void;
   onCreateTag: (name: string) => void;
@@ -392,8 +454,8 @@ function CustomerModal({
       <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-border p-5">
           <div>
-            <h2 className="text-xl font-black text-maroon">Add customer</h2>
-            <p className="text-sm font-semibold text-muted">Create outside, bulk order, and WhatsApp customers directly in CRM.</p>
+            <h2 className="text-xl font-black text-maroon">{title}</h2>
+            <p className="text-sm font-semibold text-muted">{description}</p>
           </div>
           <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-lg border border-border" aria-label="Close">
             <X size={18} />
@@ -405,17 +467,21 @@ function CustomerModal({
           <Input label="Email" type="email" value={draft.email} onChange={(email) => onChange({ ...draft, email })} />
           <Input label="Birthday" type="date" value={draft.birthday} onChange={(birthday) => onChange({ ...draft, birthday })} />
           <Input label="Anniversary" type="date" value={draft.anniversary} onChange={(anniversary) => onChange({ ...draft, anniversary })} />
-          <Input label="Address label" value={draft.addressLabel} onChange={(addressLabel) => onChange({ ...draft, addressLabel })} />
-          <Input label="Address line" value={draft.addressLine} onChange={(addressLine) => onChange({ ...draft, addressLine })} />
-          <Input label="Area" value={draft.area} onChange={(area) => onChange({ ...draft, area })} />
-          <Input label="City" value={draft.city} onChange={(city) => onChange({ ...draft, city })} />
-          <Input label="State" value={draft.state} onChange={(state) => onChange({ ...draft, state })} />
-          <Input label="PIN code" value={draft.pinCode} onChange={(pinCode) => onChange({ ...draft, pinCode: pinCode.replace(/\D/g, "").slice(0, 6) })} />
-          <Input label="Landmark / source" value={draft.landmark} onChange={(landmark) => onChange({ ...draft, landmark })} />
-          <label className="grid gap-2 text-sm font-black text-maroon lg:col-span-2">
-            Notes
-            <textarea value={draft.note} onChange={(event) => onChange({ ...draft, note: event.target.value })} className="min-h-24 rounded-lg border border-border bg-cream px-3 py-2 text-sm font-bold text-charcoal" placeholder="Bulk order need, company name, preferred timing, food preference" />
-          </label>
+          {!isEditing ? (
+            <>
+              <Input label="Address label" value={draft.addressLabel} onChange={(addressLabel) => onChange({ ...draft, addressLabel })} />
+              <Input label="Address line" value={draft.addressLine} onChange={(addressLine) => onChange({ ...draft, addressLine })} />
+              <Input label="Area" value={draft.area} onChange={(area) => onChange({ ...draft, area })} />
+              <Input label="City" value={draft.city} onChange={(city) => onChange({ ...draft, city })} />
+              <Input label="State" value={draft.state} onChange={(state) => onChange({ ...draft, state })} />
+              <Input label="PIN code" value={draft.pinCode} onChange={(pinCode) => onChange({ ...draft, pinCode: pinCode.replace(/\D/g, "").slice(0, 6) })} />
+              <Input label="Landmark / source" value={draft.landmark} onChange={(landmark) => onChange({ ...draft, landmark })} />
+              <label className="grid gap-2 text-sm font-black text-maroon lg:col-span-2">
+                Notes
+                <textarea value={draft.note} onChange={(event) => onChange({ ...draft, note: event.target.value })} className="min-h-24 rounded-lg border border-border bg-cream px-3 py-2 text-sm font-bold text-charcoal" placeholder="Bulk order need, company name, preferred timing, food preference" />
+              </label>
+            </>
+          ) : null}
           <div className="rounded-xl border border-border bg-cream p-4 lg:col-span-2">
             <p className="flex items-center gap-2 text-sm font-black text-maroon"><Tag size={16} /> Tags</p>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -451,7 +517,7 @@ function CustomerModal({
         <div className="flex justify-end gap-2 border-t border-border p-5">
           <button type="button" onClick={onClose} className="h-11 rounded-lg border border-border px-4 font-black">Cancel</button>
           <button type="button" disabled={isPending || !draft.name.trim() || draft.mobile.length < 8} onClick={onSave} className="h-11 rounded-lg bg-red px-4 font-black text-white disabled:opacity-60">
-            {isPending ? "Saving..." : "Save customer"}
+            {isPending ? "Saving..." : saveLabel}
           </button>
         </div>
       </div>
@@ -472,8 +538,74 @@ function toggleName(values: string[], name: string) {
   return values.includes(name) ? values.filter((value) => value !== name) : [...values, name];
 }
 
+function customerToDraft(customer: AdminCustomer): CustomerDraft {
+  return {
+    ...emptyCustomerDraft,
+    name: customer.name,
+    mobile: customer.mobile,
+    email: customer.email ?? "",
+    birthday: formatDateInput(customer.birthday),
+    anniversary: formatDateInput(customer.anniversary),
+    tags: customer.tags,
+  };
+}
+
+function formatDateInput(value: string | undefined) {
+  return value ? value.slice(0, 10) : "";
+}
+
 function getAdminMessageTone(message: string) {
   return /failed|error|could not|invalid|required/i.test(message) ? "error" : "success";
+}
+
+function ConfirmDialog({
+  title,
+  body,
+  confirmLabel,
+  confirmDisabled,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  confirmDisabled?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-charcoal/45 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+        <div className="flex items-start gap-3">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#fff4f5] text-maroon">
+            <AlertTriangle size={21} />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-xl font-black text-maroon">{title}</h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-muted">{body}</p>
+          </div>
+        </div>
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={confirmDisabled}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-border bg-white px-4 text-sm font-black text-charcoal disabled:opacity-60"
+          >
+            <X size={16} /> Keep customer
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={confirmDisabled}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-maroon px-4 text-sm font-black text-white disabled:opacity-60"
+          >
+            <Trash2 size={16} /> {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function toAdminCustomer(customer: {

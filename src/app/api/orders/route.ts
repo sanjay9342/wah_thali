@@ -13,7 +13,7 @@ import { getStoreOrderingStatus } from "@/lib/store-hours";
 import type { CartLine, Coupon, OrderStatus, RestaurantSettings } from "@/lib/types";
 import { applyCoupon, getDeliveryFee, getOfferDiscount, isCouponEligibleForCustomer, isCouponEligibleForFulfillment, normalizeGstRate, type CouponCustomerContext } from "@/lib/pricing";
 import { getModifierOptionLabel, getModifierSelectionIssue, getProductModifierGroups } from "@/lib/product-modifiers";
-import { getRewardTier } from "@/lib/rewards";
+import { getRedeemableLoyaltyForOrder, recordLoyaltyForPaidOrder } from "@/lib/loyalty";
 
 const paidOnlineStatuses: PaymentStatus[] = ["PAID", "AUTHORIZED"];
 
@@ -40,6 +40,7 @@ const orderSchema = z.object({
   longitude: z.string().trim().optional(),
   paymentMethod: z.enum(["COD", "RAZORPAY"]).default("COD"),
   whatsappMarketingOptIn: z.boolean().default(false),
+  loyaltyPointsToRedeem: z.coerce.number().int().nonnegative().default(0),
   items: z.array(orderItemSchema).min(1),
 });
 
@@ -66,7 +67,7 @@ function calculateDiscount(
   return { coupon, discount };
 }
 
-async function calculateServerOrder(lines: CartLine[], couponCode: string | undefined, settings: RestaurantSettings, customer?: CouponCustomerContext, deliveryDistanceKm?: number | null, fulfillmentMethod: "DELIVERY" | "PICKUP" = "DELIVERY") {
+async function calculateServerOrder(lines: CartLine[], couponCode: string | undefined, settings: RestaurantSettings, customer?: CouponCustomerContext & { customerId?: string }, deliveryDistanceKm?: number | null, fulfillmentMethod: "DELIVERY" | "PICKUP" = "DELIVERY", loyaltyPointsToRedeem = 0) {
   const products = await prisma.product.findMany({
     where: { id: { in: lines.map((line) => line.productId) } },
     include: { category: true, variants: true, addons: true, inventory: true },
@@ -116,16 +117,26 @@ async function calculateServerOrder(lines: CartLine[], couponCode: string | unde
   const subtotal = items.reduce((total, item) => total + item.lineTotal, 0);
   const coupons = await getCouponsWithRedemptionCounts(customer?.mobile, couponCode);
   const { coupon, discount } = calculateDiscount(subtotal, couponCode, coupons, customer, items, fulfillmentMethod);
+  const loyaltyRedemption = await getRedeemableLoyaltyForOrder({
+    customerId: customer?.customerId,
+    foodValue: subtotal,
+    couponDiscount: discount,
+    requestedPoints: loyaltyPointsToRedeem,
+  });
+  const totalDiscount = discount + loyaltyRedemption.discount;
   const packaging = items.length ? settings.packagingFee : 0;
-  const eligibleOrderValue = subtotal - discount;
+  const eligibleOrderValue = subtotal - totalDiscount;
   const delivery = fulfillmentMethod === "PICKUP" ? 0 : getDeliveryFee(settings, eligibleOrderValue, items.length > 0, deliveryDistanceKm);
-  const taxable = Math.max(subtotal - discount + packaging + delivery, 0);
+  const taxable = Math.max(subtotal - totalDiscount + packaging + delivery, 0);
   const gst = Math.round(taxable * normalizeGstRate(settings.gstRate));
 
   return {
     items,
     subtotal,
-    discount,
+    couponDiscount: discount,
+    loyaltyDiscount: loyaltyRedemption.discount,
+    loyaltyPointsRedeemed: loyaltyRedemption.points,
+    discount: totalDiscount,
     gst,
     grandTotal: taxable + gst,
     couponCode: coupon?.code,
@@ -194,6 +205,7 @@ async function postHandler(request: Request) {
   const existingCustomer = await prisma.customer.findUnique({
     where: { mobile: data.customerMobile },
     select: {
+      id: true,
       tags: { include: { tag: { select: { name: true } } } },
     },
   });
@@ -204,6 +216,7 @@ async function postHandler(request: Request) {
     },
   });
   const couponCustomer = {
+    customerId: existingCustomer?.id,
     mobile: data.customerMobile,
     isVip: existingCustomer?.tags.some((assignment) => assignment.tag.name === "VIP") ?? false,
     orderCount: rewardOrderCount,
@@ -253,7 +266,7 @@ async function postHandler(request: Request) {
     }
   }
 
-  const calculatedResult = await calculateServerOrder(data.items, data.couponCode, settings, couponCustomer, deliveryCoverage.distanceKm, data.fulfillmentMethod)
+  const calculatedResult = await calculateServerOrder(data.items, data.couponCode, settings, couponCustomer, deliveryCoverage.distanceKm, data.fulfillmentMethod, data.loyaltyPointsToRedeem)
     .then((order) => ({ order, error: null as string | null }))
     .catch((error) => {
     console.error("Server order validation failed.", error);
@@ -342,6 +355,8 @@ async function postHandler(request: Request) {
         orderNumber,
         subtotal: calculated.subtotal,
         discount: calculated.discount,
+        loyaltyDiscount: calculated.loyaltyDiscount,
+        loyaltyPointsRedeemed: calculated.loyaltyPointsRedeemed,
         couponCode: calculated.couponCode,
         fulfillmentMethod: data.fulfillmentMethod,
         orderSource: "WEBSITE",
@@ -376,6 +391,7 @@ async function postHandler(request: Request) {
               isPickup && settings.kitchenAddress ? `Pickup address: ${settings.kitchenAddress}` : "",
               data.restaurantNote ? `Customer note: ${data.restaurantNote}` : "",
               calculated.couponCode ? `Coupon ${calculated.couponCode} applied.` : "",
+              calculated.loyaltyPointsRedeemed ? `Redeemed ${calculated.loyaltyPointsRedeemed} Wah Points.` : "",
               !isPickup && data.pinCode ? `Location: PIN ${data.pinCode}` : "",
               !isPickup && data.latitude && data.longitude ? `GPS: ${data.latitude}, ${data.longitude}` : "",
               !isPickup && deliveryCoverage.distanceKm !== null ? `Distance: ${deliveryCoverage.distanceKm.toFixed(2)} km.` : "",
@@ -399,14 +415,24 @@ async function postHandler(request: Request) {
       },
     });
 
-    if (data.paymentMethod === "COD" && calculated.couponCode && calculated.discount > 0) {
+    if (data.paymentMethod === "COD" && calculated.couponCode && calculated.couponDiscount > 0) {
       await redeemCouponForSuccessfulOrder(tx, {
         couponCode: calculated.couponCode,
         orderId: createdOrder.id,
         customerId: customer.id,
-        discount: calculated.discount,
+        discount: calculated.couponDiscount,
         orderTotal: calculated.grandTotal,
         fulfillmentMethod: data.fulfillmentMethod,
+      });
+    }
+
+    if (data.paymentMethod === "COD") {
+      await recordLoyaltyForPaidOrder(tx, {
+        orderId: createdOrder.id,
+        orderNumber: createdOrder.orderNumber,
+        customerId: customer.id,
+        eligibleFoodValue: Math.max(calculated.subtotal - calculated.discount, 0),
+        redeemedPoints: calculated.loyaltyPointsRedeemed,
       });
     }
 
@@ -439,18 +465,6 @@ async function postHandler(request: Request) {
       console.error("Order WhatsApp/customer notification failed.", error);
     });
   }
-
-  const nextRewardOrderCount = await prisma.order.count({
-    where: {
-      customer: { mobile: data.customerMobile },
-      ...visiblePlacedOrderWhere(),
-    },
-  });
-  await prisma.loyaltyAccount.upsert({
-    where: { customerId: order.customer.id },
-    create: { customerId: order.customer.id, points: nextRewardOrderCount, tier: getRewardTier(nextRewardOrderCount) },
-    update: { points: nextRewardOrderCount, tier: getRewardTier(nextRewardOrderCount) },
-  });
 
   return NextResponse.json({
     order,

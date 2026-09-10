@@ -1,4 +1,5 @@
 import { withApiErrorHandling } from "@/lib/api-error";
+import { revalidateTag } from "next/cache";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
@@ -86,6 +87,7 @@ async function postHandler(request: Request) {
     entityId: coupon.id,
     summary: `Saved coupon ${coupon.code}`,
   });
+  revalidateTag("storefront", { expire: 0 });
 
   return NextResponse.json({ coupon }, { status: 201 });
 }

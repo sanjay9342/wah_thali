@@ -316,7 +316,7 @@ function MobileCouponTicket({
 
 function getCouponAudienceLabel(coupon: Coupon) {
   if (coupon.audience === "VIP") return "VIP customers only";
-  if (coupon.audience === "POINTS") return `${getCouponOrderCountRequirement(coupon)}+ placed orders`;
+  if (coupon.audience === "POINTS") return `${getCouponOrderCountRequirement(coupon)}+ Wah Points`;
   if (coupon.audience === "TAGS") return `${formatCouponTags(coupon.tagNames)} customers only`;
   return "All customers";
 }
@@ -329,7 +329,7 @@ function isOfferEligible(coupon: Coupon, rewardOrderCount: number, customerTags:
 
 function getLockedOfferMessage(coupon: Coupon, rewardOrderCount: number, customerTags: string[]) {
   if (coupon.audience === "POINTS") {
-    return `Place ${Math.max(getCouponOrderCountRequirement(coupon) - rewardOrderCount, 0)} more orders to unlock.`;
+    return `Earn ${Math.max(getCouponOrderCountRequirement(coupon) - rewardOrderCount, 0)} more Wah Points to unlock.`;
   }
   if (coupon.audience === "TAGS" && !hasMatchingCouponTag(coupon.tagNames, customerTags)) {
     return `Available only for ${formatCouponTags(coupon.tagNames)} customers.`;

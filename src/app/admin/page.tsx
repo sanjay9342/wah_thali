@@ -1,6 +1,7 @@
 import {
   BarChart3,
   ClipboardList,
+  Gift,
   IndianRupee,
   Package,
   ShoppingBag,
@@ -11,7 +12,9 @@ import { AdminSectionNav } from "@/components/admin-section-nav";
 import { AdminDashboardProductsClient } from "@/components/admin-dashboard-products-client";
 import { requireAdminPagePermission } from "@/lib/admin-page-auth";
 import { getAdminDashboardMetrics, getAdminProductsFromDb } from "@/lib/db";
+import { getWahPointsRuleSummary } from "@/lib/loyalty";
 import { formatRupees } from "@/lib/pricing";
+import { wahPointsRule } from "@/lib/rewards";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +22,7 @@ export default async function AdminPage() {
   await requireAdminPagePermission("dashboard", "/admin");
   const products = await getAdminProductsFromDb();
   const metrics = await getAdminDashboardMetrics(products);
+  const loyaltyRules = getWahPointsRuleSummary();
   const operations = [
     ["Open orders", String(metrics.openOrders), "Need restaurant action"],
     ["Offline items", String(metrics.unavailableItems), "Shown unavailable at the end"],
@@ -91,6 +95,45 @@ export default async function AdminPage() {
               {metrics.actionQueue.length ? metrics.actionQueue.map((alert) => (
                 <div key={alert} className="rounded-xl bg-cream p-3 text-sm font-bold">{alert}</div>
               )) : <div className="rounded-xl bg-cream p-3 text-sm font-bold">No urgent actions right now.</div>}
+            </div>
+          </aside>
+        </section>
+
+        <section className="mt-6 grid gap-5 lg:grid-cols-[1fr_380px]">
+          <div className="surface rounded-2xl p-5">
+            <h2 className="flex items-center gap-2 text-xl font-black text-maroon">
+              <Gift className="text-red" /> Wah Points loyalty rule
+            </h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              {[
+                [`1 / Rs ${wahPointsRule.pointsPerSpendRupees}`, "Earn rate", "Food value after discounts"],
+                [`${wahPointsRule.redemptionPoints} = ${formatRupees(wahPointsRule.redemptionDiscount)}`, "Redeem rate", `Minimum food order ${formatRupees(wahPointsRule.minimumRedemptionOrderValue)}`],
+                [`${wahPointsRule.maxCombinedDiscountPercent}%`, "Margin cap", "Coupon plus points limit"],
+              ].map(([value, label, detail]) => (
+                <div key={label} className="rounded-xl border border-border bg-cream p-4">
+                  <p className="text-2xl font-black text-maroon">{value}</p>
+                  <p className="mt-1 text-sm font-black text-charcoal">{label}</p>
+                  <p className="mt-1 text-xs font-bold text-muted">{detail}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {loyaltyRules.map((rule) => (
+                <div key={rule} className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-muted ring-1 ring-border">
+                  {rule}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <aside className="surface rounded-2xl p-5">
+            <h2 className="text-xl font-black text-maroon">Loyalty liability</h2>
+            <p className="mt-4 text-3xl font-black text-maroon">{Number(metrics.activePoints ?? 0).toLocaleString("en-IN")}</p>
+            <p className="mt-1 text-sm font-bold text-muted">Active Wah Points across customer accounts</p>
+            <div className="mt-4 rounded-xl bg-cream p-4">
+              <p className="text-sm font-black text-charcoal">Approximate redeemable value</p>
+              <p className="mt-1 text-2xl font-black text-red">{formatRupees(metrics.activePointLiability ?? 0)}</p>
+              <p className="mt-1 text-xs font-bold text-muted">Protected by the 10% order cap and 15% combined discount cap.</p>
             </div>
           </aside>
         </section>

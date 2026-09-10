@@ -112,6 +112,7 @@ model Customer {
   addresses   CustomerAddress[]
   notes       CustomerNote[]
   orders      Order[]
+  loyaltyPointEntries LoyaltyPointLedger[]
   loyalty     LoyaltyAccount?
   leads       Lead[]
   reviews     Review[]
@@ -326,6 +327,9 @@ model Order {
   status      OrderStatus         @default(NEW)
   subtotal    Int
   discount    Int                 @default(0)
+  loyaltyDiscount Int             @default(0)
+  loyaltyPointsEarned Int         @default(0)
+  loyaltyPointsRedeemed Int       @default(0)
   couponCode  String?
   fulfillmentMethod String        @default("DELIVERY")
   orderSource String              @default("WEBSITE")
@@ -337,6 +341,7 @@ model Order {
   timeline    OrderStatusHistory[]
   reviews     Review[]
   couponRedemption CouponRedemption?
+  loyaltyPointEntries LoyaltyPointLedger[]
   retentionCampaigns RetentionCampaign[]
   retentionMessages RetentionMessage[]
   createdAt   DateTime            @default(now())
@@ -434,6 +439,23 @@ model LoyaltyAccount {
   points     Int      @default(0)
   tier       String   @default("Starter")
   customer   Customer @relation(fields: [customerId], references: [id])
+}
+
+model LoyaltyPointLedger {
+  id          String   @id @default(cuid())
+  customerId  String
+  orderId     String?
+  points      Int
+  type        String
+  description String
+  expiresAt   DateTime?
+  customer    Customer @relation(fields: [customerId], references: [id])
+  order       Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@index([customerId, expiresAt])
+  @@index([orderId])
+  @@index([type])
 }
 
 model SupportTicket {

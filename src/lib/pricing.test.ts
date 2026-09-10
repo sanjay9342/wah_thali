@@ -1,6 +1,56 @@
 import { describe, expect, it } from "vitest";
 import { settings } from "./data";
 import { calculateCartTotals, getProductPrice, getProductUnitPricing, isCouponEligibleForCustomer } from "./pricing";
+import { calculateLoyaltyRedemption, calculateWahPointsEarned } from "./rewards";
+import type { Product } from "./types";
+
+const testProducts: Product[] = [
+  {
+    id: "p1",
+    slug: "exclusive-thali",
+    name: "Exclusive Thali",
+    category: "Exclusive Thali",
+    categoryId: "exclusive-thali",
+    description: "Test thali",
+    image: "/wah-thali-meal-cutout-v2.png",
+    dietaryType: "VEG",
+    rating: 4.5,
+    ratingCount: 1,
+    prepTimeMinutes: 20,
+    price: 199,
+    originalPrice: 249,
+    offer: "Chef special",
+    available: true,
+    spiceLevel: "Medium",
+    variants: [
+      { id: "regular", name: "Regular", price: 199 },
+      { id: "large", name: "Large", price: 245 },
+    ],
+    addons: [{ id: "raita", name: "Raita", price: 29 }],
+  },
+  {
+    id: "p2",
+    slug: "mini-thali",
+    name: "Mini Thali",
+    category: "Mini Thali",
+    categoryId: "mini-thali",
+    description: "Test mini thali",
+    image: "/wah-thali-meal-cutout-v2.png",
+    dietaryType: "VEG",
+    rating: 4.5,
+    ratingCount: 1,
+    prepTimeMinutes: 20,
+    price: 99,
+    originalPrice: 129,
+    available: true,
+    spiceLevel: "Medium",
+    variants: [
+      { id: "regular", name: "Regular", price: 99 },
+      { id: "large", name: "Large", price: 144 },
+    ],
+    addons: [],
+  },
+];
 
 describe("cart pricing", () => {
   it("keeps the customer price and exposes the real strike price for dishes", () => {
@@ -39,6 +89,7 @@ describe("cart pricing", () => {
         },
       ],
       "WAH50",
+      testProducts,
     );
 
     expect(totals.subtotal).toBe(548);
@@ -57,7 +108,7 @@ describe("cart pricing", () => {
         addonIds: [],
         quantity: 1,
       },
-      undefined,
+      testProducts,
       { "mini-thali": "20% OFF up to Rs 15" },
     );
 
@@ -102,7 +153,7 @@ describe("cart pricing", () => {
         addonIds: [],
         quantity: 1,
       },
-      undefined,
+      testProducts,
       { "exclusive-thali": "50% OFF" },
     );
 
@@ -120,7 +171,7 @@ describe("cart pricing", () => {
         },
       ],
       undefined,
-      undefined,
+      testProducts,
       undefined,
       { ...settings, deliveryFee: 40, freeDeliveryThreshold: 0 },
     );
@@ -140,7 +191,7 @@ describe("cart pricing", () => {
         },
       ],
       undefined,
-      undefined,
+      testProducts,
       undefined,
       { ...settings, deliveryFee: 40, freeDeliveryThreshold: 499 },
     );
@@ -161,7 +212,7 @@ describe("cart pricing", () => {
         },
       ],
       undefined,
-      undefined,
+      testProducts,
       undefined,
       { ...settings, deliveryFeeMode: "PERCENT", deliveryFeePercent: 10, freeDeliveryThreshold: 0 },
     );
@@ -181,7 +232,7 @@ describe("cart pricing", () => {
         },
       ],
       undefined,
-      undefined,
+      testProducts,
       undefined,
       {
         ...settings,
@@ -202,7 +253,7 @@ describe("cart pricing", () => {
     expect(totals.delivery).toBe(35);
   });
 
-  it("uses order count for order-count based coupons", () => {
+  it("uses point balance for point based coupons", () => {
     const coupon = {
       code: "FAMILY10",
       label: "10% off family orders",
@@ -214,8 +265,45 @@ describe("cart pricing", () => {
       minPoints: 3,
     };
 
-    expect(isCouponEligibleForCustomer(coupon, { orderCount: 2, points: 99 })).toBe(false);
-    expect(isCouponEligibleForCustomer(coupon, { orderCount: 3, points: 0 })).toBe(true);
+    expect(isCouponEligibleForCustomer(coupon, { orderCount: 20, points: 2 })).toBe(false);
+    expect(isCouponEligibleForCustomer(coupon, { orderCount: 0, points: 3 })).toBe(true);
+  });
+
+  it("caps Wah Points redemption by order and combined discount limits", () => {
+    expect(calculateLoyaltyRedemption({
+      foodValue: 299,
+      couponDiscount: 0,
+      availablePoints: 500,
+    })).toEqual({ points: 290, discount: 29, reason: "" });
+
+    expect(calculateLoyaltyRedemption({
+      foodValue: 399,
+      couponDiscount: 30,
+      availablePoints: 500,
+    })).toEqual({ points: 290, discount: 29, reason: "" });
+  });
+
+  it("awards base, first order, and reorder Wah Points", () => {
+    const earned = calculateWahPointsEarned({
+      eligibleFoodValue: 400,
+      isFirstOrder: true,
+      previousCompletedOrderAt: null,
+      orderedAt: new Date("2026-09-10T10:00:00.000Z"),
+    });
+
+    expect(earned).toEqual({
+      basePoints: 40,
+      firstOrderBonusPoints: 40,
+      reorderBonusPoints: 0,
+      totalPoints: 80,
+    });
+
+    expect(calculateWahPointsEarned({
+      eligibleFoodValue: 400,
+      isFirstOrder: false,
+      previousCompletedOrderAt: new Date("2026-09-01T10:00:00.000Z"),
+      orderedAt: new Date("2026-09-10T10:00:00.000Z"),
+    }).totalPoints).toBe(90);
   });
 
   it("uses customer tags for tag based coupons", () => {

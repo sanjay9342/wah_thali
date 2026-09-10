@@ -37,10 +37,10 @@ export function Header({ showContact = true, showLocation = false }: { showConta
       className="sticky top-0 z-50 w-full overflow-x-clip border-b border-[#f1e7e4] bg-white/97 shadow-[0_6px_20px_rgba(34,31,32,0.045)] backdrop-blur"
       style={{ viewTransitionName: "site-header" }}
     >
-      <div className="mx-auto hidden h-[74px] max-w-[1250px] items-center gap-5 px-6 lg:flex">
+      <div className="mx-auto hidden h-[74px] max-w-[1250px] items-center gap-3 px-6 lg:flex xl:gap-4">
         <Link
           href="/"
-          className="relative block h-[48px] w-[154px] shrink-0 overflow-hidden"
+            className="relative block h-[48px] w-[145px] shrink-0 overflow-hidden xl:w-[154px]"
           aria-label="Wah Thali home"
         >
           <Image src="/wah-thali-logo-cutout.png" alt="Wah Thali" fill loading="eager" sizes="154px" className="object-contain object-left" />
@@ -50,7 +50,7 @@ export function Header({ showContact = true, showLocation = false }: { showConta
           <DesktopLocationLink />
         ) : null}
 
-        <nav className="ml-auto flex items-center gap-3 text-[13px] font-semibold xl:gap-6">
+        <nav className="ml-auto flex min-w-0 items-center justify-end gap-1.5 text-[12px] font-semibold xl:gap-3 xl:text-[13px]">
           {[
             ["/", "Home"],
             ["/menu", "Search"],
@@ -65,7 +65,9 @@ export function Header({ showContact = true, showLocation = false }: { showConta
                 key={href}
                 href={href}
                 onMouseEnter={() => router.prefetch(href)}
-                className={`rounded-full px-2.5 py-2 transition-colors xl:px-3 ${active ? "bg-[#fff4f5] text-red" : "text-charcoal hover:bg-[#fff8f9] hover:text-red"}`}
+                className={`inline-flex min-h-10 items-center justify-center whitespace-nowrap rounded-full px-2 py-2 text-center leading-4 transition-colors xl:px-2.5 ${
+                  active ? "bg-[#fff4f5] text-red" : "text-charcoal hover:bg-[#fff8f9] hover:text-red"
+                }`}
                 aria-current={active ? "page" : undefined}
               >
                 {label}
@@ -96,14 +98,14 @@ export function Header({ showContact = true, showLocation = false }: { showConta
           <Link
             href={customerSession ? "/account" : `/login?next=${encodeURIComponent(pathname || "/account")}`}
             onMouseEnter={() => router.prefetch(customerSession ? "/account" : "/login?next=/account")}
-            className={`inline-flex h-10 items-center gap-2 rounded-[10px] px-5 text-[12px] font-semibold shadow-[0_8px_18px_rgba(141,0,33,0.16)] ${
+            className={`inline-flex h-10 max-w-[132px] shrink-0 items-center gap-2 rounded-[10px] px-3 text-[12px] font-semibold shadow-[0_8px_18px_rgba(141,0,33,0.16)] xl:max-w-[150px] xl:px-4 ${
               customerSession ? "bg-[#fff4f5] text-red ring-1 ring-[#f1dce1]" : "bg-red text-white"
             }`}
           >
             {customerSession ? (
               <>
                 <UserRound size={16} strokeWidth={2.5} />
-                {customerSession.name}
+                <span className="truncate">{customerSession.name}</span>
               </>
             ) : (
               "Sign In"
@@ -212,7 +214,7 @@ function DesktopLocationLink() {
   const deliveryLocation = useDeliveryLocation();
 
   return (
-    <Link href="/address" className="flex min-w-0 max-w-[300px] items-center gap-2 rounded-full border border-[#e7ebf2] bg-white px-3 py-2 text-[13px] font-semibold text-charcoal">
+    <Link href="/address" className="flex min-w-0 max-w-[210px] items-center gap-2 rounded-full border border-[#e7ebf2] bg-white px-3 py-2 text-[12px] font-semibold text-charcoal xl:max-w-[260px] xl:text-[13px]">
       <MapPin size={17} className="shrink-0 text-red" />
       <span className="truncate">{deliveryLocation.address}</span>
       <ChevronDown size={15} className="shrink-0 text-muted" />

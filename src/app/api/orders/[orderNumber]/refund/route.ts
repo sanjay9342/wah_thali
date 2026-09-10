@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { logActivity } from "@/lib/db";
+import { reverseLoyaltyForOrder } from "@/lib/loyalty";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { createRazorpayRefund } from "@/lib/razorpay";
 
@@ -96,6 +97,9 @@ async function postHandler(request: Request, { params }: { params: Promise<{ ord
       where: { id: razorpayPayment.id },
       data: { status: nextPaymentStatus },
     });
+    if (nextPaymentStatus === "REFUNDED") {
+      await reverseLoyaltyForOrder(tx, order.id, "Order refunded");
+    }
 
     return tx.order.update({
       where: { id: order.id },

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { CheckCircle2, Copy, Edit3, ExternalLink, EyeOff, Plus, Send, Sparkles, Tag, TicketPercent, Trash2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Edit3, ExternalLink, EyeOff, Plus, Send, Sparkles, Tag, TicketPercent, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { AdminFloatingMessage } from "@/components/admin-floating-message";
 import { useAdminAccess } from "@/components/admin-access-gate";
@@ -89,6 +89,8 @@ export function AdminCouponsClient({
   const [editing, setEditing] = useState<AdminCoupon | null>(null);
   const [tagDraft, setTagDraft] = useState("");
   const [message, setMessage] = useState("");
+  const [automationToggleToConfirm, setAutomationToggleToConfirm] = useState<AdminCoupon | null>(null);
+  const [togglingCouponCodes, setTogglingCouponCodes] = useState<Set<string>>(() => new Set());
   const [isPending, startTransition] = useTransition();
   const adminAccess = useAdminAccess();
 
@@ -96,11 +98,7 @@ export function AdminCouponsClient({
     const response = await fetch("/api/coupons", { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? "Could not reload coupons.");
-    setCoupons(data.coupons.map((coupon: AdminCoupon) => ({
-      ...coupon,
-      startsAt: coupon.startsAt ? getIstDateTimeInputValue(coupon.startsAt) : emptyCoupon.startsAt,
-      endsAt: coupon.endsAt ? getIstDateTimeInputValue(coupon.endsAt) : emptyCoupon.endsAt,
-    })));
+    setCoupons(data.coupons.map((coupon: AdminCoupon) => normalizeCouponDates(coupon)));
   }
 
   function run(task: () => Promise<void>) {
@@ -154,16 +152,46 @@ export function AdminCouponsClient({
   }
 
   function toggleCoupon(coupon: AdminCoupon) {
-    run(async () => {
+    if (coupon.active && automationCouponCodes.has(coupon.code)) {
+      setAutomationToggleToConfirm(coupon);
+      setMessage("");
+      return;
+    }
+
+    performToggleCoupon(coupon);
+  }
+
+  function performToggleCoupon(coupon: AdminCoupon) {
+    const nextActive = !coupon.active;
+    setMessage("");
+    setAutomationToggleToConfirm(null);
+    setTogglingCouponCodes((current) => new Set(current).add(coupon.code));
+    setCoupons((current) => current.map((item) => item.code === coupon.code ? { ...item, active: nextActive } : item));
+
+    void (async () => {
       const response = await adminFetch(adminAccess?.session, `/api/coupons/${coupon.code}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ active: !coupon.active }),
+        body: JSON.stringify({ active: nextActive }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Coupon status update failed.");
-      await refreshCoupons();
-      setMessage(`${coupon.code} is now ${coupon.active ? "off" : "active"}.`);
+      if (!response.ok) {
+        setCoupons((current) => current.map((item) => item.code === coupon.code ? { ...item, active: coupon.active } : item));
+        setMessage(data.error ?? "Coupon status update failed.");
+        return;
+      }
+
+      setCoupons((current) => current.map((item) => item.code === coupon.code ? normalizeCouponDates({ ...item, ...data.coupon, active: nextActive }) : item));
+      setMessage(`${coupon.code} is now ${nextActive ? "active" : "off"}.`);
+    })().catch((error: unknown) => {
+      setCoupons((current) => current.map((item) => item.code === coupon.code ? { ...item, active: coupon.active } : item));
+      setMessage(error instanceof Error ? error.message : "Coupon status update failed.");
+    }).finally(() => {
+      setTogglingCouponCodes((current) => {
+        const next = new Set(current);
+        next.delete(coupon.code);
+        return next;
+      });
     });
   }
 
@@ -304,6 +332,7 @@ export function AdminCouponsClient({
               <tbody>
                 {coupons.map((coupon) => {
                   const status = getCouponStatus(coupon);
+                  const isToggling = togglingCouponCodes.has(coupon.code);
                   return (
                     <tr key={coupon.code} className="border-t border-border">
                       <td className="p-4">
@@ -322,12 +351,12 @@ export function AdminCouponsClient({
                       <td className="p-4 text-xs font-bold text-muted">{formatCouponDate(coupon.startsAt)} to {formatCouponDate(coupon.endsAt)}</td>
                       <td className="p-4">
                         <button
-                          disabled={isPending}
+                          disabled={isToggling}
                           onClick={() => toggleCoupon(coupon)}
-                          className={`inline-flex h-10 min-w-28 items-center justify-center gap-2 rounded-lg px-3 text-xs font-black disabled:opacity-60 ${status.className}`}
+                          className={`inline-flex h-10 min-w-28 items-center justify-center gap-2 rounded-lg px-3 text-xs font-black transition disabled:opacity-70 ${status.className}`}
                         >
                           {coupon.active ? <CheckCircle2 size={15} /> : <EyeOff size={15} />}
-                          {status.label}
+                          {isToggling ? "Saving..." : status.label}
                         </button>
                       </td>
                       <td className="p-4">
@@ -346,6 +375,16 @@ export function AdminCouponsClient({
           </div>
         </section>
       </div>
+
+      {automationToggleToConfirm ? (
+        <ConfirmDialog
+          title="Turn off automation coupon?"
+          body={`${automationToggleToConfirm.code} is connected to WhatsApp automation. Turning it off will stop customers from seeing or using this coupon until you switch it on again.`}
+          confirmLabel="Turn off"
+          onCancel={() => setAutomationToggleToConfirm(null)}
+          onConfirm={() => performToggleCoupon(automationToggleToConfirm)}
+        />
+      ) : null}
 
       {editing ? (
         <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-charcoal/45 p-3 sm:p-4">
@@ -394,13 +433,13 @@ export function AdminCouponsClient({
                     <option value="NEW">New customers only</option>
                     <option value="EXISTING">Existing customers</option>
                     <option value="VIP">VIP customers only</option>
-                    <option value="POINTS">Order count based</option>
+                    <option value="POINTS">Wah Points based</option>
                     <option value="TAGS">Tag based</option>
                   </select>
                 </label>
                 {editing.audience === "POINTS" || editing.audience === "EXISTING" ? (
                   <Field
-                    label="Minimum successful orders"
+                    label={editing.audience === "POINTS" ? "Minimum Wah Points" : "Minimum successful orders"}
                     type="number"
                     value={String(Math.max(1, Number(editing.minCustomerOrders ?? editing.minPoints ?? 1)))}
                     onChange={(value) => setEditing({ ...editing, minCustomerOrders: Math.max(1, Number(value) || 1), minPoints: Math.max(1, Number(value) || 1) })}
@@ -541,6 +580,60 @@ function canSaveCoupon(coupon: AdminCoupon) {
   return true;
 }
 
+function normalizeCouponDates(coupon: AdminCoupon): AdminCoupon {
+  return {
+    ...coupon,
+    startsAt: coupon.startsAt ? getIstDateTimeInputValue(coupon.startsAt) : emptyCoupon.startsAt,
+    endsAt: coupon.endsAt ? getIstDateTimeInputValue(coupon.endsAt) : emptyCoupon.endsAt,
+  };
+}
+
+function ConfirmDialog({
+  title,
+  body,
+  confirmLabel,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[70] grid place-items-center bg-charcoal/45 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+        <div className="flex items-start gap-3">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#fff4f5] text-maroon">
+            <AlertTriangle size={21} />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-xl font-black text-maroon">{title}</h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-muted">{body}</p>
+          </div>
+        </div>
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-border bg-white px-4 text-sm font-black text-charcoal"
+          >
+            <X size={16} /> Keep live
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-maroon px-4 text-sm font-black text-white"
+          >
+            <EyeOff size={16} /> {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminCouponPreview({
   coupon,
   onCopy,
@@ -604,7 +697,7 @@ function EligibilityPill({ coupon }: { coupon: Pick<AdminCoupon, "audience" | "m
       : audience === "EXISTING"
         ? `${getMinimumOrderCount(coupon)}+ orders`
         : audience === "POINTS"
-          ? `${getMinimumOrderCount(coupon)}+ orders`
+          ? `${getMinimumOrderCount(coupon)}+ points`
           : audience === "TAGS"
             ? `${formatTagList(coupon.tagNames)} only`
             : "All customers";

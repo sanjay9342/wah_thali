@@ -3,7 +3,7 @@
 import { Check, Copy, Gift } from "lucide-react";
 import { useEffect, useState } from "react";
 import { readCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
-import { formatRupees } from "@/lib/pricing";
+import { formatRupees, isCouponEligibleForCustomer, type CouponCustomerContext } from "@/lib/pricing";
 import { formatIstDate } from "@/lib/time";
 import type { Coupon } from "@/lib/types";
 
@@ -85,12 +85,19 @@ const couponPalettes = [
 export function OffersClient({ coupons }: { coupons: Coupon[] }) {
   const [copiedCode, setCopiedCode] = useState("");
   const [session, setSession] = useState<CustomerSession | null>(null);
-  const [rewardOrderCount, setRewardOrderCount] = useState(0);
-  const [customerTags, setCustomerTags] = useState<string[]>([]);
+  const [customerContext, setCustomerContext] = useState<CouponCustomerContext>({ isVip: false, orderCount: 0, points: 0, tags: [] });
+  const [customerCouponUsage, setCustomerCouponUsage] = useState<Record<string, number>>({});
+  const customerCoupons = coupons.map((coupon) => ({ ...coupon, customerRedeemedCount: customerCouponUsage[coupon.code] ?? 0 }));
+  const visibleCoupons = customerCoupons.filter((coupon) => isCouponEligibleForCustomer(coupon, customerContext));
 
   useEffect(() => {
     function refreshSession() {
-      setSession(readCustomerSession());
+      const nextSession = readCustomerSession();
+      setSession(nextSession);
+      if (!nextSession?.mobile) {
+        setCustomerContext({ isVip: false, orderCount: 0, points: 0, tags: [] });
+        setCustomerCouponUsage({});
+      }
     }
 
     refreshSession();
@@ -106,8 +113,13 @@ export function OffersClient({ coupons }: { coupons: Coupon[] }) {
       const response = await fetch(`/api/customers/profile?mobile=${encodeURIComponent(mobile)}`, { cache: "no-store" });
       const data = await response.json();
       if (!cancelled && response.ok) {
-        setRewardOrderCount(Number(data.customer?.rewardOrderCount ?? data.customer?.loyalty?.points ?? 0));
-        setCustomerTags(getCustomerTagNames(data.customer?.tags));
+        setCustomerContext({
+          isVip: Boolean(data.customer?.isVip),
+          orderCount: Number(data.customer?.rewardOrderCount ?? 0),
+          points: Number(data.customer?.loyaltySummary?.availablePoints ?? data.customer?.loyalty?.points ?? 0),
+          tags: getCustomerTagNames(data.customer?.tags),
+        });
+        setCustomerCouponUsage(getCustomerCouponUsage(data.customer?.orders));
       }
     }
 
@@ -141,15 +153,12 @@ export function OffersClient({ coupons }: { coupons: Coupon[] }) {
       </div>
 
       <section className="mt-4 grid gap-3 lg:mt-6 lg:grid-cols-2 lg:gap-5 xl:grid-cols-3">
-        {coupons.length ? coupons.map((coupon) => (
+        {visibleCoupons.length ? visibleCoupons.map((coupon) => (
           <CouponTicket
             key={coupon.code}
             coupon={coupon}
             palette={getCouponPalette(coupon.code)}
             copied={copiedCode === coupon.code}
-            eligible={isOfferEligible(coupon, session?.mobile ? rewardOrderCount : 0, session?.mobile ? customerTags : [])}
-            rewardOrderCount={session?.mobile ? rewardOrderCount : 0}
-            customerTags={session?.mobile ? customerTags : []}
             onCopy={() => copyCode(coupon.code)}
           />
         )) : (
@@ -171,17 +180,11 @@ function CouponTicket({
   coupon,
   palette,
   copied,
-  eligible,
-  rewardOrderCount,
-  customerTags,
   onCopy,
 }: {
   coupon: Coupon;
   palette: (typeof couponPalettes)[number];
   copied: boolean;
-  eligible: boolean;
-  rewardOrderCount: number;
-  customerTags: string[];
   onCopy: () => void;
 }) {
   return (
@@ -232,12 +235,6 @@ function CouponTicket({
         <span className="mt-2 inline-flex rounded-[7px] px-2.5 py-1.5 text-[10px] font-black" style={{ backgroundColor: palette.pill, color: palette.ink }}>
           {getCouponAudienceLabel(coupon)}
         </span>
-        {!eligible ? (
-          <p className="mt-2 text-[11px] font-black leading-4 text-maroon">
-            {getLockedOfferMessage(coupon, rewardOrderCount, customerTags)}
-          </p>
-        ) : null}
-
         <div className="mt-3 grid gap-1 border-t border-[#eef1f6] pt-3 text-[10px] font-bold leading-4 text-muted sm:grid-cols-2">
           <span>{coupon.minOrder > 0 ? `Min. Order: ${formatRupees(coupon.minOrder)}` : "No minimum order"}</span>
           <span>{coupon.endsAt ? `Expires: ${formatCouponDate(coupon.endsAt)}` : "Limited time"}</span>
@@ -250,25 +247,9 @@ function CouponTicket({
 
 function getCouponAudienceLabel(coupon: Coupon) {
   if (coupon.audience === "VIP") return "VIP customers only";
-  if (coupon.audience === "POINTS") return `${getCouponOrderCountRequirement(coupon)}+ placed orders`;
+  if (coupon.audience === "POINTS") return `${getCouponOrderCountRequirement(coupon)}+ Wah Points`;
   if (coupon.audience === "TAGS") return `${formatCouponTags(coupon.tagNames)} customers only`;
   return "All customers";
-}
-
-function isOfferEligible(coupon: Coupon, rewardOrderCount: number, customerTags: string[]) {
-  if (coupon.audience === "POINTS") return rewardOrderCount >= getCouponOrderCountRequirement(coupon);
-  if (coupon.audience === "TAGS") return hasMatchingCouponTag(coupon.tagNames, customerTags);
-  return true;
-}
-
-function getLockedOfferMessage(coupon: Coupon, rewardOrderCount: number, customerTags: string[]) {
-  if (coupon.audience === "POINTS") {
-    return `Place ${Math.max(getCouponOrderCountRequirement(coupon) - rewardOrderCount, 0)} more orders to unlock.`;
-  }
-  if (coupon.audience === "TAGS" && !hasMatchingCouponTag(coupon.tagNames, customerTags)) {
-    return `Available only for ${formatCouponTags(coupon.tagNames)} customers.`;
-  }
-  return "Sign in or check your account eligibility.";
 }
 
 function getCouponOrderCountRequirement(coupon: Pick<Coupon, "minPoints">) {
@@ -277,12 +258,6 @@ function getCouponOrderCountRequirement(coupon: Pick<Coupon, "minPoints">) {
 
 function formatCouponTags(tags: string[] | undefined) {
   return tags?.length ? tags.join(", ") : "selected";
-}
-
-function hasMatchingCouponTag(couponTags: string[] | undefined, customerTags: string[]) {
-  const required = new Set((couponTags ?? []).map((tag) => tag.trim()).filter(Boolean));
-  if (!required.size) return false;
-  return customerTags.some((tag) => required.has(tag));
 }
 
 function getCustomerTagNames(tags: unknown): string[] {
@@ -297,6 +272,17 @@ function getCustomerTagNames(tags: unknown): string[] {
       return "";
     })
     .filter(Boolean);
+}
+
+function getCustomerCouponUsage(orders: unknown): Record<string, number> {
+  if (!Array.isArray(orders)) return {};
+  return orders.reduce<Record<string, number>>((usage, order) => {
+    const couponCode = order && typeof order === "object" && "couponCode" in order
+      ? String((order as { couponCode?: unknown }).couponCode ?? "").trim().toUpperCase()
+      : "";
+    if (couponCode) usage[couponCode] = (usage[couponCode] ?? 0) + 1;
+    return usage;
+  }, {});
 }
 
 function getCouponPalette(code: string) {

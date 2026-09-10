@@ -5,8 +5,9 @@ import { Prisma, type PaymentStatus } from "@prisma/client";
 import { coupons as fallbackCoupons, products as fallbackProducts, settings as fallbackSettings } from "@/lib/data";
 import { prisma, isDatabaseConfigured } from "@/lib/prisma";
 import { defaultNewOrderSound, getNewOrderSound } from "@/lib/order-sounds";
+import { getCustomerLoyaltySummary } from "@/lib/loyalty";
 import { normalizeDeliveryDistanceSlabs, normalizeGstRate } from "@/lib/pricing";
-import { getRewardTier, rewardCoupons } from "@/lib/rewards";
+import { deprecatedRewardCouponCodes, getRewardTier, rewardCoupons } from "@/lib/rewards";
 import { getIstDayRangeUtc } from "@/lib/time";
 import type { AdvancedSettings, AdminCustomer, AdminOrder, AdminProduct, BusinessSettings, CategoryImageMap, CategoryOfferMap, CategoryOption, Coupon, HomeSlide, Product, RestaurantSettings, StoreMode } from "@/lib/types";
 
@@ -345,7 +346,8 @@ export async function getCouponsFromDb(): Promise<Coupon[]> {
 
   try {
     const now = new Date();
-    const [coupons, rules, redemptionCounts] = await Promise.all([
+    const rewardCouponCodes = rewardCoupons.map((coupon) => coupon.code);
+    const [coupons, rewardCouponStates, rules, redemptionCounts] = await Promise.all([
       prisma.coupon.findMany({
       where: {
         active: true,
@@ -354,6 +356,10 @@ export async function getCouponsFromDb(): Promise<Coupon[]> {
       },
       orderBy: { code: "asc" },
     }),
+      prisma.coupon.findMany({
+        where: { code: { in: rewardCouponCodes } },
+        select: { code: true, active: true },
+      }),
       getCouponRulesFromDb(),
       prisma.couponRedemption.groupBy({
         by: ["couponCode"],
@@ -361,13 +367,14 @@ export async function getCouponsFromDb(): Promise<Coupon[]> {
       }).catch(() => []),
     ]);
     const redeemedCountByCode = new Map(redemptionCounts.map((row) => [row.couponCode, row._count._all]));
+    const disabledRewardCodes = new Set(rewardCouponStates.filter((coupon) => !coupon.active).map((coupon) => coupon.code));
 
-    return withRewardCoupons(applyCouponRules(coupons, rules)
+    return withRewardCoupons(applyCouponRules(coupons, rules), disabledRewardCodes)
       .map((coupon) => ({ ...coupon, redeemedCount: redeemedCountByCode.get(coupon.code) ?? 0 }))
-      .filter((coupon) => !coupon.redemptionLimit || (coupon.redeemedCount ?? 0) < coupon.redemptionLimit));
+      .filter((coupon) => !coupon.redemptionLimit || (coupon.redeemedCount ?? 0) < coupon.redemptionLimit);
   } catch (error) {
-    console.error("Database coupon read failed. Falling back to local coupons.", error);
-    return fallbackCoupons;
+    console.error("Database coupon read failed. Hiding public coupons until the database is available.", error);
+    return [];
   }
 }
 
@@ -384,16 +391,20 @@ export async function getAdminCouponsFromDb(): Promise<Array<Coupon & { active: 
   ]);
   const redemptionCountByCode = new Map(redemptionCounts.map((row) => [row.couponCode, row._count._all]));
 
-  return withRewardCoupons(applyCouponRules(coupons, rules)).map((coupon) => ({
+  const disabledRewardCodes = new Set(coupons.filter((coupon) => !coupon.active).map((coupon) => coupon.code));
+
+  return withRewardCoupons(applyCouponRules(coupons, rules), disabledRewardCodes).map((coupon) => ({
     ...coupon,
     redeemedCount: redemptionCountByCode.get(coupon.code) ?? 0,
     active: coupons.find((item) => item.code === coupon.code)?.active ?? true,
   }));
 }
 
-function withRewardCoupons(coupons: Coupon[]) {
-  const couponByCode = new Map(coupons.map((coupon) => [coupon.code, coupon]));
+function withRewardCoupons(coupons: Coupon[], disabledRewardCodes = new Set<string>()) {
+  const deprecated = new Set<string>(deprecatedRewardCouponCodes);
+  const couponByCode = new Map(coupons.filter((coupon) => !deprecated.has(coupon.code)).map((coupon) => [coupon.code, coupon]));
   for (const rewardCoupon of rewardCoupons) {
+    if (disabledRewardCodes.has(rewardCoupon.code) || couponByCode.has(rewardCoupon.code)) continue;
     couponByCode.set(rewardCoupon.code, {
       ...rewardCoupon,
       startsAt: rewardCoupon.startsAt ?? "2026-01-01T00:00:00.000Z",
@@ -787,6 +798,9 @@ function toAdminOrder(order: Prisma.OrderGetPayload<{
     status: order.status as AdminOrder["status"],
     subtotal: order.subtotal,
     discount: order.discount,
+    loyaltyDiscount: order.loyaltyDiscount,
+    loyaltyPointsEarned: order.loyaltyPointsEarned,
+    loyaltyPointsRedeemed: order.loyaltyPointsRedeemed,
     gst: order.gst,
     amount: order.grandTotal,
     items: order.items.map((item) => ({ productId: item.productId, name: item.name, quantity: item.quantity, price: item.price })),
@@ -843,6 +857,7 @@ export async function getAdminCustomersFromDb(): Promise<AdminCustomer[]> {
       anniversary: true,
       updatedAt: true,
       tags: { include: { tag: { select: { name: true } } } },
+      loyalty: true,
       orders: {
         orderBy: { createdAt: "desc" },
         select: {
@@ -859,10 +874,11 @@ export async function getAdminCustomersFromDb(): Promise<AdminCustomer[]> {
     take: 100,
   });
 
-  return customers.map((customer) => {
+  return Promise.all(customers.map(async (customer) => {
     const ltv = customer.orders.reduce((total, order) => total + order.grandTotal, 0);
     const rewardOrderCount = customer.orders.length;
     const tagNames = customer.tags.map((assignment) => assignment.tag.name);
+    const loyaltySummary = await getCustomerLoyaltySummary(customer.id, customer.loyalty?.points ?? rewardOrderCount);
 
     return {
     id: customer.id,
@@ -874,8 +890,10 @@ export async function getAdminCustomersFromDb(): Promise<AdminCustomer[]> {
     tags: tagNames,
     orders: customer.orders.length,
     ltv,
-    points: rewardOrderCount,
-    tier: getRewardTier(rewardOrderCount),
+    points: loyaltySummary.availablePoints,
+    tier: getRewardTier(loyaltySummary.availablePoints),
+    expiringPoints: loyaltySummary.expiringPoints,
+    expiringAt: loyaltySummary.expiringAt,
     isVip: tagNames.includes("VIP"),
     lastOrder: customer.orders[0]?.createdAt.toISOString(),
     orderHistory: customer.orders.slice(0, 20).map((order) => ({
@@ -887,7 +905,7 @@ export async function getAdminCustomersFromDb(): Promise<AdminCustomer[]> {
       paymentSummary: getAdminPaymentSummary(order.payments[0]),
     })),
     };
-  });
+  }));
 }
 
 export async function getCustomerTagsFromDb(): Promise<string[]> {
@@ -920,13 +938,14 @@ export async function getAdminDashboardMetrics(preloadedProducts?: AdminProduct[
 
   const today = getIstDayRangeUtc();
 
-  const [ordersToday, totalOrders, openOrders, repeatCustomers, products, coupons] = await Promise.all([
+  const [ordersToday, totalOrders, openOrders, repeatCustomers, products, coupons, activePoints] = await Promise.all([
     prisma.order.findMany({ where: { createdAt: { gte: today.start, lt: today.end } } }),
     prisma.order.count(),
     prisma.order.count({ where: { status: { in: ["NEW", "CONFIRMED", "PREPARING", "PACKED", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] } } }),
     prisma.customer.count({ where: { orders: { some: {} } } }),
     preloadedProducts ? Promise.resolve(preloadedProducts) : getAdminProductsFromDb(),
     getCouponsFromDb(),
+    prisma.loyaltyAccount.aggregate({ _sum: { points: true } }).then((result) => result._sum.points ?? 0).catch(() => 0),
   ]);
 
   const salesToday = ordersToday.reduce((total, order) => total + order.grandTotal, 0);
@@ -942,6 +961,8 @@ export async function getAdminDashboardMetrics(preloadedProducts?: AdminProduct[
     totalProducts: products.length,
     activeCoupons: coupons.length,
     unavailableItems: products.filter((product) => !product.available).length,
+    activePoints,
+    activePointLiability: Math.floor(activePoints / 10),
     lowStock,
     actionQueue: [
       ...(openOrders ? [`${openOrders} orders need kitchen action`] : []),

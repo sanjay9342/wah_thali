@@ -58,6 +58,13 @@ type CustomerProfile = {
   email?: string | null;
   addresses: CustomerAddress[];
   loyalty?: { points: number; tier: string } | null;
+  loyaltySummary?: {
+    availablePoints: number;
+    expiringPoints: number;
+    expiringAt?: string;
+    nextRewardPoints: number;
+    nextRewardDiscount: number;
+  };
   orders: CustomerOrder[];
   rewardOrderCount?: number;
   rewardTier?: string;
@@ -148,9 +155,9 @@ export function AccountClient() {
   const addresses = useMemo(() => profile?.addresses ?? [], [profile?.addresses]);
   const orders = useMemo(() => profile?.orders ?? [], [profile?.orders]);
   const ltv = useMemo(() => orders.reduce((total, order) => total + order.grandTotal, 0), [orders]);
-  const rewardOrderCount = profile?.rewardOrderCount ?? profile?.loyalty?.points ?? orders.length;
-  const rewardState = getRewardState(rewardOrderCount);
-  const tier = profile?.rewardTier || rewardState.tier;
+  const pointBalance = profile?.loyaltySummary?.availablePoints ?? profile?.loyalty?.points ?? 0;
+  const rewardState = getRewardState(pointBalance);
+  const tier = profile?.loyalty?.tier || rewardState.tier;
   const unlockedRewardTotal = rewardState.completed.reduce((total, milestone) => total + milestone.value, 0);
   const mutedCount = [notificationPreferences.appMuted, notificationPreferences.whatsappMuted].filter(Boolean).length;
 
@@ -336,8 +343,8 @@ export function AccountClient() {
         <div className="grid grid-cols-3 bg-white text-center">
           <div className="min-w-0 border-r border-[#eef1f6] px-1.5 py-4 sm:px-2">
             <PackageCheck size={18} className="mx-auto text-maroon" />
-            <p className="mt-1 truncate text-[14px] font-bold text-maroon sm:text-base">{loading ? "..." : String(rewardOrderCount)}</p>
-            <p className="text-[10px] font-medium text-muted">Orders</p>
+            <p className="mt-1 truncate text-[14px] font-bold text-maroon sm:text-base">{loading ? "..." : String(pointBalance)}</p>
+            <p className="text-[10px] font-medium text-muted">Points</p>
           </div>
           <div className="min-w-0 border-r border-[#eef1f6] px-1.5 py-4 sm:px-2">
             <TicketPercent size={18} className="mx-auto text-maroon" />
@@ -355,7 +362,7 @@ export function AccountClient() {
       <section className="mt-5 grid gap-3 sm:grid-cols-3 lg:gap-5">
         {[
           ["/offers", Gift, "Coupons", "Active offers"],
-          ["/loyalty", Star, "Rewards", `${rewardOrderCount} orders`],
+          ["/loyalty", Star, "Rewards", `${pointBalance} points`],
           ["/support", HelpCircle, "Support", "Help center"],
         ].map(([href, Icon, title, subtitle]) => (
           <Link key={String(title)} href={String(href)} className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-border sm:p-4">
@@ -494,20 +501,20 @@ export function AccountClient() {
               <h2 className="mt-3 text-[18px] font-bold leading-tight text-white">Next reward</h2>
               <p className="mt-1 max-w-[260px] text-[12px] font-medium leading-5 text-white/86">
                 {rewardState.next
-                  ? `${rewardState.ordersToNext} more orders unlock ${formatRupees(rewardState.next.value)} coupon.`
+                  ? `${rewardState.pointsToNext} more points unlock ${formatRupees(rewardState.next.value)} coupon.`
                   : "All reward coupons are unlocked."}
               </p>
             </div>
             <span className="shrink-0 rounded-[18px] bg-white px-3.5 py-2 text-right text-[10px] font-bold text-maroon shadow-[0_12px_24px_rgba(34,31,32,0.16)]">
-              <span className="block text-[18px] leading-none">{rewardOrderCount}</span>
-              orders
+              <span className="block text-[18px] leading-none">{pointBalance}</span>
+              points
             </span>
           </div>
 
           <div className="mt-5">
             <div className="flex items-center justify-between gap-3 text-[10px] font-semibold text-white/88">
               <span>{rewardState.next ? `${Math.round(rewardState.progress)}% toward ${formatRupees(rewardState.next.value)}` : "Reward journey complete"}</span>
-              <span>{rewardState.next ? `${rewardState.next.orders} order goal` : `${rewardOrderCount} orders`}</span>
+              <span>{rewardState.next ? `${rewardState.next.points} point goal` : `${pointBalance} points`}</span>
             </div>
             <div className="mt-2 h-3 overflow-hidden rounded-full bg-white/20 ring-1 ring-white/20">
               <div className="wt-reward-progress h-full rounded-full bg-white" style={{ width: `${rewardState.progress}%` }} />
@@ -518,8 +525,8 @@ export function AccountClient() {
         <div className="p-4 sm:p-5">
           <div className="grid grid-cols-3 gap-2">
             {rewardMilestones.map((milestone) => {
-              const unlocked = rewardOrderCount >= milestone.orders;
-              const remainingOrders = Math.max(milestone.orders - rewardOrderCount, 0);
+              const unlocked = pointBalance >= milestone.points;
+              const remainingPoints = Math.max(milestone.points - pointBalance, 0);
               return (
                 <Link
                   key={milestone.code}
@@ -534,8 +541,8 @@ export function AccountClient() {
                     {unlocked ? <CheckCircle2 size={16} /> : <LockKeyhole size={15} />}
                   </span>
                   <span className="mt-2 block truncate text-[13px] font-bold">{formatRupees(milestone.value)}</span>
-                  <span className="mt-0.5 block text-[10px] font-semibold leading-4">{unlocked ? "Unlocked" : `${remainingOrders} left`}</span>
-                  <span className="block text-[10px] font-medium leading-4 text-muted">{milestone.orders} orders</span>
+                  <span className="mt-0.5 block text-[10px] font-semibold leading-4">{unlocked ? "Unlocked" : `${remainingPoints} left`}</span>
+                  <span className="block text-[10px] font-medium leading-4 text-muted">{milestone.points} points</span>
                 </Link>
               );
             })}
@@ -543,7 +550,7 @@ export function AccountClient() {
 
           <div className="mt-4 flex flex-col gap-3 rounded-[18px] bg-[#f7f8fb] p-3 ring-1 ring-[#e7ebf2] sm:flex-row sm:items-center sm:justify-between">
             <p className="text-[11px] font-medium leading-5 text-muted">
-              {unlockedRewardTotal ? `${formatRupees(unlockedRewardTotal)} reward value unlocked in Coupons.` : "Place orders to start unlocking reward coupons."}
+              {unlockedRewardTotal ? `${formatRupees(unlockedRewardTotal)} reward value unlocked in Coupons.` : "Earn points to start unlocking reward coupons."}
             </p>
             <Link
               href={unlockedRewardTotal ? "/offers" : "/menu"}

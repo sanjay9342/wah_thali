@@ -230,13 +230,15 @@ async function main() {
     { code: "PARTY", label: "Flat 50% off", type: "PERCENT", value: 50, minOrder: 249, maxDiscount: 120 },
     { code: "FREEDEL", label: "Free delivery offer", type: "FIXED", value: 40, minOrder: 199, maxDiscount: null },
     { code: "YUMMY", label: "30% off selected orders", type: "PERCENT", value: 30, minOrder: 199, maxDiscount: 80 },
-    { code: "REWARD10", label: "10 order reward", type: "FIXED", value: 10, minOrder: 0, maxDiscount: null, audience: "POINTS", minPoints: 10 },
-    { code: "REWARD20", label: "20 order reward", type: "FIXED", value: 20, minOrder: 0, maxDiscount: null, audience: "POINTS", minPoints: 20 },
-    { code: "REWARD30", label: "30 order reward", type: "FIXED", value: 30, minOrder: 0, maxDiscount: null, audience: "POINTS", minPoints: 30 },
+    { code: "WAHPOINTS100", label: "100 Wah Points reward", type: "FIXED", value: 10, minOrder: 299, maxDiscount: null, audience: "POINTS", minPoints: 100 },
+    { code: "WAHPOINTS250", label: "250 Wah Points reward", type: "FIXED", value: 25, minOrder: 299, maxDiscount: null, audience: "POINTS", minPoints: 250 },
+    { code: "WAHPOINTS500", label: "500 Wah Points reward", type: "FIXED", value: 50, minOrder: 299, maxDiscount: null, audience: "POINTS", minPoints: 500 },
     { code: "WAH50", label: "Flat Rs 50 off", type: "FIXED", value: 50, minOrder: 299, maxDiscount: null },
     { code: "WAH100", label: "Flat Rs 100 win-back offer", type: "FIXED", value: 100, minOrder: 499, maxDiscount: null },
     { code: "FAMILY10", label: "10% off family orders", type: "PERCENT", value: 10, minOrder: 699, maxDiscount: 120 },
   ];
+
+  await prisma.coupon.deleteMany({ where: { code: { in: ["REWARD10", "REWARD20", "REWARD30"] } } });
 
   for (const coupon of seededCoupons) {
     await prisma.coupon.upsert({

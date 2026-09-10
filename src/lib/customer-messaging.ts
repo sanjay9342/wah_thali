@@ -525,12 +525,16 @@ export async function notifyOwnerOrderAlert(order: OrderForMessage, ownerMobile:
 function customerMatchesCoupon(customer: {
   tags: Array<{ tag?: { name?: string } }>;
   orders: Array<{ items: Array<{ quantity: number }> }>;
+  loyalty?: { points: number } | null;
 }, coupon: Coupon) {
   const audience = coupon.audience ?? "ALL";
   const orderCount = customer.orders.length;
+  const pointBalance = customer.loyalty?.points ?? 0;
   const tagNames = customer.tags.map((assignment) => assignment.tag?.name).filter((name): name is string => Boolean(name));
   if (audience === "VIP") return customer.tags.some((assignment) => assignment.tag?.name === "VIP");
-  if (audience === "POINTS") return orderCount >= getCouponOrderCountRequirement(coupon);
+  if (audience === "NEW") return orderCount === 0;
+  if (audience === "EXISTING") return orderCount >= Math.max(1, Number(coupon.minCustomerOrders ?? 1));
+  if (audience === "POINTS") return pointBalance >= getCouponOrderCountRequirement(coupon);
   if (audience === "TAGS") return hasMatchingCouponTag(coupon.tagNames, tagNames);
   return true;
 }
@@ -551,6 +555,7 @@ export async function notifyCouponAudience(coupon: Coupon) {
       id: true,
       name: true,
       mobile: true,
+      loyalty: { select: { points: true } },
       tags: { include: { tag: { select: { name: true } } } },
       orders: {
         include: { items: { select: { quantity: true } } },

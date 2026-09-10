@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
 import { notifyOrderStatus, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
+import { recordLoyaltyForPaidOrder } from "@/lib/loyalty";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import type { OrderStatus } from "@/lib/types";
 
@@ -78,8 +79,8 @@ async function postHandler(request: NextRequest) {
         },
       });
 
-      if (order.status === "PENDING_PAYMENT") {
-        const nextStatus = settings.autoAcceptOrders ? "CONFIRMED" : "NEW";
+        if (order.status === "PENDING_PAYMENT") {
+          const nextStatus = settings.autoAcceptOrders ? "CONFIRMED" : "NEW";
         await tx.order.update({
           where: { id: order.id },
           data: {
@@ -93,17 +94,24 @@ async function postHandler(request: NextRequest) {
             },
           },
         });
-        if (order.couponCode && order.discount > 0) {
-          await redeemCouponForSuccessfulOrder(tx, {
-            couponCode: order.couponCode,
+          if (order.couponCode && order.discount > 0) {
+            await redeemCouponForSuccessfulOrder(tx, {
+              couponCode: order.couponCode,
+              orderId: order.id,
+              customerId: order.customerId,
+              discount: Math.max(order.discount - order.loyaltyDiscount, 0),
+              orderTotal: order.grandTotal,
+              fulfillmentMethod: order.fulfillmentMethod === "PICKUP" ? "PICKUP" : "DELIVERY",
+            });
+          }
+          await recordLoyaltyForPaidOrder(tx, {
             orderId: order.id,
+            orderNumber: order.orderNumber,
             customerId: order.customerId,
-            discount: order.discount,
-            orderTotal: order.grandTotal,
-            fulfillmentMethod: order.fulfillmentMethod === "PICKUP" ? "PICKUP" : "DELIVERY",
+            eligibleFoodValue: Math.max(order.subtotal - order.discount, 0),
+            redeemedPoints: order.loyaltyPointsRedeemed,
           });
-        }
-        notifiedStatus = nextStatus;
+          notifiedStatus = nextStatus;
         notificationNote = `Razorpay payment verified: ${razorpay_payment_id}`;
       }
     });
