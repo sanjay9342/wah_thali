@@ -246,6 +246,7 @@ export function AdminReportsClient({ snapshot }: { snapshot: AdminReportsSnapsho
           {[
             ["Delivery orders", snapshot.crm.deliveryOrders, "Revenue orders delivered"],
             ["Pickup orders", snapshot.crm.pickupOrders, "Takeaway/self pickup"],
+            ["Offline sales", snapshot.crm.offlineSales, "Manual counter entries"],
             ["COD orders", snapshot.crm.codOrders, "Cash collection follow-up"],
             ["Online paid", snapshot.crm.onlinePaidOrders, "Paid or authorized online"],
             ["Website orders", snapshot.crm.websiteOrders, "Orders from website"],
@@ -882,6 +883,7 @@ function buildCsvRows(snapshot: AdminReportsSnapshot) {
     ["Delivery orders", String(snapshot.crm.deliveryOrders)],
     ["Pickup orders", String(snapshot.crm.pickupOrders)],
     ["Website orders", String(snapshot.crm.websiteOrders)],
+    ["Offline sales", String(snapshot.crm.offlineSales)],
     ["COD orders", String(snapshot.crm.codOrders)],
     ["Online paid orders", String(snapshot.crm.onlinePaidOrders)],
     ["Cancel rate", `${snapshot.crm.cancelledRate}%`],

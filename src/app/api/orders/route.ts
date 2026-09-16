@@ -15,7 +15,7 @@ import { applyCoupon, getDeliveryFee, getOfferDiscount, isCouponEligibleForCusto
 import { getModifierOptionLabel, getModifierSelectionIssue, getProductModifierGroups } from "@/lib/product-modifiers";
 import { getRedeemableLoyaltyForOrder, recordLoyaltyForPaidOrder } from "@/lib/loyalty";
 
-const paidOnlineStatuses: PaymentStatus[] = ["PAID", "AUTHORIZED"];
+const paidPlacedStatuses: PaymentStatus[] = ["PAID", "AUTHORIZED", "COD_COLLECTED"];
 
 const orderItemSchema = z.object({
   productId: z.string().min(1),
@@ -511,7 +511,7 @@ function visiblePlacedOrderWhere(): Prisma.OrderWhereInput {
   return {
     OR: [
       { payments: { some: { provider: "COD" } } },
-      { payments: { some: { provider: "RAZORPAY", status: { in: paidOnlineStatuses } } } },
+      { payments: { some: { status: { in: paidPlacedStatuses } } } },
     ],
   };
 }

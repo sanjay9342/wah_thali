@@ -31,7 +31,7 @@ import {
   X,
 } from "lucide-react";
 import { calculateCartTotals, formatRupees, getPricableCartLines, getProductUnitPricing, isCouponEligibleForCustomer, isCouponEligibleForFulfillment } from "@/lib/pricing";
-import { calculateLoyaltyRedemption, getRewardState, wahPointsRule } from "@/lib/rewards";
+import { calculateLoyaltyRedemption, getRewardState, wahPointsRule, type WahPointsRule } from "@/lib/rewards";
 import { getModifierOptionLabel } from "@/lib/product-modifiers";
 import { writeStoredCart } from "@/lib/cart-storage";
 import { readCustomerSession, saveCustomerSession, subscribeCustomerSession, type CustomerSession } from "@/lib/customer-session";
@@ -98,6 +98,7 @@ export function CartClient({
   restaurantSettings,
   initialCategoryOffers = {},
   cartSuggestionCategories = [],
+  loyaltyRule = wahPointsRule,
 }: {
   addProductId?: string;
   initialProducts: Product[];
@@ -105,6 +106,7 @@ export function CartClient({
   restaurantSettings: RestaurantSettings;
   initialCategoryOffers?: CategoryOfferMap;
   cartSuggestionCategories?: string[];
+  loyaltyRule?: WahPointsRule;
 }) {
   const router = useRouter();
   const [coupon, setCoupon] = useState<string | undefined>();
@@ -187,14 +189,14 @@ export function CartClient({
       couponDiscount: couponTotals.discount,
       availablePoints: couponCustomer.points,
       requestedPoints: redeemWahPoints ? couponCustomer.points : 0,
-    }),
-    [couponCustomer.points, couponTotals.discount, couponTotals.subtotal, redeemWahPoints],
+    }, loyaltyRule),
+    [couponCustomer.points, couponTotals.discount, couponTotals.subtotal, loyaltyRule, redeemWahPoints],
   );
   const totals = useMemo(
     () => calculateCartTotals(validLines, couponEligible ? coupon : undefined, initialProducts, customerCoupons, billingSettings, couponCustomer, initialCategoryOffers, fulfillmentDistanceKm, fulfillmentMethod, selectedCouponChannel, loyaltyRedemption.discount),
     [couponCustomer, couponEligible, fulfillmentDistanceKm, fulfillmentMethod, initialCategoryOffers, customerCoupons, initialProducts, validLines, coupon, billingSettings, selectedCouponChannel, loyaltyRedemption.discount],
   );
-  const rewardState = getRewardState(couponCustomer.points);
+  const rewardState = getRewardState(couponCustomer.points, loyaltyRule);
   const suggestions = useMemo(() => {
     const cartProductIds = new Set(validLines.map((line) => line.productId));
     const selectedCategories = new Set(cartSuggestionCategories);
@@ -1004,9 +1006,10 @@ export function CartClient({
               pointsToNext={rewardState.pointsToNext}
               redeemablePoints={loyaltyRedemption.points}
               redeemableDiscount={loyaltyRedemption.discount}
+              loyaltyRule={loyaltyRule}
               enabled={redeemWahPoints}
               onToggle={() => setRedeemWahPoints((current) => !current)}
-              disabled={couponCustomer.points < 10 || couponTotals.subtotal < wahPointsRule.minimumRedemptionOrderValue}
+              disabled={couponCustomer.points < 10 || couponTotals.subtotal < loyaltyRule.minimumRedemptionOrderValue}
             />
             {checkoutMessage ? (
               <p className="mt-4 rounded-xl bg-white px-3 py-2 text-center text-xs font-black leading-5 text-muted" aria-live="polite">
@@ -1196,7 +1199,7 @@ export function CartClient({
           ) : null}
           <button
             onClick={() => setRedeemWahPoints((current) => !current)}
-            disabled={couponCustomer.points < 10 || couponTotals.subtotal < wahPointsRule.minimumRedemptionOrderValue}
+            disabled={couponCustomer.points < 10 || couponTotals.subtotal < loyaltyRule.minimumRedemptionOrderValue}
             className="grid w-full grid-cols-[30px_1fr_auto] items-center gap-2.5 px-3.5 py-3.5 text-left disabled:opacity-55"
           >
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#fff7dc] text-[#9a5b00]">
@@ -2082,6 +2085,7 @@ function LoyaltyRedeemBox({
   pointsToNext,
   redeemablePoints,
   redeemableDiscount,
+  loyaltyRule,
   enabled,
   disabled,
   onToggle,
@@ -2091,6 +2095,7 @@ function LoyaltyRedeemBox({
   pointsToNext: number;
   redeemablePoints: number;
   redeemableDiscount: number;
+  loyaltyRule: WahPointsRule;
   enabled: boolean;
   disabled: boolean;
   onToggle: () => void;
@@ -2103,8 +2108,8 @@ function LoyaltyRedeemBox({
           <p className="text-[13px] font-black text-maroon">{points} Wah Points</p>
           <p className="mt-1 text-[12px] font-bold leading-5 text-muted">
             {pointsToNext > 0
-              ? `${pointsToNext} more points unlock ${formatRupees(wahPointsRule.redemptionDiscount)} off.`
-              : `${wahPointsRule.redemptionPoints} points equals ${formatRupees(wahPointsRule.redemptionDiscount)} off.`}
+              ? `${pointsToNext} more points unlock ${formatRupees(loyaltyRule.redemptionDiscount)} off.`
+              : `${loyaltyRule.redemptionPoints} points equals ${formatRupees(loyaltyRule.redemptionDiscount)} off.`}
           </p>
         </div>
         <button
@@ -2121,7 +2126,7 @@ function LoyaltyRedeemBox({
       <div className="mt-3 rounded-xl bg-cream px-3 py-2 text-[12px] font-black text-charcoal">
         {enabled && redeemablePoints > 0
           ? `${redeemablePoints} points will save ${formatRupees(redeemableDiscount)} on this order.`
-          : `Redeem on food orders above ${formatRupees(wahPointsRule.minimumRedemptionOrderValue)}. Coupon plus points stays under ${wahPointsRule.maxCombinedDiscountPercent}%.`}
+          : `Redeem on food orders above ${formatRupees(loyaltyRule.minimumRedemptionOrderValue)}. Coupon plus points stays under ${loyaltyRule.maxCombinedDiscountPercent}%.`}
       </div>
     </div>
   );

@@ -193,7 +193,11 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
       return;
     }
 
-    const response = await adminFetch(adminAccess?.session, "/api/orders", { cache: "no-store" });
+    const response = await adminFetch(adminAccess?.session, "/api/orders", { cache: "no-store" }).catch((error) => {
+      console.warn("Admin order alert refresh failed.", error);
+      return null;
+    });
+    if (!response) return;
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !Array.isArray(data.orders)) return;
 
@@ -214,7 +218,11 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
   }, [adminAccess?.session, alertEnabled, stopAlarmSound]);
 
   const refreshAlertSettings = useCallback(async () => {
-    const response = await fetch("/api/settings", { cache: "no-store" });
+    const response = await fetch("/api/settings", { cache: "no-store" }).catch((error) => {
+      console.warn("Admin alert settings refresh failed.", error);
+      return null;
+    });
+    if (!response) return;
     const data = await response.json().catch(() => ({}));
     const settings = data.settings as { newOrderSoundEnabled?: unknown; newOrderSound?: unknown } | undefined;
     if (!response.ok || !settings) return;

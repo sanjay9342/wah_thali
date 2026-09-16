@@ -139,6 +139,7 @@ export type AdminReportsSnapshot = {
     deliveryOrders: number;
     pickupOrders: number;
     websiteOrders: number;
+    offlineSales: number;
     codOrders: number;
     onlinePaidOrders: number;
     cancelledRate: number;
@@ -149,6 +150,7 @@ export type AdminReportsSnapshot = {
 };
 
 const paidOnlineStatuses: PaymentStatus[] = ["PAID", "AUTHORIZED"];
+const paidPlacedStatuses: PaymentStatus[] = ["PAID", "AUTHORIZED", "COD_COLLECTED"];
 const cancelledStatuses = new Set(["CANCELLED", "DELIVERY_FAILED", "REFUND_PENDING", "REFUNDED"]);
 const activeStatuses = new Set(["NEW", "CONFIRMED", "PREPARING", "PACKED", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"]);
 
@@ -291,7 +293,7 @@ function buildSnapshot(input: {
   const active = input.orders.filter((order) => activeStatuses.has(order.status)).length;
   const averageOrderValue = revenueOrders.length ? Math.round(grossSales / revenueOrders.length) : 0;
   const codSales = sum(revenueOrders.filter((order) => order.payments.some((payment) => payment.provider === "COD")), (order) => order.grandTotal);
-  const onlineSales = sum(revenueOrders.filter((order) => order.payments.some((payment) => payment.provider !== "COD" && paidOnlineStatuses.includes(payment.status as PaymentStatus))), (order) => order.grandTotal);
+  const onlineSales = sum(revenueOrders.filter((order) => order.orderSource !== "OFFLINE" && order.payments.some((payment) => payment.provider !== "COD" && paidOnlineStatuses.includes(payment.status as PaymentStatus))), (order) => order.grandTotal);
   const cancelledValue = sum(cancelledOrders, (order) => order.grandTotal);
   const itemRows = getItemRows(input.products, revenueOrders, input.searchQuery);
   const dishSearch = getDishSearchReport(input.searchQuery, input.orders, revenueOrders, itemRows);
@@ -305,6 +307,7 @@ function buildSnapshot(input: {
   const pickupOrders = revenueOrders.filter((order) => order.fulfillmentMethod === "PICKUP").length;
   const deliveryOrders = revenueOrders.filter((order) => order.fulfillmentMethod !== "PICKUP").length;
   const websiteOrders = revenueOrders.filter((order) => order.orderSource === "WEBSITE").length;
+  const offlineSales = revenueOrders.filter((order) => order.orderSource === "OFFLINE").length;
   const primaryGrossSales = dishSearch.active ? dishSearch.itemSales : grossSales;
   const primaryNetRevenue = dishSearch.active ? dishSearch.itemSales : netRevenue;
   const primaryOrders = dishSearch.active ? dishSearch.orders : input.orders.length;
@@ -376,8 +379,9 @@ function buildSnapshot(input: {
       deliveryOrders,
       pickupOrders,
       websiteOrders,
+      offlineSales,
       codOrders: revenueOrders.filter((order) => order.payments.some((payment) => payment.provider === "COD")).length,
-      onlinePaidOrders: revenueOrders.filter((order) => order.payments.some((payment) => payment.provider !== "COD" && paidOnlineStatuses.includes(payment.status as PaymentStatus))).length,
+      onlinePaidOrders: revenueOrders.filter((order) => order.orderSource !== "OFFLINE" && order.payments.some((payment) => payment.provider !== "COD" && paidOnlineStatuses.includes(payment.status as PaymentStatus))).length,
       cancelledRate: input.orders.length ? Math.round((cancelledOrders.length / input.orders.length) * 100) : 0,
       repeatRate: orderingCustomers ? Math.round((repeatCustomers / orderingCustomers) * 100) : 0,
     },
@@ -669,7 +673,7 @@ function visiblePlacedOrderWhere(): Prisma.OrderWhereInput {
   return {
     OR: [
       { payments: { some: { provider: "COD" } } },
-      { payments: { some: { provider: "RAZORPAY", status: { in: paidOnlineStatuses } } } },
+      { payments: { some: { status: { in: paidPlacedStatuses } } } },
     ],
   };
 }

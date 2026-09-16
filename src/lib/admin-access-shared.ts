@@ -5,6 +5,7 @@ export type AdminRole = (typeof adminRoles)[number];
 export type AdminPermission =
   | "dashboard"
   | "orders"
+  | "offlineSales"
   | "inventory"
   | "categories"
   | "coupons"
@@ -18,6 +19,7 @@ export type AdminPermission =
 export const adminPermissions = [
   "dashboard",
   "orders",
+  "offlineSales",
   "inventory",
   "categories",
   "coupons",
@@ -69,6 +71,7 @@ export const roleDescriptions: Record<AdminRole, string> = {
 export const permissionLabels: Record<AdminPermission, string> = {
   dashboard: "Dashboard",
   orders: "Orders",
+  offlineSales: "Offline Sales",
   inventory: "Inventory",
   categories: "Categories",
   coupons: "Coupons",
@@ -83,6 +86,7 @@ export const permissionLabels: Record<AdminPermission, string> = {
 export const permissionDescriptions: Record<AdminPermission, string> = {
   dashboard: "View admin home and quick numbers.",
   orders: "Accept, prepare, dispatch, cancel, and refund orders.",
+  offlineSales: "Enter counter/manual sales so reports and dish counts stay complete.",
   inventory: "Create and update dishes, pricing, stock, variants, and addons.",
   categories: "Create categories, images, offers, visibility, and display order.",
   coupons: "Create, update, notify, and disable coupon offers.",
@@ -95,8 +99,8 @@ export const permissionDescriptions: Record<AdminPermission, string> = {
 };
 
 export const rolePermissions: Record<AdminRole, AdminPermission[]> = {
-  ADMIN: ["dashboard", "orders", "inventory", "categories", "coupons", "customers", "automation", "leads", "reports", "settings", "access"],
-  MANAGER: ["dashboard", "orders", "inventory", "categories", "coupons", "customers", "automation", "leads", "reports", "settings"],
+  ADMIN: ["dashboard", "orders", "offlineSales", "inventory", "categories", "coupons", "customers", "automation", "leads", "reports", "settings", "access"],
+  MANAGER: ["dashboard", "orders", "offlineSales", "inventory", "categories", "coupons", "customers", "automation", "leads", "reports", "settings"],
   STAFF: ["orders"],
 };
 
@@ -126,6 +130,7 @@ export function hasAdminPermission(access: AdminRole | AdminPermission[] | null 
 
 export function getAdminPathPermission(pathname: string): AdminPermission {
   if (pathname.startsWith("/admin/orders")) return "orders";
+  if (pathname.startsWith("/admin/offline-sales")) return "offlineSales";
   if (pathname.startsWith("/admin/inventory")) return "inventory";
   if (pathname.startsWith("/admin/categories")) return "categories";
   if (pathname.startsWith("/admin/coupons")) return "coupons";

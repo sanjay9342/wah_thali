@@ -1,28 +1,29 @@
 import {
   BarChart3,
   ClipboardList,
-  Gift,
   IndianRupee,
   Package,
   ShoppingBag,
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { AdminLoyaltyRuleClient } from "@/components/admin-loyalty-rule-client";
 import { AdminSectionNav } from "@/components/admin-section-nav";
 import { AdminDashboardProductsClient } from "@/components/admin-dashboard-products-client";
 import { requireAdminPagePermission } from "@/lib/admin-page-auth";
 import { getAdminDashboardMetrics, getAdminProductsFromDb } from "@/lib/db";
-import { getWahPointsRuleSummary } from "@/lib/loyalty";
+import { getWahPointsRuleFromDb } from "@/lib/loyalty-rule";
 import { formatRupees } from "@/lib/pricing";
-import { wahPointsRule } from "@/lib/rewards";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
   await requireAdminPagePermission("dashboard", "/admin");
-  const products = await getAdminProductsFromDb();
+  const [products, loyaltyRule] = await Promise.all([
+    getAdminProductsFromDb(),
+    getWahPointsRuleFromDb(),
+  ]);
   const metrics = await getAdminDashboardMetrics(products);
-  const loyaltyRules = getWahPointsRuleSummary();
   const operations = [
     ["Open orders", String(metrics.openOrders), "Need restaurant action"],
     ["Offline items", String(metrics.unavailableItems), "Shown unavailable at the end"],
@@ -79,6 +80,7 @@ export default async function AdminPage() {
                 ["/admin/inventory", "Manage products"],
                 ["/admin/categories", "Menu categories"],
                 ["/admin/orders", "Kitchen board"],
+                ["/admin/offline-sales", "Offline sales"],
                 ["/admin/reports", "Reports"],
                 ["/admin/coupons", "Create coupon"],
               ].map(([href, label]) => (
@@ -100,31 +102,7 @@ export default async function AdminPage() {
         </section>
 
         <section className="mt-6 grid gap-5 lg:grid-cols-[1fr_380px]">
-          <div className="surface rounded-2xl p-5">
-            <h2 className="flex items-center gap-2 text-xl font-black text-maroon">
-              <Gift className="text-red" /> Wah Points loyalty rule
-            </h2>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              {[
-                [`1 / Rs ${wahPointsRule.pointsPerSpendRupees}`, "Earn rate", "Food value after discounts"],
-                [`${wahPointsRule.redemptionPoints} = ${formatRupees(wahPointsRule.redemptionDiscount)}`, "Redeem rate", `Minimum food order ${formatRupees(wahPointsRule.minimumRedemptionOrderValue)}`],
-                [`${wahPointsRule.maxCombinedDiscountPercent}%`, "Margin cap", "Coupon plus points limit"],
-              ].map(([value, label, detail]) => (
-                <div key={label} className="rounded-xl border border-border bg-cream p-4">
-                  <p className="text-2xl font-black text-maroon">{value}</p>
-                  <p className="mt-1 text-sm font-black text-charcoal">{label}</p>
-                  <p className="mt-1 text-xs font-bold text-muted">{detail}</p>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              {loyaltyRules.map((rule) => (
-                <div key={rule} className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-muted ring-1 ring-border">
-                  {rule}
-                </div>
-              ))}
-            </div>
-          </div>
+          <AdminLoyaltyRuleClient initialRule={loyaltyRule} />
 
           <aside className="surface rounded-2xl p-5">
             <h2 className="text-xl font-black text-maroon">Loyalty liability</h2>

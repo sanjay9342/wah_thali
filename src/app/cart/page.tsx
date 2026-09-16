@@ -5,7 +5,7 @@ import { getPublicCartPageDataFromDb } from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 export default async function CartPage() {
-  const { products, coupons, restaurantSettings, categoryOffers, cartSuggestionCategories } = await getPublicCartPageDataFromDb();
+  const { products, coupons, restaurantSettings, categoryOffers, cartSuggestionCategories, loyaltyRule } = await getPublicCartPageDataFromDb();
 
   return (
     <>
@@ -17,6 +17,7 @@ export default async function CartPage() {
           restaurantSettings={restaurantSettings}
           initialCategoryOffers={categoryOffers}
           cartSuggestionCategories={cartSuggestionCategories}
+          loyaltyRule={loyaltyRule}
         />
       </main>
     </>

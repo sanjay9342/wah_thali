@@ -9,6 +9,7 @@ import {
   rewardMilestones,
   wahPointsRule,
 } from "@/lib/rewards";
+import { getWahPointsRuleFromDb } from "@/lib/loyalty-rule";
 import { prisma } from "@/lib/prisma";
 
 export { wahPointsRule };
@@ -87,8 +88,10 @@ export async function getRedeemableLoyaltyForOrder(input: {
   requestedPoints?: number;
 }) {
   if (!input.customerId) {
-    return calculateLoyaltyRedemption({ foodValue: input.foodValue, couponDiscount: input.couponDiscount, availablePoints: 0, requestedPoints: 0 });
+    const rule = await getWahPointsRuleFromDb();
+    return calculateLoyaltyRedemption({ foodValue: input.foodValue, couponDiscount: input.couponDiscount, availablePoints: 0, requestedPoints: 0 }, rule);
   }
+  const rule = await getWahPointsRuleFromDb();
   const account = await prisma.loyaltyAccount.findUnique({ where: { customerId: input.customerId }, select: { points: true } }).catch(() => null);
   const summary = await getCustomerLoyaltySummary(input.customerId, account?.points ?? 0);
   return calculateLoyaltyRedemption({
@@ -96,7 +99,7 @@ export async function getRedeemableLoyaltyForOrder(input: {
     couponDiscount: input.couponDiscount,
     availablePoints: summary.availablePoints,
     requestedPoints: input.requestedPoints,
-  });
+  }, rule);
 }
 
 export async function recordLoyaltyForPaidOrder(
@@ -115,6 +118,7 @@ export async function recordLoyaltyForPaidOrder(
   if (existingEntries > 0) return refreshLoyaltyAccount(input.customerId, store);
 
   const orderedAt = input.orderedAt ?? new Date();
+  const rule = await getWahPointsRuleFromDb();
   const customer = await store.customer.findUnique({
     where: { id: input.customerId },
     select: { completedOrderCount: true, lastCompletedOrderAt: true },
@@ -138,7 +142,7 @@ export async function recordLoyaltyForPaidOrder(
     isFirstOrder: Math.max(customer?.completedOrderCount ?? 0, priorPlacedOrders.length) === 0,
     previousCompletedOrderAt,
     orderedAt,
-  });
+  }, rule);
   const entries: Prisma.LoyaltyPointLedgerCreateManyInput[] = [];
 
   if ((input.redeemedPoints ?? 0) > 0) {
@@ -157,7 +161,7 @@ export async function recordLoyaltyForPaidOrder(
       points: earned.basePoints,
       type: "EARNED",
       description: `Earned on food value for order ${input.orderNumber}`,
-      expiresAt: getLoyaltyExpiryDate("BASE", orderedAt),
+      expiresAt: getLoyaltyExpiryDate("BASE", orderedAt, rule),
     });
   }
   if (earned.firstOrderBonusPoints > 0) {
@@ -167,7 +171,7 @@ export async function recordLoyaltyForPaidOrder(
       points: earned.firstOrderBonusPoints,
       type: "FIRST_ORDER_BONUS",
       description: `First order 2x bonus for ${input.orderNumber}`,
-      expiresAt: getLoyaltyExpiryDate("FIRST_ORDER_BONUS", orderedAt),
+      expiresAt: getLoyaltyExpiryDate("FIRST_ORDER_BONUS", orderedAt, rule),
     });
   }
   if (earned.reorderBonusPoints > 0) {
@@ -176,8 +180,8 @@ export async function recordLoyaltyForPaidOrder(
       orderId: input.orderId,
       points: earned.reorderBonusPoints,
       type: "REORDER_BONUS",
-      description: `30 day reorder bonus for ${input.orderNumber}`,
-      expiresAt: getLoyaltyExpiryDate("REORDER_BONUS", orderedAt),
+      description: `${rule.reorderBonusDays} day reorder bonus for ${input.orderNumber}`,
+      expiresAt: getLoyaltyExpiryDate("REORDER_BONUS", orderedAt, rule),
     });
   }
 
@@ -242,13 +246,13 @@ export async function reverseLoyaltyForOrder(store: Prisma.TransactionClient, or
   return refreshLoyaltyAccount(order.customerId, store);
 }
 
-export function getWahPointsRuleSummary() {
+export function getWahPointsRuleSummary(rule = wahPointsRule) {
   return [
-    `Earn 1 Wah Point for every Rs ${wahPointsRule.pointsPerSpendRupees} eligible food spend after discounts.`,
-    `First order earns ${wahPointsRule.firstOrderMultiplier}x points.`,
-    `Order again within ${wahPointsRule.reorderBonusDays} days to get ${wahPointsRule.reorderBonusPoints} bonus points.`,
-    `${wahPointsRule.redemptionPoints} points gives Rs ${wahPointsRule.redemptionDiscount} off above Rs ${wahPointsRule.minimumRedemptionOrderValue}.`,
-    `Point redemption is capped at ${wahPointsRule.maxRedemptionPercent}% of food value, and coupon plus points cannot exceed ${wahPointsRule.maxCombinedDiscountPercent}%.`,
-    `Regular points expire in ${wahPointsRule.pointsExpireDays} days; bonus points expire in ${wahPointsRule.bonusPointsExpireDays} days.`,
+    `Earn 1 Wah Point for every Rs ${rule.pointsPerSpendRupees} eligible food spend after discounts.`,
+    `First order earns ${rule.firstOrderMultiplier}x points.`,
+    `Order again within ${rule.reorderBonusDays} days to get ${rule.reorderBonusPoints} bonus points.`,
+    `${rule.redemptionPoints} points gives Rs ${rule.redemptionDiscount} off above Rs ${rule.minimumRedemptionOrderValue}.`,
+    `Point redemption is capped at ${rule.maxRedemptionPercent}% of food value, and coupon plus points cannot exceed ${rule.maxCombinedDiscountPercent}%.`,
+    `Regular points expire in ${rule.pointsExpireDays} days; bonus points expire in ${rule.bonusPointsExpireDays} days.`,
   ];
 }

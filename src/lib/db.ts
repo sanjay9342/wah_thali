@@ -4,6 +4,7 @@ import { unstable_cache } from "next/cache";
 import { Prisma, type PaymentStatus } from "@prisma/client";
 import { coupons as fallbackCoupons, products as fallbackProducts, settings as fallbackSettings } from "@/lib/data";
 import { prisma, isDatabaseConfigured } from "@/lib/prisma";
+import { getWahPointsRuleFromDb } from "@/lib/loyalty-rule";
 import { defaultNewOrderSound, getNewOrderSound } from "@/lib/order-sounds";
 import { getCustomerLoyaltySummary } from "@/lib/loyalty";
 import { normalizeDeliveryDistanceSlabs, normalizeGstRate } from "@/lib/pricing";
@@ -11,7 +12,7 @@ import { deprecatedRewardCouponCodes, getRewardTier, rewardCoupons } from "@/lib
 import { getIstDayRangeUtc } from "@/lib/time";
 import type { AdvancedSettings, AdminCustomer, AdminOrder, AdminProduct, BusinessSettings, CategoryImageMap, CategoryOfferMap, CategoryOption, Coupon, HomeSlide, Product, RestaurantSettings, StoreMode } from "@/lib/types";
 
-const paidOnlineStatuses: PaymentStatus[] = ["PAID", "AUTHORIZED"];
+const paidPlacedStatuses: PaymentStatus[] = ["PAID", "AUTHORIZED", "COD_COLLECTED"];
 const storefrontCacheSeconds = 60;
 const businessSettingKeys = Object.keys(fallbackSettings);
 
@@ -718,15 +719,16 @@ export const getPublicMenuPageDataFromDb = unstable_cache(
 
 export const getPublicCartPageDataFromDb = unstable_cache(
   async () => {
-    const [products, coupons, restaurantSettings, categoryOffers, cartSuggestionCategories] = await Promise.all([
+    const [products, coupons, restaurantSettings, categoryOffers, cartSuggestionCategories, loyaltyRule] = await Promise.all([
       getProductsFromDb(),
       getCouponsFromDb(),
       getRestaurantSettingsFromDb(),
       getCategoryOffersFromDb(),
       getCartSuggestionCategoriesFromDb(),
+      getWahPointsRuleFromDb(),
     ]);
 
-    return { products, coupons, restaurantSettings, categoryOffers, cartSuggestionCategories };
+    return { products, coupons, restaurantSettings, categoryOffers, cartSuggestionCategories, loyaltyRule };
   },
   ["public-cart-page-data"],
   { revalidate: storefrontCacheSeconds, tags: ["storefront", "storefront-cart"] },
@@ -797,7 +799,7 @@ function visiblePlacedOrderWhere(): Prisma.OrderWhereInput {
   return {
     OR: [
       { payments: { some: { provider: "COD" } } },
-      { payments: { some: { provider: "RAZORPAY", status: { in: paidOnlineStatuses } } } },
+      { payments: { some: { status: { in: paidPlacedStatuses } } } },
     ],
   };
 }
