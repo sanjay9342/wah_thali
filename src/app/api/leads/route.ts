@@ -5,6 +5,7 @@ import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { readServerEnv } from "@/lib/server-env";
 import { sendWhatsAppTemplate, sendWhatsAppText } from "@/lib/whatsapp";
+import { sendCrmLead } from "@/lib/crm";
 
 const leadSchema = z.object({
   intent: z.enum([
@@ -104,16 +105,31 @@ async function postHandler(request: Request) {
     channel: "whatsapp" as const,
     message: error instanceof Error ? error.message : "Admin WhatsApp notification failed.",
   }));
+  const crmNotification = await sendCrmLead({
+    name: data.name,
+    phone: data.phone,
+    email: data.email,
+    companyName: data.company,
+    source: `Website ${data.intent}`,
+    remarks: [
+      note,
+      `Lead ID: ${result.lead.id}`,
+      `CRM score: ${score}`,
+    ].filter(Boolean).join("\n"),
+  }).catch((error) => ({
+    ok: false as const,
+    message: error instanceof Error ? error.message : "BotFlo CRM lead sync failed.",
+  }));
 
   await logActivity({
     type: "LEAD_CREATED",
     entity: "Lead",
     entityId: result.lead.id,
     summary: `Created ${data.intent} enquiry for ${data.name}`,
-    metadata: { intent: data.intent, area: data.area, score, adminNotification },
+    metadata: { intent: data.intent, area: data.area, score, adminNotification, crmNotification },
   });
 
-  return NextResponse.json({ ...result, adminNotification }, { status: 201 });
+  return NextResponse.json({ ...result, adminNotification, crmNotification }, { status: 201 });
 }
 
 async function notifyAdminLead(data: z.infer<typeof leadSchema>, leadId: string) {

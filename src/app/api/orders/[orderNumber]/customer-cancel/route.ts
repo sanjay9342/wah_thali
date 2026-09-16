@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeMobile } from "@/lib/customer-auth";
 import { notifyOrderCustomerCancelled, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
+import { sendCrmOrderStatus } from "@/lib/crm";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
 import { reverseLoyaltyForOrder } from "@/lib/loyalty";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
@@ -116,6 +117,10 @@ async function postHandler(request: Request, { params }: { params: Promise<{ ord
       console.error("Customer cancelled order WhatsApp notification failed.", error);
     });
   }
+
+  await sendCrmOrderStatus(order, "CANCELLED", cancelNote).catch((error) => {
+    console.error("BotFlo CRM customer cancellation sync failed.", error);
+  });
 
   return NextResponse.json({ order });
 }

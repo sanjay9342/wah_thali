@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
 import { notifyOrderStatus, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
+import { sendCrmOrderStatus } from "@/lib/crm";
 import { recordLoyaltyForPaidOrder } from "@/lib/loyalty";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import type { OrderStatus } from "@/lib/types";
@@ -176,6 +177,12 @@ async function postHandler(request: NextRequest) {
     if (settings.whatsappOrderAlerts && notifiedOrder) {
       await notifyOrderStatus(notifiedOrder, notifiedStatus, notificationNote).catch((error) => {
         console.error("Payment status WhatsApp/customer notification failed.", error);
+      });
+    }
+
+    if (notifiedOrder) {
+      await sendCrmOrderStatus(notifiedOrder, notifiedStatus, notificationNote).catch((error) => {
+        console.error("BotFlo CRM payment status sync failed.", error);
       });
     }
   }

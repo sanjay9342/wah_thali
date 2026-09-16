@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
 import { notifyOrderStatus, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
+import { sendCrmOrderStatus } from "@/lib/crm";
 import { recordLoyaltyForPaidOrder, reverseLoyaltyForOrder } from "@/lib/loyalty";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import type { OrderStatus } from "@/lib/types";
@@ -190,6 +191,12 @@ async function postHandler(request: NextRequest) {
         if (settings.whatsappOrderAlerts && notifiedOrder) {
           await notifyOrderStatus(notifiedOrder, notifiedStatus, notificationNote).catch((error) => {
             console.error("Razorpay webhook WhatsApp/customer notification failed.", error);
+          });
+        }
+
+        if (notifiedOrder) {
+          await sendCrmOrderStatus(notifiedOrder, notifiedStatus, notificationNote).catch((error) => {
+            console.error("BotFlo CRM Razorpay webhook status sync failed.", error);
           });
         }
       }

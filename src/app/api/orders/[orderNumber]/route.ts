@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
 import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { notifyOrderStatus, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
+import { sendCrmOrderStatus } from "@/lib/crm";
 import { reverseLoyaltyForOrder } from "@/lib/loyalty";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { canTransitionOrder } from "@/lib/state-machines";
@@ -126,6 +127,10 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ or
       console.error("WhatsApp retention scheduling failed.", error);
     });
   }
+
+  await sendCrmOrderStatus(order, parsed.data.status, parsed.data.note).catch((error) => {
+    console.error("BotFlo CRM order status sync failed.", error);
+  });
 
   return NextResponse.json({ order });
 }

@@ -9,6 +9,7 @@ import { normalizeEmail } from "@/lib/customer-auth";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { createRazorpayOrder } from "@/lib/razorpay";
 import { notifyOrderStatus, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
+import { sendCrmOrderCreated } from "@/lib/crm";
 import { getStoreOrderingStatus } from "@/lib/store-hours";
 import type { CartLine, Coupon, OrderStatus, RestaurantSettings } from "@/lib/types";
 import { applyCoupon, getDeliveryFee, getOfferDiscount, isCouponEligibleForCustomer, isCouponEligibleForFulfillment, normalizeGstRate, type CouponCustomerContext } from "@/lib/pricing";
@@ -478,6 +479,10 @@ async function postHandler(request: Request) {
       console.error("Order WhatsApp/customer notification failed.", error);
     });
   }
+
+  await sendCrmOrderCreated(order, data.paymentMethod === "RAZORPAY" ? "Order created and waiting for online payment." : "Order created from website checkout.").catch((error) => {
+    console.error("BotFlo CRM new order sync failed.", error);
+  });
 
   return NextResponse.json({
     order,
