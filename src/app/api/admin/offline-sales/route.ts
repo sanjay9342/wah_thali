@@ -6,6 +6,7 @@ import { requireAdminPermission } from "@/lib/admin-api-auth";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
 import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { normalizeGstRate } from "@/lib/pricing";
+import { getModifierOptionLabel, getModifierSelectionIssue, getProductModifierGroups } from "@/lib/product-modifiers";
 import { parseIstDateInput } from "@/lib/time";
 
 const offlineSaleSchema = z.object({
@@ -13,12 +14,15 @@ const offlineSaleSchema = z.object({
   paymentMethod: z.enum(["CASH", "UPI", "CARD", "OTHER"]).default("CASH"),
   customerName: z.string().trim().min(1).max(120).default("Walk-in customer"),
   customerMobile: z.string().trim().max(20).optional().or(z.literal("")),
+  customerAddress: z.string().trim().max(300).optional().or(z.literal("")),
   discount: z.coerce.number().int().nonnegative().default(0),
+  extraCharges: z.coerce.number().int().nonnegative().default(0),
   note: z.string().trim().max(500).optional().or(z.literal("")),
   items: z.array(z.object({
     productId: z.string().min(1),
+    variantId: z.string().trim().min(1).default("regular"),
+    addonIds: z.array(z.string().trim().min(1)).default([]),
     quantity: z.coerce.number().int().positive(),
-    price: z.coerce.number().int().nonnegative().optional(),
   })).min(1),
 });
 
@@ -47,7 +51,7 @@ async function postHandler(request: Request) {
   const productIds = [...new Set(data.items.map((item) => item.productId))];
   const products = await prisma.product.findMany({
     where: { id: { in: productIds } },
-    select: { id: true, name: true, displayName: true, kitchenName: true, price: true },
+    include: { variants: true, addons: true },
   });
   const productById = new Map(products.map((product) => [product.id, product]));
   const missingProduct = productIds.find((productId) => !productById.has(productId));
@@ -58,10 +62,33 @@ async function postHandler(request: Request) {
   const items = data.items.map((item) => {
     const product = productById.get(item.productId);
     if (!product) throw new Error(`Product ${item.productId} was not found.`);
-    const price = item.price ?? product.price;
+    const variant =
+      product.variants.find((option) => option.id === `${product.id}-${item.variantId}` || option.id === item.variantId) ??
+      product.variants.find((option) => option.name.toLowerCase() === "regular") ??
+      (product.variants.length === 0 && item.variantId === "regular"
+        ? { id: "regular", name: "Regular", price: 0, available: true }
+        : null);
+    if (!variant || !variant.available) throw new Error(`Selected variant is unavailable for ${product.name}.`);
+
+    const selectedAddons = item.addonIds.map((addonId) => {
+      const addon = product.addons.find((option) => option.id === `${product.id}-${addonId}` || option.id === addonId);
+      if (!addon || !addon.available) throw new Error(`Selected addon is unavailable for ${product.name}.`);
+      return addon;
+    });
+    const addonQuantities = selectedAddons.reduce<Record<string, number>>((quantities, addon) => {
+      quantities[addon.id] = (quantities[addon.id] ?? 0) + 1;
+      return quantities;
+    }, {});
+    const modifierSelectionIssue = getModifierSelectionIssue(getProductModifierGroups({ addons: product.addons }), addonQuantities);
+    if (modifierSelectionIssue) throw new Error(`${product.name}: ${modifierSelectionIssue}`);
+
+    const addonTotal = selectedAddons.reduce((total, addon) => total + addon.price, 0);
+    const addonNames = selectedAddons.map((addon) => getModifierOptionLabel(addon.name));
+    const variantName = variant.name.toLowerCase() === "regular" ? "" : variant.name;
+    const price = product.price + variant.price + addonTotal;
     return {
       productId: product.id,
-      name: product.kitchenName || product.displayName || product.name,
+      name: [product.kitchenName || product.displayName || product.name, variantName, addonNames.length ? `With ${addonNames.join(", ")}` : ""].filter(Boolean).join(" - "),
       quantity: item.quantity,
       price,
       lineTotal: price * item.quantity,
@@ -70,7 +97,8 @@ async function postHandler(request: Request) {
   const subtotal = items.reduce((total, item) => total + item.lineTotal, 0);
   const discount = Math.min(data.discount, subtotal);
   const settings = await getRestaurantSettingsFromDb();
-  const taxable = Math.max(subtotal - discount, 0);
+  const extraCharges = data.extraCharges;
+  const taxable = Math.max(subtotal - discount + extraCharges, 0);
   const gst = Math.round(taxable * normalizeGstRate(settings.gstRate));
   const grandTotal = taxable + gst;
   const orderNumber = await getNextOfflineOrderNumber();
@@ -127,7 +155,7 @@ async function postHandler(request: Request) {
           create: [
             {
               toStatus: "CONFIRMED",
-              note: ["Offline sale entered by admin.", `Payment: ${payment.label}`, data.note ? `Note: ${data.note}` : ""].filter(Boolean).join(" | "),
+              note: ["Offline sale entered by admin.", "Fulfillment: Pickup", data.customerAddress ? `Address: ${data.customerAddress}` : "", `Payment: ${payment.label}`, extraCharges ? `Extra charges: ${extraCharges}` : "", data.note ? `Note: ${data.note}` : ""].filter(Boolean).join(" | "),
               createdAt,
             },
             {
@@ -158,6 +186,7 @@ async function postHandler(request: Request) {
       orderNumber: order.orderNumber,
       paymentMethod: data.paymentMethod,
       grandTotal,
+      extraCharges,
       itemCount: items.reduce((total, item) => total + item.quantity, 0),
     } as Prisma.InputJsonValue,
   });
