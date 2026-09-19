@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
 import { AlertTriangle, BellRing, CalendarDays, CheckCircle2, Clock, Filter, Mail, MapPin, MessageCircle, Printer, ReceiptText, RefreshCw, Star, Timer, Trash2, UserRound, Utensils, XCircle } from "lucide-react";
 import { AdminFloatingMessage } from "@/components/admin-floating-message";
 import { useAdminAccess } from "@/components/admin-access-gate";
@@ -96,11 +97,31 @@ export function AdminOrdersClient({
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [isPending, startTransition] = useTransition();
   const adminAccess = useAdminAccess();
+  const searchParams = useSearchParams();
+  const focusedOrderNumber = searchParams.get("order")?.trim() ?? "";
+  const pushAction = searchParams.get("pushAction")?.trim() ?? "";
   const knownOrders = useRef(new Set(initialOrders.map((order) => order.orderNumber)));
   const orderStatusByNumber = useRef(new Map(initialOrders.map((order) => [order.orderNumber, order.status])));
   const newOrderTimers = useRef<number[]>([]);
   const canResetOrders = adminAccess?.permissions.includes("settings") ?? false;
   const resetIsConfirmed = resetAcknowledged && resetConfirmation.trim().toUpperCase() === RESET_CONFIRMATION_TEXT;
+
+  useEffect(() => {
+    if (!focusedOrderNumber) return;
+    const timer = window.setTimeout(() => {
+      const element = document.getElementById(`order-${focusedOrderNumber}`);
+      element?.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (element) {
+        setAnimatedOrderNumbers((current) => new Set(current).add(focusedOrderNumber));
+      }
+      if (pushAction === "accept") {
+        setMessage(`Order ${focusedOrderNumber} opened from notification. Review it here, then tap Accept order.`);
+      } else if (pushAction === "decline") {
+        setMessage(`Order ${focusedOrderNumber} opened from notification. Review it here, then tap Decline and choose a reason.`);
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [focusedOrderNumber, pushAction]);
 
   const incomingOrders = orders.filter((order) => order.status === "NEW" || order.status === "PENDING_PAYMENT");
   const filteredOrders = useMemo(() => {

@@ -10,6 +10,7 @@ import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { createRazorpayOrder } from "@/lib/razorpay";
 import { notifyOrderStatus, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
 import { sendCrmOrderCreated } from "@/lib/crm";
+import { notifyStaffNewOrder } from "@/lib/admin-push-notifications";
 import { getStoreOrderingStatus } from "@/lib/store-hours";
 import type { CartLine, Coupon, OrderStatus, RestaurantSettings } from "@/lib/types";
 import { applyCoupon, getDeliveryFee, getOfferDiscount, isCouponEligibleForCustomer, isCouponEligibleForFulfillment, normalizeGstRate, type CouponCustomerContext } from "@/lib/pricing";
@@ -471,6 +472,12 @@ async function postHandler(request: Request) {
   if (settings.ownerWhatsAppOrderAlerts && order.status !== "PENDING_PAYMENT") {
     await notifyOwnerOrderAlert(order, settings.whatsappNumber, "NEW_ORDER").catch((error) => {
       console.error("Owner new order WhatsApp alert failed.", error);
+    });
+  }
+
+  if (order.status !== "PENDING_PAYMENT") {
+    await notifyStaffNewOrder(order).catch((error) => {
+      console.error("Admin new order push failed.", error);
     });
   }
 

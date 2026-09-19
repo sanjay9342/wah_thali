@@ -6,6 +6,7 @@ import { BellRing, CheckCircle2, Clock3, CreditCard, ImagePlus, LocateFixed, Map
 import { AdminFloatingMessage } from "@/components/admin-floating-message";
 import { useAdminAccess } from "@/components/admin-access-gate";
 import { AdminSectionNav } from "@/components/admin-section-nav";
+import { AdminPushNotificationSettings } from "@/components/admin-push-notification-settings";
 import { adminFetch } from "@/lib/admin-client-auth";
 import { defaultNewOrderSound, getNewOrderSound, getNewOrderSoundAudioSrc, getNewOrderSoundDurationMs, getNewOrderSoundSteps, newOrderSoundOptions } from "@/lib/order-sounds";
 import { buildOpeningHours, minutesToTimeInput, parseOpeningHours } from "@/lib/store-hours";
@@ -802,6 +803,7 @@ export function AdminSettingsClient({
               disabled={notificationSaving}
             />
             <Input label="Daily digest time" value={advanced.adminDailyDigestTime} onChange={(value) => setAdvanced({ ...advanced, adminDailyDigestTime: value })} onBlur={() => void publishNotificationSetting({ adminDailyDigestTime: advanced.adminDailyDigestTime })} />
+            <AdminPushNotificationSettings onMessage={setMessage} />
             {notificationSaving ? <p className="text-xs font-black text-muted">Saving notification setting...</p> : null}
           </Panel>
 

@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getRestaurantSettingsFromDb, logActivity } from "@/lib/db";
+import { notifyStaffNewOrder } from "@/lib/admin-push-notifications";
 import { notifyOrderStatus, notifyOwnerOrderAlert } from "@/lib/customer-messaging";
 import { sendCrmOrderStatus } from "@/lib/crm";
 import { recordLoyaltyForPaidOrder } from "@/lib/loyalty";
@@ -181,6 +182,12 @@ async function postHandler(request: NextRequest) {
     }
 
     if (notifiedOrder) {
+      if (notifiedStatus !== "CANCELLED") {
+        await notifyStaffNewOrder(notifiedOrder).catch((error) => {
+          console.error("Admin paid order push failed.", error);
+        });
+      }
+
       await sendCrmOrderStatus(notifiedOrder, notifiedStatus, notificationNote).catch((error) => {
         console.error("BotFlo CRM payment status sync failed.", error);
       });
