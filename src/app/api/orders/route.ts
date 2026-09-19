@@ -430,27 +430,6 @@ async function postHandler(request: Request) {
       },
     });
 
-    if (data.paymentMethod === "COD" && calculated.couponCode && calculated.couponDiscount > 0) {
-      await redeemCouponForSuccessfulOrder(tx, {
-        couponCode: calculated.couponCode,
-        orderId: createdOrder.id,
-        customerId: customer.id,
-        discount: calculated.couponDiscount,
-        orderTotal: calculated.grandTotal,
-        fulfillmentMethod: data.fulfillmentMethod,
-      });
-    }
-
-    if (data.paymentMethod === "COD") {
-      await recordLoyaltyForPaidOrder(tx, {
-        orderId: createdOrder.id,
-        orderNumber: createdOrder.orderNumber,
-        customerId: customer.id,
-        eligibleFoodValue: Math.max(calculated.subtotal - calculated.discount, 0),
-        redeemedPoints: calculated.loyaltyPointsRedeemed,
-      });
-    }
-
     return createdOrder;
   }).catch((error) => {
     console.error("Order creation transaction failed.", error);
@@ -468,6 +447,32 @@ async function postHandler(request: Request) {
     summary: `Created order ${order.orderNumber}`,
     metadata: { grandTotal: order.grandTotal, couponCode: calculated.couponCode },
   });
+
+  if (data.paymentMethod === "COD" && calculated.couponCode && calculated.couponDiscount > 0) {
+    const couponCode = calculated.couponCode;
+    await prisma.$transaction((tx) => redeemCouponForSuccessfulOrder(tx, {
+      couponCode,
+      orderId: order.id,
+      customerId: order.customerId,
+      discount: calculated.couponDiscount,
+      orderTotal: calculated.grandTotal,
+      fulfillmentMethod: data.fulfillmentMethod,
+    })).catch((error) => {
+      console.error("Coupon redemption after order creation failed.", error);
+    });
+  }
+
+  if (data.paymentMethod === "COD") {
+    await prisma.$transaction((tx) => recordLoyaltyForPaidOrder(tx, {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      customerId: order.customerId,
+      eligibleFoodValue: Math.max(calculated.subtotal - calculated.discount, 0),
+      redeemedPoints: calculated.loyaltyPointsRedeemed,
+    })).catch((error) => {
+      console.error("Loyalty recording after order creation failed.", error);
+    });
+  }
 
   if (settings.ownerWhatsAppOrderAlerts && order.status !== "PENDING_PAYMENT") {
     await notifyOwnerOrderAlert(order, settings.whatsappNumber, "NEW_ORDER").catch((error) => {

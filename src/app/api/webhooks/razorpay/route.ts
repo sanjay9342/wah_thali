@@ -127,23 +127,6 @@ async function postHandler(request: NextRequest) {
               },
             },
           });
-          if (payment.order.couponCode && payment.order.discount > 0) {
-            await redeemCouponForSuccessfulOrder(tx, {
-              couponCode: payment.order.couponCode,
-              orderId: payment.orderId,
-              customerId: payment.order.customerId,
-              discount: Math.max(payment.order.discount - payment.order.loyaltyDiscount, 0),
-              orderTotal: payment.order.grandTotal,
-              fulfillmentMethod: payment.order.fulfillmentMethod === "PICKUP" ? "PICKUP" : "DELIVERY",
-            });
-          }
-          await recordLoyaltyForPaidOrder(tx, {
-            orderId: payment.orderId,
-            orderNumber: payment.order.orderNumber,
-            customerId: payment.order.customerId,
-            eligibleFoodValue: Math.max(payment.order.subtotal - payment.order.discount, 0),
-            redeemedPoints: payment.order.loyaltyPointsRedeemed,
-          });
           notifiedStatus = nextStatus;
           notificationNote = `Razorpay webhook confirmed payment: ${paymentId}`;
         }
@@ -174,6 +157,31 @@ async function postHandler(request: NextRequest) {
         }
       });
       if (notifiedStatus) {
+        if (notifiedStatus !== "CANCELLED") {
+          if (payment.order.couponCode && payment.order.discount > 0) {
+            await prisma.$transaction((tx) => redeemCouponForSuccessfulOrder(tx, {
+              couponCode: payment.order.couponCode!,
+              orderId: payment.orderId,
+              customerId: payment.order.customerId,
+              discount: Math.max(payment.order.discount - payment.order.loyaltyDiscount, 0),
+              orderTotal: payment.order.grandTotal,
+              fulfillmentMethod: payment.order.fulfillmentMethod === "PICKUP" ? "PICKUP" : "DELIVERY",
+            })).catch((error) => {
+              console.error("Razorpay webhook coupon redemption failed.", error);
+            });
+          }
+
+          await prisma.$transaction((tx) => recordLoyaltyForPaidOrder(tx, {
+            orderId: payment.orderId,
+            orderNumber: payment.order.orderNumber,
+            customerId: payment.order.customerId,
+            eligibleFoodValue: Math.max(payment.order.subtotal - payment.order.discount, 0),
+            redeemedPoints: payment.order.loyaltyPointsRedeemed,
+          })).catch((error) => {
+            console.error("Razorpay webhook loyalty recording failed.", error);
+          });
+        }
+
         const notifiedOrder = await prisma.order.findUnique({
           where: { id: payment.orderId },
           include: {

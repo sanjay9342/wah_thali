@@ -96,23 +96,6 @@ async function postHandler(request: NextRequest) {
             },
           },
         });
-          if (order.couponCode && order.discount > 0) {
-            await redeemCouponForSuccessfulOrder(tx, {
-              couponCode: order.couponCode,
-              orderId: order.id,
-              customerId: order.customerId,
-              discount: Math.max(order.discount - order.loyaltyDiscount, 0),
-              orderTotal: order.grandTotal,
-              fulfillmentMethod: order.fulfillmentMethod === "PICKUP" ? "PICKUP" : "DELIVERY",
-            });
-          }
-          await recordLoyaltyForPaidOrder(tx, {
-            orderId: order.id,
-            orderNumber: order.orderNumber,
-            customerId: order.customerId,
-            eligibleFoodValue: Math.max(order.subtotal - order.discount, 0),
-            redeemedPoints: order.loyaltyPointsRedeemed,
-          });
           notifiedStatus = nextStatus;
         notificationNote = `Razorpay payment verified: ${razorpay_payment_id}`;
       }
@@ -160,6 +143,31 @@ async function postHandler(request: NextRequest) {
   });
 
   if (notifiedStatus) {
+    if (verified && notifiedStatus !== "CANCELLED") {
+      if (order.couponCode && order.discount > 0) {
+        await prisma.$transaction((tx) => redeemCouponForSuccessfulOrder(tx, {
+          couponCode: order.couponCode!,
+          orderId: order.id,
+          customerId: order.customerId,
+          discount: Math.max(order.discount - order.loyaltyDiscount, 0),
+          orderTotal: order.grandTotal,
+          fulfillmentMethod: order.fulfillmentMethod === "PICKUP" ? "PICKUP" : "DELIVERY",
+        })).catch((error) => {
+          console.error("Paid order coupon redemption failed.", error);
+        });
+      }
+
+      await prisma.$transaction((tx) => recordLoyaltyForPaidOrder(tx, {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        customerId: order.customerId,
+        eligibleFoodValue: Math.max(order.subtotal - order.discount, 0),
+        redeemedPoints: order.loyaltyPointsRedeemed,
+      })).catch((error) => {
+        console.error("Paid order loyalty recording failed.", error);
+      });
+    }
+
     const notifiedOrder = await prisma.order.findUnique({
       where: { id: order.id },
       include: {
