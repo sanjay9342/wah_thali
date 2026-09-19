@@ -103,6 +103,7 @@ export function AdminOrdersClient({
   const knownOrders = useRef(new Set(initialOrders.map((order) => order.orderNumber)));
   const orderStatusByNumber = useRef(new Map(initialOrders.map((order) => [order.orderNumber, order.status])));
   const newOrderTimers = useRef<number[]>([]);
+  const handledPushActions = useRef(new Set<string>());
   const canResetOrders = adminAccess?.permissions.includes("settings") ?? false;
   const resetIsConfirmed = resetAcknowledged && resetConfirmation.trim().toUpperCase() === RESET_CONFIRMATION_TEXT;
 
@@ -115,7 +116,7 @@ export function AdminOrdersClient({
         setAnimatedOrderNumbers((current) => new Set(current).add(focusedOrderNumber));
       }
       if (pushAction === "accept") {
-        setMessage(`Order ${focusedOrderNumber} opened from notification. Review it here, then tap Accept order.`);
+        setMessage(`Order ${focusedOrderNumber} opened from notification. Accepting it now...`);
       } else if (pushAction === "decline") {
         setMessage(`Order ${focusedOrderNumber} opened from notification. Review it here, then tap Decline and choose a reason.`);
       }
@@ -248,6 +249,61 @@ export function AdminOrdersClient({
     }
     return true;
   }, [adminAccess?.session, notifyAdmin, notifyAdminCancellation]);
+
+  useEffect(() => {
+    if (!focusedOrderNumber || (pushAction !== "accept" && pushAction !== "decline")) return;
+
+    const order = orders.find((item) => item.orderNumber === focusedOrderNumber);
+    if (!order) return;
+
+    const actionKey = `${focusedOrderNumber}:${pushAction}`;
+    if (handledPushActions.current.has(actionKey)) return;
+
+    if (pushAction === "decline") {
+      handledPushActions.current.add(actionKey);
+      const timer = window.setTimeout(() => {
+        if (canTransitionOrder(order.status, "CANCELLED")) {
+          setDeclineOrder(order);
+          setMessage(`Choose a decline reason for ${order.orderNumber}.`);
+        } else {
+          setMessage(`${order.orderNumber} cannot be declined from ${statusCopy[order.status].label}.`);
+        }
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    handledPushActions.current.add(actionKey);
+    if (!canTransitionOrder(order.status, "CONFIRMED")) {
+      const timer = window.setTimeout(() => {
+        setMessage(`${order.orderNumber} is already ${statusCopy[order.status].label.toLowerCase()}.`);
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    startTransition(async () => {
+      const response = await adminFetch(adminAccess?.session, `/api/orders/${order.orderNumber}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "CONFIRMED", note: "Accepted from browser notification." }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setMessage(data.error ?? "Order accept failed.");
+        return;
+      }
+
+      setOrders((current) => current.map((item) => item.orderNumber === order.orderNumber ? {
+        ...item,
+        status: "CONFIRMED",
+        timeline: data.order?.timeline ?? item.timeline,
+      } : item));
+      window.dispatchEvent(new CustomEvent(orderAlertsUpdatedEvent, {
+        detail: { orderNumber: order.orderNumber, status: "CONFIRMED" },
+      }));
+      await refresh(true);
+      setMessage(`${order.orderNumber} accepted from notification.`);
+    });
+  }, [adminAccess?.session, focusedOrderNumber, orders, pushAction, refresh]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {

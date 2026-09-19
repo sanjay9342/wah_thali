@@ -232,7 +232,7 @@ export function AdminPushNotificationSettings({ onMessage }: { onMessage: (messa
                 : permissionStatus === "denied"
                   ? "Permission is blocked in this browser. Change site settings to allow notifications."
                   : deviceRegistered
-                    ? "This browser is registered for background order alerts."
+                    ? "This browser is registered. Keep any admin page open and tap the bell once if the custom order sound is blocked."
                     : "Enable this browser after signing in as the staff account that should receive alerts."}
           </p>
         </div>
@@ -257,7 +257,7 @@ export function AdminPushNotificationSettings({ onMessage }: { onMessage: (messa
       </div>
 
       <p className="text-[11px] font-bold leading-5 text-muted">
-        Background notifications use the operating system notification sound. The selected Wah Thali order sound still plays inside the open admin page when the browser permits audio.
+        Background notifications show Accept and Decline actions and use the operating system sound. The selected Wah Thali order sound plays from an open admin page after the browser allows audio.
       </p>
 
       <div className="grid gap-2">
