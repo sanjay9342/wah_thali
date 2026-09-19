@@ -8,10 +8,16 @@ self.addEventListener("push", (event) => {
     }
   }
 
-  const title = typeof data.title === "string" ? data.title : "Wah Thali";
+  const title = typeof data.title === "string" && data.title.trim()
+    ? `Wah Thali - ${data.title.trim()}`
+    : "Wah Thali - New Order Received";
   const orderNumber = typeof data.orderNumber === "string" ? data.orderNumber : "";
   const url = typeof data.url === "string" ? data.url : "/admin/orders";
-  const body = typeof data.body === "string" ? data.body : "New order received.";
+  const body = typeof data.body === "string" && data.body.trim()
+    ? data.body.trim()
+    : orderNumber
+      ? `Order ${orderNumber} is waiting. Expand this notification for Accept or Decline.`
+      : "New order received. Open admin orders to review.";
   const tag = typeof data.tag === "string" ? data.tag : orderNumber ? `wah-thali-order-${orderNumber}` : "wah-thali-admin";
 
   event.waitUntil(
@@ -19,13 +25,15 @@ self.addEventListener("push", (event) => {
       body,
       tag,
       renotify: true,
+      requireInteraction: true,
+      timestamp: Date.now(),
       icon: "/wah-thali-icon-192.png",
       badge: "/wah-thali-icon-192.png",
       vibrate: [180, 70, 180, 70, 240],
       data: { url, orderNumber },
       actions: orderNumber
         ? [
-            { action: "accept", title: "Accept" },
+            { action: "accept", title: "Accept order" },
             { action: "decline", title: "Decline" },
           ]
         : [],

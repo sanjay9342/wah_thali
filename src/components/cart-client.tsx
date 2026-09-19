@@ -961,7 +961,10 @@ export function CartClient({
             <div className="mt-5 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-[#edf0f5]">
               <button
                 type="button"
-                onClick={() => initialCoupons.length ? setShowCouponSheet(true) : setCheckoutMessage("No coupons are available right now.")}
+                onClick={() => {
+                  setCheckoutMessage("");
+                  setShowCouponSheet(true);
+                }}
                 className="grid w-full grid-cols-[34px_1fr_auto] items-center gap-3 px-4 py-4 text-left"
               >
                 <span className="grid h-9 w-9 place-items-center rounded-xl bg-maroon text-white">
@@ -1170,7 +1173,10 @@ export function CartClient({
         <h2 className="px-3.5 pb-2.5 pt-4 text-[12px] font-black uppercase tracking-[0.18em] text-muted">Savings corner</h2>
         <div className="divide-y divide-border">
           <button
-            onClick={() => initialCoupons.length ? setShowCouponSheet(true) : setCheckoutMessage("No coupons are available right now.")}
+            onClick={() => {
+              setCheckoutMessage("");
+              setShowCouponSheet(true);
+            }}
             className="grid w-full grid-cols-[30px_1fr_auto] items-center gap-2.5 px-3.5 py-3.5 text-left"
           >
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-maroon text-white">
