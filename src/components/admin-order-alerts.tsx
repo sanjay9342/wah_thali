@@ -18,6 +18,7 @@ type ApiOrder = {
 const incomingStatuses: OrderStatus[] = ["NEW", "PENDING_PAYMENT"];
 const settingsUpdateEvent = "wah-thali-admin-alert-settings-updated";
 const ordersUpdatedEvent = "wah-thali-admin-orders-updated";
+const adminPushMessageType = "WAH_THALI_ADMIN_PUSH";
 
 export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: NewOrderSound }) {
   const [alertEnabled, setAlertEnabled] = useState(enabled);
@@ -252,6 +253,31 @@ export function AdminOrderAlerts({ enabled, sound }: { enabled: boolean; sound: 
     window.addEventListener(ordersUpdatedEvent, handleOrdersUpdated);
     return () => window.removeEventListener(ordersUpdatedEvent, handleOrdersUpdated);
   }, [refreshOrders]);
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+
+    function handleServiceWorkerMessage(event: MessageEvent) {
+      const data = event.data as { type?: unknown; orderNumber?: unknown } | undefined;
+      if (!data || data.type !== adminPushMessageType) return;
+
+      const orderNumber = typeof data.orderNumber === "string" ? data.orderNumber : "";
+      if (orderNumber) {
+        document.title = `New order ${orderNumber} - Wah Thali Admin`;
+        knownOrders.current.add(orderNumber);
+      }
+
+      if (alertEnabled) {
+        setIncomingCount((current) => Math.max(current, 1));
+        void startAlarmSound();
+      }
+
+      void refreshOrders();
+    }
+
+    navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", handleServiceWorkerMessage);
+  }, [alertEnabled, refreshOrders, startAlarmSound]);
 
   useEffect(() => {
     if (!alertEnabled || incomingCount === 0) {
